@@ -1,0 +1,28 @@
+{
+  "generic": [
+    ".ad",
+    ".ads",
+    ".adsbox",
+    ".ad-banner",
+    ".advertisement",
+    "[id^=\"google_ads_\"]",
+    "[id^=\"div-gpt-ad\"]",
+    "ins.adsbygoogle",
+    "iframe[src*=\"doubleclick.net\"]",
+    "iframe[src*=\"googlesyndication.com\"]"
+  ],
+  "siteSpecific": {
+    "youtube.com": [
+      "ytd-display-ad-renderer",
+      "#player-ads",
+      "ytd-ad-slot-renderer"
+    ],
+    "twitch.tv": [
+      ".video-player__container--ads"
+    ],
+    "reddit.com": [
+      "shreddit-comments-page-ad",
+      "[data-testid=\"ad-post\"]"
+    ]
+  }
+}

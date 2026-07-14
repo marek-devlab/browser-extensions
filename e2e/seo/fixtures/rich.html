@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fixture Page for SEO and Accessibility Auditor E2E</title>
+  <meta name="description" content="A deterministic fixture page exercising meta tags, headings, structured data, images and links for the SEO and Accessibility Auditor end-to-end tests." />
+  <link rel="canonical" href="http://127.0.0.1:__PORT__/" />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="alternate" hreflang="en" href="http://127.0.0.1:__PORT__/" />
+  <link rel="alternate" hreflang="fr" href="http://127.0.0.1:__PORT__/fr" />
+  <link rel="alternate" hreflang="de" href="http://127.0.0.1:__PORT__/de" />
+
+  <meta property="og:title" content="Fixture OG Title" />
+  <meta property="og:description" content="Fixture OG description for the social preview card." />
+  <meta property="og:image" content="http://127.0.0.1:__PORT__/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Valid JSON-LD, but an Article missing its required `headline` property. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "author": { "@type": "Person", "name": "Jane Doe" },
+    "datePublished": "2026-01-01"
+  }
+  </script>
+
+  <!-- Malformed JSON-LD: trailing comma + missing closing brace. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "Broken Product",
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Primary Heading of the Fixture Page</h1>
+  </header>
+
+  <main>
+    <h2>A second level section</h2>
+    <p>
+      This paragraph provides visible body text so the word counter has real
+      content to measure. It mentions accessibility, structured data, canonical
+      URLs, hreflang alternates and Open Graph tags so the auditor sees a
+      realistic amount of prose rather than an empty document body.
+    </p>
+
+    <!-- Skipped level: h2 jumps straight to h4 (no h3). -->
+    <h4>A skipped-level subsection</h4>
+    <p>More descriptive prose to keep the visible word count comfortably above
+      the thin-content threshold used by the auditor summary bar.</p>
+
+    <!-- Images: 1 with alt, 2 without alt, 1 decorative (alt=""). -->
+    <img src="http://127.0.0.1:__PORT__/described.png" alt="A described image" width="40" height="40" />
+    <img src="http://127.0.0.1:__PORT__/missing-one.png" width="40" height="40" />
+    <img src="http://127.0.0.1:__PORT__/missing-two.png" width="40" height="40" />
+    <img src="http://127.0.0.1:__PORT__/decorative.png" alt="" width="40" height="40" />
+
+    <!-- Deliberate colour-contrast failure for axe-core. -->
+    <p style="color:#bbbbbb;background:#cccccc;">Low contrast text that axe-core should flag.</p>
+
+    <nav>
+      <a href="/about">Internal about link</a>
+      <a href="page2.html">Internal relative link</a>
+      <a href="https://external-a.example/" rel="nofollow">External nofollow</a>
+      <a href="https://external-b.example/" rel="sponsored">External sponsored</a>
+      <a href="https://external-c.example/" rel="ugc noopener">External ugc</a>
+      <a href="mailto:hello@example.com">Email (not navigational)</a>
+      <a href="tel:+15551234567">Phone (not navigational)</a>
+      <a href="#section">Fragment (not navigational)</a>
+    </nav>
+  </main>
+</body>
+</html>

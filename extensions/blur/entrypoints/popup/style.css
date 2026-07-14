@@ -1,0 +1,320 @@
+/* Shared design tokens — this :root block is kept byte-identical in the
+   Ad & Tracker Blocker popup so both extensions read as one product family.
+   --sub is deliberately dark enough for 4.5:1 on --bg, --card AND --warn-bg. */
+:root {
+  /* Let native controls (<select>, scrollbars) follow the active theme instead
+     of rendering as light chrome in dark mode. */
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --sub: #5b6472;
+  --line: #e5e7eb;
+  --card: #f5f6f8;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --warn: #b45309;
+  --warn-bg: #fef3c7;
+  --ok: #15803d;
+  --radius: 8px;
+  --radius-sm: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --fg: #f2f3f5;
+    --sub: #9aa2ad;
+    --line: #2a2e37;
+    --card: #1e2128;
+    --accent: #5b8cff;
+    --accent-fg: #0b1220;
+    --warn: #f0b357;
+    --warn-bg: #3a2f16;
+    --ok: #59d98a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Tint native form controls so checkboxes and range thumbs match the brand and
+   don't render as light-grey chrome in the dark theme. */
+input[type='checkbox'],
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.popup {
+  width: 320px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* The global master switch sits above the per-site one and reads as the title. */
+.master .host {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+/* Per-site toggle is a distinct carded row so it can't be mistaken for the
+   global switch above it. */
+.site {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.site .host {
+  font-weight: 600;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.sub {
+  color: var(--sub);
+  font-size: 11px;
+}
+
+.note {
+  color: var(--sub);
+  font-size: 11px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex: none;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background: var(--line);
+  border-radius: 22px;
+  transition: background 0.15s;
+}
+
+.slider::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+
+.switch input:checked + .slider {
+  background: var(--accent);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(18px);
+}
+
+.switch input:disabled + .slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The real <input> is visually hidden, so surface keyboard focus on the track. */
+.switch input:focus-visible + .slider {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Honest empty / restricted state — shown instead of a 0/0/0 grid that reads
+   as broken on chrome:// pages or a fresh page with nothing blurred yet. */
+.empty {
+  margin: 0;
+  color: var(--sub);
+  font-size: 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px;
+  text-align: center;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.stat {
+  background: var(--card);
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat .num {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stat .lbl {
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.group {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sub);
+}
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--card);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field input[type='range'] {
+  flex: 1;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions button {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.actions button:hover {
+  border-color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chip:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Segmented controls: scope (Global / This site) and intensity presets. */
+.scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scope,
+.presets {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.seg {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--sub);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.seg.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.seg:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.linkbtn {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+/* Async feedback colours (shared with options). Colour is never the only signal
+   — the JSX pairs each with a ✓ / ⚠ glyph. */
+.status-ok {
+  color: var(--ok);
+}
+
+.status-err {
+  color: var(--warn);
+}

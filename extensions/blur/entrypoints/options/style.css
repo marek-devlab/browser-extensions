@@ -1,0 +1,208 @@
+.options {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.options h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* `.switch` / `.slider` and the CSS variables come from popup/style.css, which
+   options/main.tsx imports before this file. */
+.master-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--sub);
+  cursor: pointer;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--sub);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+}
+
+.tab.on {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.note {
+  color: var(--sub);
+  font-size: 12px;
+  margin: 0;
+}
+
+.note code,
+.panel code {
+  background: var(--card);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.allowlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.allowlist li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--card);
+  border-radius: 6px;
+}
+
+.allowlist button,
+.panel .field button {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.panel .field input[type='text'],
+.panel .field input[type='number'] {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Base `accent-color` is set in popup/style.css (imported first); repeated here
+   so the options range/number/checkbox inputs are tinted even when this sheet is
+   read on its own. */
+input[type='checkbox'],
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
+/* Bulk keyword entry. */
+.panel textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.panel .field.wrap {
+  flex-wrap: wrap;
+}
+
+/* Base :focus-visible and .chip focus come from popup/style.css; tabs are
+   options-only, and the negative offset keeps the ring inside the tab strip. */
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Per-site override + image-source sub-sections. */
+.subpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 12px;
+}
+
+.subpanel h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.override-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.override-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.presets .seg {
+  padding: 4px 10px;
+}
+
+/* Technical-details disclosure — mirrors the Ad & Tracker Blocker options. */
+.advanced {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  color: var(--sub);
+  font-size: 13px;
+}
+
+.advanced summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.advanced > .note {
+  margin-top: 8px;
+}
+
+/* Async feedback. Colour is never the only signal — the JSX pairs each with a
+   ✓ / ⚠ glyph — but the hues reinforce it and both meet 4.5:1 in both themes. */
+.status-ok {
+  color: var(--ok);
+}
+
+.status-err {
+  color: var(--warn);
+}

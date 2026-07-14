@@ -1,0 +1,41 @@
+{
+  "name": "blur-addon-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "extensions/*"
+  ],
+  "scripts": {
+    "postinstall": "npm run prepare --workspaces --if-present",
+    "dev:blur": "npm run dev --workspace @blur/blur",
+    "dev:blur:firefox": "npm run dev:firefox --workspace @blur/blur",
+    "dev:perf": "npm run dev --workspace @blur/perf",
+    "dev:perf:firefox": "npm run dev:firefox --workspace @blur/perf",
+    "dev:adblock": "npm run dev --workspace @blur/adblock",
+    "dev:adblock:firefox": "npm run dev:firefox --workspace @blur/adblock",
+    "dev:seo": "npm run dev --workspace @blur/seo",
+    "dev:seo:firefox": "npm run dev:firefox --workspace @blur/seo",
+    "icons": "node scripts/gen-icons.mjs",
+    "store-assets": "node scripts/gen-store-assets.mjs",
+    "build": "npm run build --workspaces --if-present",
+    "build:blur": "npm run build --workspace @blur/blur",
+    "build:perf": "npm run build --workspace @blur/perf",
+    "build:adblock": "npm run build --workspace @blur/adblock",
+    "build:seo": "npm run build --workspace @blur/seo",
+    "zip": "npm run zip --workspaces --if-present",
+    "typecheck": "npm run compile --workspaces --if-present",
+    "e2e:logic": "node e2e/adblock/logic.test.mjs",
+    "e2e:adblock": "node e2e/adblock/harness.mjs",
+    "e2e:blur": "playwright test -c e2e/blur/playwright.config.ts",
+    "e2e:perf": "playwright test e2e/perf",
+    "e2e:seo": "playwright test -c e2e/seo/playwright.config.ts",
+    "e2e": "npm run e2e:logic && npm run e2e:adblock && npm run e2e:blur && npm run e2e:perf && npm run e2e:seo"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

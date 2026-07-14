@@ -1,0 +1,62 @@
+[
+  {
+    "id": "T1",
+    "name": "network block (standard)",
+    "pass": true,
+    "detail": "enabledRulesets=[easylist,easyprivacy] adBlocked=true trackerBlocked=true (blocked hosts: buzzoola.com,mradx.net)"
+  },
+  {
+    "id": "T2",
+    "name": "cosmetic hide site-specific (standard)",
+    "pass": true,
+    "detail": "#ytad display:none=true, #content hidden=false"
+  },
+  {
+    "id": "T2b",
+    "name": "generic cosmetic gated to aggressive",
+    "pass": true,
+    "detail": ".ad hidden@standard=false hidden@aggressive=true"
+  },
+  {
+    "id": "T3",
+    "name": "allowlist disables network + cosmetic",
+    "pass": true,
+    "detail": "dynamicRules=1 adStillBlocked=false cosmeticStillHidden=false"
+  },
+  {
+    "id": "T4",
+    "name": "badge reflects cosmetic hides exactly (no ~)",
+    "pass": true,
+    "detail": "domHidden=2 badge=\"2\""
+  },
+  {
+    "id": "T5",
+    "name": "level off disables everything",
+    "pass": true,
+    "detail": "enabledRulesets=[] adBlocked=false cosmeticHidden=false"
+  },
+  {
+    "id": "T6",
+    "name": "custom cosmetic filter (My filters UI) applied",
+    "pass": true,
+    "detail": "#sponsored-slot hidden=true #content hidden=false"
+  },
+  {
+    "id": "T7",
+    "name": "element picker hides + persists a filter",
+    "pass": true,
+    "detail": "hiddenAfterPick=true persisted={\"victim.test\":[\"#sponsored-slot\"]}"
+  },
+  {
+    "id": "T8",
+    "name": "disable-cosmetic keeps network, stops hiding",
+    "pass": true,
+    "detail": "cosmeticHidden=false networkStillBlocked=true"
+  },
+  {
+    "id": "T9",
+    "name": "backup export/import applies (allowlist round-trip)",
+    "pass": true,
+    "detail": "validJson=true dynamicRules=1 adBlockedAfterImport=false"
+  }
+]

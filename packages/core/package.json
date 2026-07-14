@@ -1,0 +1,16 @@
+{
+  "name": "@blur/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "compile": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,5 +1,11 @@
 import type { AdBlockExtensionSettings } from '@blur/core';
-import type { AdBlockBackup, AdBlockSiteConfigX, CustomFilters } from './adblock-types';
+import type {
+  AdBlockBackup,
+  AdBlockSiteConfigX,
+  CustomFilterEntry,
+  CustomFilters,
+  StoredFilter,
+} from './adblock-types';
 
 /**
  * PURE validation/normalization of an untrusted backup document (feature §4),
@@ -97,11 +103,32 @@ export function normalizeSiteConfigs(v: unknown): Record<string, AdBlockSiteConf
   return out;
 }
 
+/**
+ * One stored rule from an untrusted document. Accepts BOTH stored shapes: a bare
+ * selector string (every backup ever exported before labels existed) and the
+ * labelled object. Anything else — a number, null, an object with no selector —
+ * is dropped rather than failing the whole import.
+ */
+function normalizeFilterEntry(v: unknown): StoredFilter | null {
+  if (typeof v === 'string') return v.trim() ? v : null;
+  if (!isRecord(v)) return null;
+  const selector = v['selector'];
+  if (typeof selector !== 'string' || !selector.trim()) return null;
+  const entry: CustomFilterEntry = { selector };
+  if (typeof v['label'] === 'string' && v['label'].trim()) entry.label = v['label'];
+  if (typeof v['added'] === 'number' && Number.isFinite(v['added'])) entry.added = v['added'];
+  return entry;
+}
+
 export function normalizeCustomFilters(v: unknown): CustomFilters {
   const out: CustomFilters = {};
   if (!isRecord(v)) return out;
-  for (const [host, selectors] of Object.entries(v)) {
-    if (isStringArray(selectors) && selectors.length > 0) out[host] = selectors;
+  for (const [host, stored] of Object.entries(v)) {
+    if (!Array.isArray(stored)) continue;
+    const entries = stored
+      .map(normalizeFilterEntry)
+      .filter((e): e is StoredFilter => e !== null);
+    if (entries.length > 0) out[host] = entries;
   }
   return out;
 }

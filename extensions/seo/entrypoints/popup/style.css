@@ -101,25 +101,49 @@ body {
 }
 
 .popup {
-  width: 300px;
+  /* 320px, matching the other extensions in the family. Chrome sizes a popup to
+     its content, so this declared width IS the popup's width. */
+  width: 320px;
   padding: 12px;
 }
 
+/* Header is TWO rows, not one. Title + theme toggle are both fixed-size and
+   together already claim ~200px of the 296px content box; squeezing the hostname
+   in beside them left it ~75px — a cramped row where all three items lose. The
+   hostname gets its own full-width row instead, so it has the whole popup to
+   ellipsize into and the theme toggle is never crushed. */
 .head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 10px;
 }
 
+.head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* `flex: none` is the load-bearing rule. Flex distributes an overflow across
+   EVERY shrinkable item in proportion to its base size — it does not exhaust one
+   before touching the next — so with the default `flex-shrink: 1` the title
+   shrank too. The title has `overflow: visible`, so its automatic minimum size
+   is its MIN-CONTENT width (its widest word), leaving it free to shrink to one
+   word and wrap: "SEO & A11y" broke into "SEO / & / A11y" and the header grew to
+   three line boxes. Pinning the title stops that outright. */
 .head h1 {
   font-size: 14px;
   margin: 0;
+  flex: none;
+  white-space: nowrap;
 }
 
 .host {
-  flex: 1 1 auto;
+  /* Own row now, so it simply ellipsizes at the popup's width. `min-width: 0`
+     overrides the `min-width: auto` floor so the ellipsis can engage. */
+  min-width: 0;
   font-size: 11px;
   color: var(--text-dim);
   overflow: hidden;
@@ -127,15 +151,15 @@ body {
   white-space: nowrap;
 }
 
-/* Theme toggle (Auto/Light/Dark segmented control) in the header. */
+/* Theme toggle (Auto/Light/Dark segmented control) in the header. `flex: none`
+   so the hostname is what shrinks, never this. */
 .theme-toggle {
   display: flex;
   gap: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
-  flex: 0 0 auto;
-  align-self: center;
+  flex: none;
 }
 
 .theme-toggle__btn {
@@ -256,25 +280,294 @@ section h2 {
   color: var(--poor-fg);
 }
 
+/* ------------------------------------------------------------------ */
+/* Drill-down (progressive disclosure)                                */
+/*                                                                    */
+/* Every headline number is a disclosure BUTTON, not a dead end. The  */
+/* revealed region renders below the tile row so it gets the popup's  */
+/* full content width rather than a third of it; one open at a time,  */
+/* collapsed by default, so a user who only wants the counts pays no  */
+/* extra height. Everything is tap- and keyboard-driven — nothing     */
+/* here keys off :hover, because this ships to Firefox for Android.   */
+/* ------------------------------------------------------------------ */
+
+.statgroup {
+  /* The .stats row inside already carries the top margin. */
+  display: block;
+}
+
+/* A stat tile that is also a disclosure trigger. It keeps the tile's exact
+   geometry (so a row of expandable and plain tiles still lines up) and adds the
+   button reset plus a caret. ~56px tall: a comfortable touch target. */
+.stat--btn {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  padding-bottom: 12px;
+  position: relative;
+}
+
+.stat--btn:hover {
+  border-color: var(--accent);
+}
+
+.stat--btn .stat__value,
+.stat--btn .stat__label,
+.stat--btn .stat__severity {
+  display: block;
+}
+
+.stat__caret {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--accent-fg);
+}
+
+/* The revealed region. Full popup width, sitting under the row it belongs to. */
+.drill {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev);
+}
+
+/* The plain-language sentence that opens every drill-down — this is the answer
+   to "what IS this number?", which a bare count never gave. */
+.drill__gloss {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.drill__gloss:last-child {
+  margin-bottom: 0;
+}
+
+.drill__empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--good-fg);
+}
+
+/* SEO check rows — same class names and structure as the DevTools panel's
+   CheckRow (shared component, utils/report-ui.tsx), re-laid-out for 320px:
+   stacked instead of one wide baseline row. */
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.check {
+  padding: 5px 7px;
+  border-left: 3px solid var(--border);
+  margin-bottom: 4px;
+  background: var(--bg);
+  border-radius: 0 4px 4px 0;
+}
+
+.check:last-child {
+  margin-bottom: 0;
+}
+
+.check__severity {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.check__severity--ok {
+  border-color: var(--good);
+}
+.check__severity--warning {
+  border-color: var(--warn);
+}
+.check__severity--error {
+  border-color: var(--poor);
+}
+
+.check__label {
+  font-weight: 600;
+}
+
+.check__detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.severity--ok {
+  border-left-color: var(--good);
+}
+.severity--warning {
+  border-left-color: var(--warn);
+}
+.severity--error {
+  border-left-color: var(--poor);
+}
+
+/* a11y violation rows — shared ViolationRow, narrow layout. */
+.violations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.violation {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 0 4px 4px 0;
+  padding: 7px 8px;
+  margin-bottom: 6px;
+  background: var(--bg);
+}
+
+.violation:last-child {
+  margin-bottom: 0;
+}
+
+.violation__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.violation__help {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* How many elements this one rule actually hits — the count a user needs to
+   judge whether "1 violation" means one bad link or ninety. */
+.violation__count {
+  margin: 4px 0 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.violation__nodes {
+  list-style: none;
+  margin: 3px 0 5px;
+  padding: 0;
+  font-size: 10px;
+}
+
+.violation__nodes li {
+  padding: 1px 0;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.violation__more {
+  font-style: italic;
+}
+
+.violation__link {
+  font-size: 11px;
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.violation__link:hover {
+  text-decoration: underline;
+}
+
+.impact-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 8px;
+  color: var(--badge-fill-text);
+  flex: 0 0 auto;
+}
+
+.impact-badge--critical {
+  background: var(--poor);
+}
+.impact-badge--serious {
+  /* The warn fill is mid-orange (light) / yellow (dark); both need near-black
+     text regardless of theme, so it is pinned rather than using the token. */
+  background: var(--warn);
+  color: #202124;
+}
+.impact-badge--moderate {
+  background: var(--accent);
+}
+.impact-badge--minor {
+  background: var(--text-dim);
+}
+
 .impacts {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.impact {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 8px;
+/* Severity row: a full-width disclosure button that opens the violations at
+   that impact level (which is exactly what the user expected it to do), plus a
+   one-line definition of what axe means by that level. */
+.sev {
   border-left: 3px solid var(--border);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   background: var(--bg-elev);
   border-radius: 0 4px 4px 0;
 }
 
-.impact__name {
+.sev__btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* 32px tall — a tap target that works with a thumb on Firefox for Android. */
+  padding: 8px;
+  text-align: left;
+}
+
+.sev__caret {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.sev__name {
   text-transform: capitalize;
+}
+
+.sev__count {
+  margin-left: auto;
+}
+
+.sev .drill {
+  margin: 0 6px 6px;
 }
 
 .impact--critical {

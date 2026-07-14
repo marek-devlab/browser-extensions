@@ -11,7 +11,7 @@ import type { WebVital } from '@blur/core';
 import { rateVital } from '@blur/core';
 import { LOAF_BRIDGE_TAG, VITAL_BRIDGE_TAG, VITAL_NONCE_ATTR } from '../utils/protocol';
 import { LongFrameCollector } from '../utils/long-frames';
-import type { LongFrameSummary } from '../utils/perf-types';
+import type { LongFrameSummary, PerfWebVital, VitalDetail } from '../utils/perf-types';
 
 // Web Vitals collection. MUST run at document_start in the MAIN world (PLAN.md
 // §7.1): LCP/CLS/FCP replay already-fired entries via `buffered:true` from a
@@ -23,7 +23,7 @@ import type { LongFrameSummary } from '../utils/perf-types';
 
 const REGISTERED_FLAG = '__blurPerfVitalsRegistered__';
 
-function send(vital: WebVital): void {
+function send(vital: PerfWebVital): void {
   // Same-window bridge to the ISOLATED relay. Read the relay's per-load nonce
   // (set on the root element before any vital can fire, well after document_start)
   // and echo it so the relay can reject posts forged by other frames. Target the
@@ -44,6 +44,7 @@ function emit(
   value: number,
   unit: WebVital['unit'],
   attribution?: string,
+  detail?: VitalDetail,
 ): void {
   send({
     name,
@@ -53,6 +54,7 @@ function emit(
     // An empty attribution target means the element was removed from the DOM
     // after it was measured — treat it as no attribution.
     attribution: attribution ? attribution : undefined,
+    detail,
   });
 }
 
@@ -83,23 +85,75 @@ export default defineContentScript({
     // value still converges on exactly the same final number.
     const live = { reportAllChanges: true };
 
+    // Each callback forwards the attribution build's sub-part breakdown, not just
+    // the target selector. This is the difference between "CLS 0.130, needs
+    // improvement" (a grade the user can do nothing with) and "the largest shift
+    // moved <img.hero>, 0.118 of the 0.130" (a fix). The data was already being
+    // computed by web-vitals on every callback; we were simply discarding it.
     onLCP(
-      (m: LCPMetricWithAttribution) =>
-        emit('LCP', m.value, 'ms', m.attribution.target),
+      (m: LCPMetricWithAttribution) => {
+        const a = m.attribution;
+        emit('LCP', m.value, 'ms', a.target, {
+          lcp: {
+            ttfb: a.timeToFirstByte,
+            resourceLoadDelay: a.resourceLoadDelay,
+            resourceLoadDuration: a.resourceLoadDuration,
+            elementRenderDelay: a.elementRenderDelay,
+            url: a.url || undefined,
+          },
+        });
+      },
       live,
     );
     onINP(
-      (m: INPMetricWithAttribution) =>
-        emit('INP', m.value, 'ms', m.attribution.interactionTarget),
+      (m: INPMetricWithAttribution) => {
+        const a = m.attribution;
+        emit('INP', m.value, 'ms', a.interactionTarget, {
+          inp: {
+            interactionType: a.interactionType,
+            inputDelay: a.inputDelay,
+            processingDuration: a.processingDuration,
+            presentationDelay: a.presentationDelay,
+          },
+        });
+      },
       live,
     );
     onCLS(
-      (m: CLSMetricWithAttribution) =>
-        emit('CLS', m.value, 'score', m.attribution.largestShiftTarget),
+      (m: CLSMetricWithAttribution) => {
+        const a = m.attribution;
+        emit('CLS', m.value, 'score', a.largestShiftTarget, {
+          // largestShiftValue is absent only when no shift was recorded at all
+          // (CLS 0). Report what was measured; never substitute a placeholder.
+          cls:
+            a.largestShiftValue === undefined
+              ? undefined
+              : {
+                  largestShiftValue: a.largestShiftValue,
+                  largestShiftTime: a.largestShiftTime,
+                  loadState: a.loadState,
+                },
+        });
+      },
       live,
     );
-    onFCP((m: FCPMetricWithAttribution) => emit('FCP', m.value, 'ms'));
-    onTTFB((m: TTFBMetricWithAttribution) => emit('TTFB', m.value, 'ms'));
+    onFCP((m: FCPMetricWithAttribution) => {
+      const a = m.attribution;
+      emit('FCP', m.value, 'ms', undefined, {
+        fcp: { ttfb: a.timeToFirstByte, firstByteToFCP: a.firstByteToFCP },
+      });
+    });
+    onTTFB((m: TTFBMetricWithAttribution) => {
+      const a = m.attribution;
+      emit('TTFB', m.value, 'ms', undefined, {
+        ttfb: {
+          waitingDuration: a.waitingDuration,
+          dnsDuration: a.dnsDuration,
+          connectionDuration: a.connectionDuration,
+          requestDuration: a.requestDuration,
+        },
+      });
+    });
 
     // Long Animation Frames / Long Tasks — main-thread blocking with script
     // attribution. Chromium-only; the collector reports support so the panel can

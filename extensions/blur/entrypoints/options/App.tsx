@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { JSX, KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { BlurSettings, BlurSiteConfig, RevealMode } from '@blur/core';
+import type { BlurSettings, BlurSiteConfig, MaskStyle, RevealMode } from '@blur/core';
+import { clampMaskOpacity, safeMaskColor, solidMaskFilter } from '@blur/core';
 import { useSettings } from '../../utils/use-settings';
 import { useStorageItem } from '../../utils/use-storage-item';
 import { siteConfigsItem, imageSourceRulesItem, extensionPrefsItem } from '../../utils/storage';
@@ -42,6 +43,58 @@ const REVEAL_MODES: { value: RevealMode; label: string }[] = [
   { value: 'click', label: 'On click' },
   { value: 'never', label: 'Never' },
 ];
+
+const MASK_STYLES: { value: MaskStyle; label: string; hint: string }[] = [
+  {
+    value: 'blur',
+    label: 'Blur',
+    hint: 'Softens the content. Shape and colour still read through — you can tell a photo from a video.',
+  },
+  {
+    value: 'solid',
+    label: 'Solid colour',
+    hint: 'Paints an opaque rectangle over the content. Nothing about it survives, and it costs less to render than blur.',
+  },
+];
+
+/** Ready-made fills, so the common choices are one tap away on a phone. */
+const MASK_SWATCHES: { color: string; label: string }[] = [
+  { color: '#1f2430', label: 'Slate (default)' },
+  { color: '#000000', label: 'Black' },
+  { color: '#6b7280', label: 'Grey' },
+  { color: '#f2f3f5', label: 'Paper' },
+];
+
+/**
+ * The stand-in "photo" the mask preview obscures. Inline SVG, so the preview
+ * needs no network and no bundled asset — and it is a real replaced `<img>`, the
+ * element class the solid mask exists to cover.
+ */
+const SAMPLE_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='320' height='120'>" +
+    "<defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'>" +
+    "<stop offset='0' stop-color='#2b5cff'/><stop offset='1' stop-color='#9ad7ff'/>" +
+    '</linearGradient></defs>' +
+    "<rect width='320' height='120' fill='url(#s)'/>" +
+    "<circle cx='252' cy='30' r='15' fill='#ffe08a'/>" +
+    "<path d='M0 120 L70 50 L124 96 L176 38 L252 120 Z' fill='#1d3b2a'/>" +
+    "<path d='M118 120 L200 60 L288 120 Z' fill='#2f6b4a'/>" +
+    "</svg>",
+)}`;
+
+/** The exact CSS `filter` the engine would apply for these settings. */
+function maskFilterFor(blur: {
+  maskStyle: MaskStyle;
+  maskColor: string;
+  maskOpacity: number;
+  radius: number;
+}): string {
+  // solidMaskFilter is the SAME function the content script's stylesheet uses, so
+  // the preview cannot drift from what the page actually paints.
+  return blur.maskStyle === 'solid'
+    ? solidMaskFilter(blur.maskColor, blur.maskOpacity)
+    : `blur(${blur.radius}px)`;
+}
 
 /**
  * Normalize free-form user input into a bare hostname. A pasted
@@ -222,6 +275,168 @@ function PresetRow({
   );
 }
 
+/**
+ * Side-by-side "before / after": the same sample image, unmasked and with the
+ * user's live mask settings applied. "Solid, #1f2430, 80%" means nothing in the
+ * abstract; this shows it.
+ *
+ * The masked frame's background is the page background (`--bg`) on purpose: at an
+ * opacity below 100% that is exactly, and only, what shows through the fill.
+ */
+function MaskPreview({
+  blur,
+  radius,
+}: {
+  blur: BlurSettings;
+  radius: number;
+}): JSX.Element {
+  const filter = maskFilterFor({
+    maskStyle: blur.maskStyle,
+    maskColor: blur.maskColor,
+    maskOpacity: blur.maskOpacity,
+    radius,
+  });
+  return (
+    <div className="mask-preview">
+      <figure className="preview-fig">
+        <div className="preview-frame">
+          <img src={SAMPLE_IMAGE} alt="" />
+        </div>
+        <figcaption>Original</figcaption>
+      </figure>
+      <figure className="preview-fig">
+        <div className="preview-frame">
+          <img src={SAMPLE_IMAGE} alt="Preview of an image with your mask applied" style={{ filter }} />
+          {blur.showLabels && <span className="preview-chip">JPEG · 1200×800</span>}
+        </div>
+        <figcaption>
+          {blur.maskStyle === 'solid'
+            ? `Solid ${blur.maskColor} · ${Math.round(blur.maskOpacity * 100)}%`
+            : `Blur ${radius}px`}
+        </figcaption>
+      </figure>
+    </div>
+  );
+}
+
+/**
+ * Masking. The style is the primary choice and everything below it depends on it,
+ * so the dependent controls are rendered as a subordinate block and only the ones
+ * that DO something for the selected style are on screen. A radius slider under a
+ * solid mask, or a colour picker under a blur, would be a control that silently
+ * does nothing.
+ */
+function MaskSection({
+  blur,
+  radius,
+  onRadius,
+  setBlur,
+}: {
+  blur: BlurSettings;
+  radius: number;
+  onRadius: (next: number) => void;
+  setBlur: (patch: Partial<BlurSettings>) => void;
+}): JSX.Element {
+  const solid = blur.maskStyle === 'solid';
+  const style = MASK_STYLES.find((m) => m.value === blur.maskStyle);
+  const opacityPct = Math.round(clampMaskOpacity(blur.maskOpacity) * 100);
+  return (
+    <div className="subpanel">
+      <h2>How content is hidden</h2>
+      <div className="field">
+        <span id="opt-mask-label">Mask style</span>
+        <div className="mask-styles" role="group" aria-labelledby="opt-mask-label">
+          {MASK_STYLES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              className={blur.maskStyle === m.value ? 'seg on' : 'seg'}
+              aria-pressed={blur.maskStyle === m.value}
+              onClick={() => setBlur({ maskStyle: m.value })}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {style && <p className="note">{style.hint}</p>}
+
+      <MaskPreview blur={blur} radius={radius} />
+
+      <div className="subordinate">
+        {solid ? (
+          <>
+            <div className="field">
+              <span id="opt-swatch-label">Fill colour</span>
+              <div className="swatches" role="group" aria-labelledby="opt-swatch-label">
+                {MASK_SWATCHES.map((s) => (
+                  <button
+                    key={s.color}
+                    type="button"
+                    className={safeMaskColor(blur.maskColor) === s.color ? 'swatch on' : 'swatch'}
+                    style={{ background: s.color }}
+                    title={s.label}
+                    aria-label={s.label}
+                    aria-pressed={safeMaskColor(blur.maskColor) === s.color}
+                    onClick={() => setBlur({ maskColor: s.color })}
+                  />
+                ))}
+                {/* A native colour input is also the sanitizer: it can only ever
+                    produce `#rrggbb`, which is the one form the SVG filter accepts
+                    (see isSafeMaskColor). No free-text hex field, ever. */}
+                <input
+                  type="color"
+                  className="swatch-input"
+                  aria-label="Custom fill colour"
+                  value={safeMaskColor(blur.maskColor)}
+                  onChange={(e) => setBlur({ maskColor: e.target.value })}
+                />
+                <code className="swatch-hex">{safeMaskColor(blur.maskColor)}</code>
+              </div>
+            </div>
+            <label className="field">
+              <span>Fill opacity: {opacityPct}%</span>
+              <input
+                type="range"
+                min={50}
+                max={100}
+                step={5}
+                value={opacityPct}
+                aria-label="Fill opacity, as a percentage"
+                onChange={(e) => setBlur({ maskOpacity: clampMaskOpacity(Number(e.target.value) / 100) })}
+              />
+            </label>
+            <p className="note">
+              This does <strong>not</strong> let the hidden content show through. Below 100% you see
+              the <strong>page's own background</strong> through the fill — never the image or video,
+              which is never drawn at all. Lower it only to make the mask blend into a page.
+            </p>
+          </>
+        ) : (
+          <>
+            <PresetRow radius={radius} onPreset={(name) => onRadius(BLUR_PRESETS[name].radius)} />
+            <label className="field">
+              <span>Radius: {radius}px</span>
+              <input
+                type="range"
+                min={4}
+                max={40}
+                value={radius}
+                aria-label="Blur radius in pixels"
+                onChange={(e) => onRadius(Number(e.target.value))}
+              />
+            </label>
+            <p className="note">
+              A blur is a visual softening, not a guarantee: a heavily blurred picture can still be
+              recognisable. Choose <strong>Solid colour</strong> when it must not be readable at all.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BlurPanel({
   settings,
   setBlur,
@@ -261,29 +476,74 @@ function BlurPanel({
           still read it aloud and it remains findable via Ctrl+F.
         </p>
       )}
-      <PresetRow radius={radius} onPreset={(name) => onRadiusChange(BLUR_PRESETS[name].radius)} />
-      <label className="field">
-        <span>Blur strength: {radius}px</span>
-        <input
-          type="range"
-          min={4}
-          max={40}
-          value={radius}
-          aria-label="Blur strength in pixels"
-          onChange={(e) => onRadiusChange(Number(e.target.value))}
-        />
-      </label>
-      <label className="field">
-        <span>Show blurred content</span>
-        <select value={settings.blur.reveal} onChange={(e) => setBlur({ reveal: e.target.value as RevealMode })}>
-          {REVEAL_MODES.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <RevealTimeoutField />
+
+      <MaskSection
+        blur={settings.blur}
+        radius={radius}
+        onRadius={onRadiusChange}
+        setBlur={setBlur}
+      />
+
+      <div className="subpanel">
+        <h2>Revealing</h2>
+        <label className="field">
+          <span>Show blurred content</span>
+          <select value={settings.blur.reveal} onChange={(e) => setBlur({ reveal: e.target.value as RevealMode })}>
+            {REVEAL_MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {settings.blur.reveal === 'hover' && (
+          <p className="note">
+            On touch devices nothing can hover, so <strong>On hover</strong> automatically becomes
+            tap-to-reveal there — hidden content is never a dead end on a phone.
+          </p>
+        )}
+        <RevealTimeoutField />
+        <label className="field">
+          <span>
+            Re-hide when I switch away
+            <span className="sub-line">
+              Instantly hides everything you revealed as soon as the tab is in the background or the
+              window loses focus — for when you are screen-sharing, or someone walks up.
+            </span>
+          </span>
+          <span className="switch">
+            <input
+              type="checkbox"
+              aria-label="Re-hide revealed content when the tab or window loses focus"
+              checked={settings.blur.rehideOnBlur}
+              onChange={(e) => setBlur({ rehideOnBlur: e.target.checked })}
+            />
+            <span className="slider" />
+          </span>
+        </label>
+      </div>
+
+      <div className="subpanel">
+        <h2>Labels</h2>
+        <label className="field">
+          <span>
+            Label what is hidden
+            <span className="sub-line">
+              Puts a small chip on each masked element naming what is underneath — "JPEG · 1200×800",
+              "MP4 · 0:42" — so you can tell items apart without revealing them.
+            </span>
+          </span>
+          <span className="switch">
+            <input
+              type="checkbox"
+              aria-label="Show a label chip on each masked element"
+              checked={settings.blur.showLabels}
+              onChange={(e) => setBlur({ showLabels: e.target.checked })}
+            />
+            <span className="slider" />
+          </span>
+        </label>
+      </div>
     </section>
   );
 }
@@ -670,6 +930,7 @@ function SiteOverrideRow({
   onRemove: () => void;
 }): JSX.Element {
   const effective = { ...globalBlur, ...config?.blur };
+  const solid = effective.maskStyle === 'solid';
   return (
     <div className="override-row">
       <div className="override-head">
@@ -691,17 +952,55 @@ function SiteOverrideRow({
           </label>
         ))}
       </div>
-      <label className="field">
-        <span>Radius: {effective.radius}px</span>
-        <input
-          type="range"
-          min={4}
-          max={40}
-          value={effective.radius}
-          aria-label={`Blur radius on ${host}`}
-          onChange={(e) => onChange({ blur: { radius: Number(e.target.value) } })}
-        />
-      </label>
+      {/* Mask STYLE is per-site: "solid on the work intranet, blur everywhere else"
+          is the whole reason overrides exist. The fill COLOUR and OPACITY are not —
+          they are one global look, and per-site copies of them would be four more
+          controls per row for no real use. The note below says so rather than
+          leaving a colour control here that quietly edits the global value. */}
+      <div className="field">
+        <span id={`ov-mask-${host}`}>Mask style</span>
+        <div className="mask-styles" role="group" aria-labelledby={`ov-mask-${host}`}>
+          {MASK_STYLES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              className={effective.maskStyle === m.value ? 'seg on' : 'seg'}
+              aria-pressed={effective.maskStyle === m.value}
+              aria-label={`${m.label} mask on ${host}`}
+              onClick={() => onChange({ blur: { maskStyle: m.value } })}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="subordinate">
+        {solid ? (
+          <p className="note">
+            Filled with{' '}
+            <span
+              className="swatch-dot"
+              style={{ background: safeMaskColor(effective.maskColor) }}
+              aria-hidden="true"
+            />{' '}
+            <code>{safeMaskColor(effective.maskColor)}</code> at{' '}
+            {Math.round(clampMaskOpacity(effective.maskOpacity) * 100)}%. Colour and opacity are
+            global — change them under <strong>Blur</strong>.
+          </p>
+        ) : (
+          <label className="field">
+            <span>Radius: {effective.radius}px</span>
+            <input
+              type="range"
+              min={4}
+              max={40}
+              value={effective.radius}
+              aria-label={`Blur radius on ${host}`}
+              onChange={(e) => onChange({ blur: { radius: Number(e.target.value) } })}
+            />
+          </label>
+        )}
+      </div>
     </div>
   );
 }

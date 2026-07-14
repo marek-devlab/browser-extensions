@@ -1,0 +1,357 @@
+/* Vitals section. Its own stylesheet so it does not touch the shared popup
+   layout/header rules. Reuses the popup's token set (--good/--warn/--poor,
+   --text-dim, --mono …) defined in style.css — no new colours are introduced.
+
+   The popup is 320px wide and already scrolls, so the collapsed state is the
+   budget: one line per metric, exactly as before. Explanations and phase
+   breakdowns live inside <details> and cost nothing until opened. The single
+   exception is the "What to fix" block, which is shown WITHOUT expanding for any
+   metric that is not `good` — a bad score the user has to go hunting to explain
+   is the bug we are fixing. */
+
+.vitals-section h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 12px 0 4px;
+}
+
+.vitals-hint {
+  margin: 0 0 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.vlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+}
+
+.v--missing {
+  border-left-color: var(--border);
+}
+
+.v__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.v__summary::-webkit-details-marker {
+  display: none;
+}
+
+.v__summary--static {
+  cursor: default;
+}
+
+/* A disclosure triangle, drawn ourselves so it sits at the end of the row and
+   rotates on open. `::marker` cannot be positioned, hence the custom one. */
+.v__details > .v__summary::after {
+  content: '';
+  flex: none;
+  inline-size: 5px;
+  block-size: 5px;
+  margin-inline-start: 2px;
+  border-inline-end: 1.5px solid var(--text-dim);
+  border-block-end: 1.5px solid var(--text-dim);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.12s ease;
+}
+
+.v__details[open] > .v__summary::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.v__head {
+  /* min-width:0 lets the long metric name ellipsize instead of widening the row
+     past the 320px popup. */
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.v__abbr {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* The whole point: the acronym never appears without its expansion. */
+.v__full {
+  font-size: 10px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v__nums {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.v__value {
+  font-size: 14px;
+}
+
+.v__rating {
+  font-size: 10px;
+}
+
+.rating--good {
+  border-left-color: var(--good);
+}
+.rating--good .v__rating {
+  color: var(--good-fg);
+}
+.rating--needs-improvement {
+  border-left-color: var(--warn);
+}
+.rating--needs-improvement .v__rating {
+  color: var(--warn-fg);
+}
+.rating--poor {
+  border-left-color: var(--poor);
+}
+.rating--poor .v__rating {
+  color: var(--poor-fg);
+}
+
+.v__body {
+  padding: 0 8px 8px;
+}
+
+.v__what {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.v__what--pad {
+  padding: 0 8px 8px;
+}
+
+.v__thresh {
+  margin: 0 0 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.v__res {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Phase breakdown: label / proportional bar / value. */
+.phases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.phase {
+  display: grid;
+  grid-template-columns: 1fr 52px auto;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.phase__label {
+  font-size: 10px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phase__bar {
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.phase__fill {
+  display: block;
+  block-size: 100%;
+  background: var(--accent);
+}
+
+.phase__value {
+  font-size: 10px;
+  min-inline-size: 46px;
+  text-align: end;
+}
+
+/* "What to fix" — the actionable half. Always visible on a non-good metric. */
+.v__fix {
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.rating--needs-improvement .v__fix {
+  border-color: var(--warn);
+}
+
+.rating--poor .v__fix {
+  border-color: var(--poor);
+}
+
+.v__fix-title {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+
+.v__fix-text {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.v__fix-text:last-child {
+  margin-bottom: 0;
+}
+
+.v__fix-text code {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* The offending selector. It can be very long, so it wraps rather than
+   overflowing the 320px popup — and it stays selectable so it can be pasted
+   into a devtools console. */
+.v__target {
+  display: block;
+  margin: 0 0 5px;
+  padding: 3px 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Collapsible blocks below the metric list (load timeline, main-thread blocking). */
+.block {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev);
+}
+
+.block__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.block__summary::-webkit-details-marker {
+  display: none;
+}
+
+.block__summary::after {
+  content: '';
+  flex: none;
+  inline-size: 5px;
+  block-size: 5px;
+  border-inline-end: 1.5px solid var(--text-dim);
+  border-block-end: 1.5px solid var(--text-dim);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.12s ease;
+}
+
+.block[open] > .block__summary::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.block__hint {
+  margin-inline-start: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.block__hint--warn {
+  color: var(--warn-fg);
+}
+
+.block__body {
+  padding: 0 8px 8px;
+}
+
+.trows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.trow:last-child {
+  border-bottom: none;
+}
+
+.trow__label {
+  color: var(--text-dim);
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trow__label--url {
+  font-size: 10px;
+}
+
+.trow__value {
+  flex: none;
+}

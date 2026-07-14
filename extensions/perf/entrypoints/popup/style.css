@@ -63,20 +63,41 @@ body {
   padding: 12px;
 }
 
+/* Header: title left, hostname right.
+   `align-items: center`, NOT `baseline`: `.host` has `overflow: hidden` (needed
+   for the ellipsis), and a flex item with a non-visible overflow has its
+   baseline SYNTHESIZED from its bottom margin edge rather than taken from its
+   text — so under `baseline` the hostname sat low and shifted with any
+   font-size change. Centre alignment is deterministic. */
 .head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 10px;
 }
 
+/* `flex: none` is the load-bearing rule. Flex distributes an overflow across
+   EVERY shrinkable item in proportion to its base size — it does not exhaust one
+   before touching the next — so with the default `flex-shrink: 1` a long
+   hostname shrank the title too. The title has `overflow: visible`, so its
+   automatic minimum size is its MIN-CONTENT width (its widest word), leaving it
+   free to shrink to one word and wrap: "Page Insight" became "Page / Insight",
+   doubling the header's height. Pinning the title makes the hostname the only
+   thing that can give, which it does by ellipsizing. */
 .head h1 {
   font-size: 14px;
   margin: 0;
+  flex: none;
+  white-space: nowrap;
 }
 
 .host {
+  /* `min-width: 0` overrides the `min-width: auto` floor so the hostname can
+     shrink below its min-content width and the ellipsis actually engages. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: end;
   font-size: 11px;
   color: var(--text-dim);
   overflow: hidden;

@@ -21,6 +21,7 @@ import {
   ALL_SITES,
   addFilter,
   removeFilter,
+  entriesFor,
   parseCosmeticFilters,
   mergeParsed,
   toFilterText,
@@ -748,6 +749,12 @@ function FiltersPanel(): JSX.Element {
         choice — unlike the generic list, which only turns on at Aggressive. Use{' '}
         <b>Block an element on this page</b> in the toolbar popup to pick visually.
       </p>
+      <p className="note">
+        To bring one back you do not need this page: right after you hide an
+        element the page itself offers <b>Undo</b>, and the toolbar popup lists
+        everything you have hidden <em>on the site you are on</em> with a{' '}
+        <b>Restore</b> button for each. This tab is the full, cross-site list.
+      </p>
 
       <h3>Add a rule</h3>
       <div className="field filter-add">
@@ -780,13 +787,19 @@ function FiltersPanel(): JSX.Element {
             <li key={h} className="filter-host">
               <div className="filter-host-name">{h === ALL_SITES ? 'All sites' : h}</div>
               <ul>
-                {(filters[h] ?? []).map((sel) => (
-                  <li key={sel} className="filter-row">
-                    <code>{sel}</code>
+                {/* Rules picked with the element picker carry the human label
+                    captured at pick time; ones typed here or pasted have none and
+                    degrade to the selector alone — exactly the old rendering. */}
+                {entriesFor(filters, h).map((entry) => (
+                  <li key={entry.selector} className="filter-row">
+                    <span className="filter-what">
+                      {entry.label && <span className="filter-label">{entry.label}</span>}
+                      <code>{entry.selector}</code>
+                    </span>
                     <button
                       type="button"
-                      onClick={() => update(removeFilter(filters, h, sel))}
-                      aria-label={`Remove ${sel} from ${h}`}
+                      onClick={() => update(removeFilter(filters, h, entry.selector))}
+                      aria-label={`Remove ${entry.selector} from ${h}`}
                     >
                       Remove
                     </button>

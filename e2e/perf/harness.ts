@@ -3,8 +3,13 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { chromium, type BrowserContext, type Worker, type Page } from '@playwright/test';
-import type { PageInsight, WebVital } from '@blur/core';
-import type { LongFrameSummary, TimedNetworkEntry } from '../../extensions/perf/utils/perf-types';
+import type { PageInsight } from '@blur/core';
+import type {
+  LongFrameSummary,
+  PageTiming,
+  PerfWebVital,
+  TimedNetworkEntry,
+} from '../../extensions/perf/utils/perf-types';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const EXT_PATH = path.resolve(HERE, '../../extensions/perf/.output/chrome-mv3');
@@ -71,11 +76,19 @@ export async function tabIdsNow(extPage: Page): Promise<number[]> {
   });
 }
 
-export async function getWebVitals(extPage: Page, tabId: number): Promise<WebVital[]> {
+/** Vitals as the extension actually puts them on the wire: score + attribution detail. */
+export async function getWebVitals(extPage: Page, tabId: number): Promise<PerfWebVital[]> {
   return extPage.evaluate(
     (id: number) => chrome.runtime.sendMessage({ type: 'getWebVitals', tabId: id }),
     tabId,
-  ) as Promise<WebVital[]>;
+  ) as Promise<PerfWebVital[]>;
+}
+
+export async function getPageTiming(extPage: Page, tabId: number): Promise<PageTiming | null> {
+  return extPage.evaluate(
+    (id: number) => chrome.runtime.sendMessage({ type: 'getPageTiming', tabId: id }),
+    tabId,
+  ) as Promise<PageTiming | null>;
 }
 
 export async function getPageInsight(extPage: Page, tabId: number): Promise<PageInsight | null> {

@@ -774,11 +774,46 @@ summary:focus-visible {
   color: var(--badge-fill-text);
 }
 
+/* How many elements this one rule actually hits — "1 violation" is a very
+   different problem when it is one link versus ninety. */
+.violation__count {
+  margin: 5px 0 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
 .violation__nodes {
   list-style: none;
   margin: 6px 0;
   padding: 0;
   font-size: 11px;
+}
+
+.violation__more {
+  font-style: italic;
+}
+
+/* Legend: what axe's impact levels actually mean, shown once above the list. */
+.impact-legend {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.impact-legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.impact-legend__text {
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 .violation__nodes li {

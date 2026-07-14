@@ -46,9 +46,61 @@ export interface BlurSettings {
   reveal: RevealMode;
   /** Keywords/regex sources for the text blur feature. */
   textPatterns: string[];
+  /** How matched content is obscured. See MaskStyle. */
+  maskStyle: MaskStyle;
+  /** Fill colour for `solid` masking. Any CSS colour; stored as hex. */
+  maskColor: string;
+  /**
+   * Opacity of the `solid` fill, 0.5–1.
+   *
+   * SAFETY: this is NOT a "see through to the content" control. The solid mask
+   * is an SVG `feFlood` that DISCARDS the source graphic entirely, so the media
+   * underneath is never rasterized at any opacity. Below 1 you see the PAGE
+   * BACKGROUND through the mask — never the hidden image or video. Anything
+   * else would mean compositing the flood OVER the source, which is exactly the
+   * leak this design refuses.
+   */
+  maskOpacity: number;
+  /**
+   * Show a small chip on each masked element naming what is hidden underneath
+   * (e.g. "JPEG · 1200×800", "MP4 · 0:42"). Off by default.
+   */
+  showLabels: boolean;
+  /**
+   * Re-hide everything the user revealed as soon as the tab is backgrounded or
+   * the window loses focus. The point of this extension is that content is not
+   * on screen when someone else looks at it; a reveal that survives an alt-tab
+   * defeats that.
+   */
+  rehideOnBlur: boolean;
 }
 
+/**
+ * How matched content is obscured.
+ *
+ * - `blur`  — Gaussian blur. Shape and colour still read through, which is often
+ *   what you want (you can tell a video from a photo) and sometimes exactly what
+ *   you don't (a blurred image can still be recognisable, and blur is reversible
+ *   in principle).
+ * - `solid` — a flat, fully opaque rectangle of `maskColor` covering the
+ *   element's box. Nothing about the content survives, and it is CHEAPER to
+ *   render than blur (no multi-pass convolution), which matters on mobile GPUs.
+ */
+export type MaskStyle = 'blur' | 'solid';
+
 export type RevealMode = 'hover' | 'click' | 'never';
+
+/** What a masked element is hiding — rendered into the label chip. */
+export interface MaskedMediaInfo {
+  /** Uppercase container/codec hint derived from the URL or element: JPEG, MP4… */
+  format: string;
+  /** Intrinsic pixel size, when the element exposes it. */
+  width: number | null;
+  height: number | null;
+  /** Video/audio duration in seconds, when known. */
+  durationSec: number | null;
+  kind: 'image' | 'video' | 'background' | 'text';
+}
 
 export interface BlurExtensionSettings {
   enabled: boolean;

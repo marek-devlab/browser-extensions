@@ -67,10 +67,20 @@ body {
   justify-content: space-between;
 }
 
-/* The global master switch sits above the per-site one and reads as the title. */
+/* The text block beside each switch. `min-width: 0` overrides the `min-width:
+   auto` floor a flex item gets by default; without it the block cannot shrink
+   below its min-content width, so a long hostname pushes the switch out of the
+   popup instead of ellipsizing. */
+.row > div {
+  min-width: 0;
+}
+
+/* The global master switch sits above the per-site one and reads as the title.
+   `nowrap` so the product name can never wrap onto a second line. */
 .master .host {
   font-weight: 700;
   font-size: 15px;
+  white-space: nowrap;
 }
 
 /* Per-site toggle is a distinct carded row so it can't be mistaken for the
@@ -82,10 +92,14 @@ body {
   padding: 8px 10px;
 }
 
+/* Ellipsize the hostname rather than `word-break: break-all`, which split real
+   hostnames mid-word across several lines and grew the card. */
 .site .host {
   font-weight: 600;
   font-size: 13px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sub {
@@ -297,6 +311,70 @@ body {
 .seg:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Mask style — the primary masking choice, and the only one in the popup. The
+   two options split the row so each is a full-width-ish tap target (Firefox for
+   Android is a real target; 34px is the smallest that stays comfortable in a
+   320px popup). */
+.mask-styles {
+  display: inline-flex;
+  gap: 4px;
+  flex: 1;
+  max-width: 160px;
+}
+
+.mask-styles .seg {
+  flex: 1;
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+/* Fill colour for the solid mask, shown INSTEAD of the blur radius controls when
+   the solid mask is selected — never alongside them. Chips are smaller than the
+   32px ones in Settings: this row shares a 320px popup with its own label, so it
+   is sized to fit on one line rather than wrap. */
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+
+.swatch.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The native picker IS the sanitizer — it can only emit #rrggbb. */
+.swatch-input {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+  flex: none;
+}
+
+/* Global re-hide switch: label plus a secondary line, so top-align the switch. */
+.field.rehide {
+  align-items: flex-start;
+}
+
+.field.rehide .sub {
+  display: block;
+  margin-top: 1px;
 }
 
 .linkbtn {

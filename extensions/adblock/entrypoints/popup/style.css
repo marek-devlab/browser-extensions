@@ -60,9 +60,27 @@ body {
   justify-content: space-between;
 }
 
+/* The text block beside each switch. `min-width: 0` overrides the `min-width:
+   auto` floor a flex item gets by default; without it the block cannot shrink
+   below its min-content width, so a long hostname pushes the switch out of the
+   popup instead of ellipsizing. */
+.row > div {
+  min-width: 0;
+}
+
+/* `nowrap` so the product name can never wrap onto a second line. */
 .header .host {
   font-weight: 600;
   font-size: 14px;
+  white-space: nowrap;
+}
+
+/* The current page's hostname — the one genuinely unbounded string in the popup,
+   so it is the thing that ellipsizes. */
+.site-row .host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sub {
@@ -407,5 +425,108 @@ body {
   font-size: 12px;
 }
 .site-tools .pick-btn:hover {
+  border-color: var(--accent);
+}
+
+/* "Hidden by you on this site" — the deferred-undo list. Each row is a human
+   description captured at pick time (never a bare CSS selector, unless that is
+   genuinely all we have), plus two real buttons. Buttons, not hover: this has to
+   work on Firefox for Android, where there is no hover at all. */
+.hidden-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+.hidden-desc {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hidden-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hidden-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--sub);
+}
+
+.hidden-meta code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hidden-tag {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hidden-actions {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+.hidden-actions button {
+  /* 28px + the popup's own padding keeps this a comfortable touch target on a
+     phone without making a 320px popup feel like a form. */
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.hidden-actions button:hover {
+  border-color: var(--accent);
+}
+
+.hidden-actions .restore-btn {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.restore-all-btn {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.restore-all-btn:hover {
   border-color: var(--accent);
 }

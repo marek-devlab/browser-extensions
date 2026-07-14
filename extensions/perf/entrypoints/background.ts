@@ -1,7 +1,12 @@
 import { defineBackground, browser } from '#imports';
 import type { PageInsight, WebVital } from '@blur/core';
 import type { MeasureResult, PerfMessage } from '../utils/protocol';
-import type { LongFrameSummary, TimedNetworkEntry } from '../utils/perf-types';
+import type {
+  LongFrameSummary,
+  PageTiming,
+  PerfWebVital,
+  TimedNetworkEntry,
+} from '../utils/perf-types';
 import { emptyLongFrameSummary } from '../utils/perf-types';
 import { measureExactBytes } from '../utils/debugger-bytes';
 
@@ -12,17 +17,20 @@ import { measureExactBytes } from '../utils/debugger-bytes';
 // no exact path and falls back to Resource Timing).
 
 interface TabState {
-  vitals: Map<WebVital['name'], WebVital>;
+  vitals: Map<WebVital['name'], PerfWebVital>;
   insight: PageInsight | null;
   entries: TimedNetworkEntry[];
+  /** Navigation Timing phases; null until the page reports them. */
+  timing: PageTiming | null;
   longFrames: LongFrameSummary;
 }
 
 /** JSON-serialisable mirror of TabState (a Map can't be stored directly). */
 interface StoredTabState {
-  vitals: WebVital[];
+  vitals: PerfWebVital[];
   insight: PageInsight | null;
   entries: TimedNetworkEntry[];
+  timing: PageTiming | null;
   longFrames: LongFrameSummary;
 }
 
@@ -67,6 +75,7 @@ export default defineBackground({
           vitals: new Map(),
           insight: null,
           entries: [],
+          timing: null,
           longFrames: emptyLongFrameSummary(),
         };
         tabs.set(tabId, s);
@@ -86,6 +95,7 @@ export default defineBackground({
           vitals: [...cur.vitals.values()],
           insight: cur.insight,
           entries: cur.entries,
+          timing: cur.timing,
           longFrames: cur.longFrames,
         };
         // Fire-and-forget: a dropped write is re-sent on the next push, and the
@@ -129,6 +139,8 @@ export default defineBackground({
           vitals: new Map(stored.vitals.map((v) => [v.name, v])),
           insight: stored.insight,
           entries: stored.entries,
+          // Records written before this field existed rehydrate with no timing.
+          timing: stored.timing ?? null,
           longFrames: stored.longFrames,
         };
         tabs.set(tabId, s);
@@ -204,6 +216,16 @@ export default defineBackground({
             sendResponse(true);
             return true;
           }
+          case 'perf:timing': {
+            const tabId = sender.tab?.id;
+            if (tabId !== undefined) {
+              const s = stateFor(tabId);
+              s.timing = message.timing;
+              persist(tabId, s);
+            }
+            sendResponse(true);
+            return true;
+          }
           case 'perf:longframes': {
             const tabId = sender.tab?.id;
             if (tabId !== undefined) {
@@ -228,6 +250,9 @@ export default defineBackground({
             void getState(message.tabId).then((s) =>
               sendResponse(s?.entries ?? []),
             );
+            return true;
+          case 'getPageTiming':
+            void getState(message.tabId).then((s) => sendResponse(s?.timing ?? null));
             return true;
           case 'getLongFrames':
             void getState(message.tabId).then((s) =>

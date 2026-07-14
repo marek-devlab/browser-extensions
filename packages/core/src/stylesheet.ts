@@ -1,5 +1,52 @@
+import { clampMaskOpacity, safeMaskColor } from './settings';
 import type { DomRule, RuleAction } from './dom-rule-engine';
-import type { RevealMode } from './types';
+import type { MaskStyle, RevealMode } from './types';
+
+/**
+ * Build the CSS `filter` value that paints an exact, opaque rectangle over an
+ * element — including replaced elements (`<img>`, `<video>`), where none of the
+ * obvious techniques work.
+ *
+ * WHY AN SVG FILTER, AND WHY A SELF-CONTAINED data: URI — all four alternatives
+ * were measured in real Chromium AND real Firefox (Firefox for Android is the
+ * only true mobile extension target), sampling actual painted pixels:
+ *
+ *   - `::after` overlay          — does not render on replaced elements at all.
+ *   - `background-color`         — paints BEHIND the raster; the image wins.
+ *   - `content: url(<svg rect>)` — works on <img>, but Firefox still paints the
+ *                                  video: it LEAKS on <video>.
+ *   - `filter: brightness(0)`    — black only, and unreliable on <img>.
+ *   - `filter: url(#id)`, with the <filter> injected into the page document —
+ *     works in the light DOM and **LEAKS THE IMAGE inside a shadow root**: a
+ *     fragment reference resolves against the tree the element lives in, and
+ *     this engine deliberately reaches into shadow roots. Measured: the source
+ *     image rendered unmasked. That is a privacy failure, not a cosmetic bug.
+ *
+ * A `data:` URI carries its own filter definition, so it is immune to shadow-DOM
+ * scoping, needs nothing injected into the page, and survives a strict CSP
+ * (verified against `default-src 'self'`). `feFlood` alone DISCARDS the source
+ * graphic — the media is never rasterized — which is what makes a sub-1 opacity
+ * safe: you see the page background through the mask, never the content.
+ *
+ * The filter region is pinned to the border box (0%/0%/100%/100%); the SVG
+ * default is -10%/+10%, which would bleed the fill outside the element.
+ */
+export function solidMaskFilter(color: string, opacity: number): string {
+  // `color` is user input interpolated into an SVG document. safeMaskColor only
+  // ever returns `#rrggbb`, so no quote or angle bracket can reach the markup.
+  const hex = safeMaskColor(color);
+  const op = clampMaskOpacity(opacity);
+  // Inside a CSS url(), a literal `%` starts an escape sequence and `#` starts
+  // the fragment — both must be percent-encoded, or the filter silently fails
+  // to parse and NOTHING is masked.
+  const enc = (s: string): string => s.replace(/%/g, '%25').replace(/#/g, '%23');
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg'>` +
+    `<filter id='m' x='0%' y='0%' width='100%' height='100%' color-interpolation-filters='sRGB'>` +
+    `<feFlood flood-color='${hex}' flood-opacity='${op}'/>` +
+    `</filter></svg>`;
+  return `url("data:image/svg+xml;utf8,${enc(svg)}#m")`;
+}
 
 /**
  * Attribute stamped on an element the user has explicitly revealed. Also used
@@ -15,6 +62,24 @@ export interface StylesheetOptions {
   reveal: RevealMode;
   /** Only rules scoped to this hostname (or unscoped) are emitted. */
   hostname: string;
+  /** `blur` (default) or an opaque `solid` fill. */
+  maskStyle?: MaskStyle;
+  /** Fill colour for `solid`. Sanitized to `#rrggbb` before it reaches the SVG. */
+  maskColor?: string;
+  maskOpacity?: number;
+}
+
+/**
+ * Downgrade `hover` to `click` where the primary pointer cannot hover.
+ *
+ * `reveal: 'hover'` is the default, and on a touch device it is a dead end: the
+ * content is masked and there is no gesture that unmasks it. Rather than leave
+ * mobile users stuck, a touch device gets tap-to-reveal. `canHover` is injected
+ * (not read from `window` here) so core stays DOM-free and the rule is testable.
+ */
+export function resolveRevealMode(reveal: RevealMode, canHover: boolean): RevealMode {
+  if (reveal === 'hover' && !canHover) return 'click';
+  return reveal;
 }
 
 export function ruleAppliesTo(rule: DomRule, hostname: string): boolean {
@@ -89,7 +154,14 @@ export function buildStylesheet(
   rules: readonly DomRule[],
   options: StylesheetOptions,
 ): string {
-  const { blurRadius, reveal, hostname } = options;
+  const {
+    blurRadius,
+    reveal,
+    hostname,
+    maskStyle = 'blur',
+    maskColor = '#1f2430',
+    maskOpacity = 1,
+  } = options;
   // A NaN/negative radius produces `blur(NaNpx)`, which the CSS parser drops —
   // silently disabling ALL blur. Clamp to a sane, finite range.
   const radius = Number.isFinite(blurRadius)
@@ -107,18 +179,38 @@ export function buildStylesheet(
 
   if (blurred.length > 0) {
     const sel = blurred.join(',\n');
+    // The masking primitive. `blur()` leaves shape and colour readable; `solid`
+    // floods the box with an opaque rectangle via an SVG feFlood filter (see
+    // solidMaskFilter — the only technique that holds on <img>, <video> AND
+    // inside shadow roots, in both engines).
+    //
+    // Either way it is ONE `filter` declaration, so masking stays a pure CSS
+    // effect applied before first paint and revealing stays `filter: none`.
     // `filter` promotes each match to its own compositing layer, so the radius
     // is deliberately fixed rather than scaled to element size.
+    const maskValue =
+      maskStyle === 'solid'
+        ? solidMaskFilter(maskColor, maskOpacity)
+        : `blur(${radius}px)`;
     out.push(
-      `${sel} {\n  filter: blur(${radius}px) !important;\n  transition: filter 120ms ease-out;\n}`,
+      `${sel} {\n  filter: ${maskValue} !important;\n  transition: filter 120ms ease-out;\n}`,
     );
 
     const revealSel = blurred.map((s) => `${s}[${REVEAL_ATTR}]`).join(',\n');
     out.push(`${revealSel} { filter: none !important; }`);
 
     if (reveal === 'hover') {
+      // TOUCH DEVICES HAVE NO HOVER. Firefox for Android is the suite's only
+      // real mobile target, and `reveal: 'hover'` is the DEFAULT — so on a phone
+      // this rule could never fire and blurred content was unrevealable. The
+      // media query keeps the hover affordance on pointer devices, and the
+      // caller (see resolveRevealMode) downgrades 'hover' to 'click' where the
+      // primary pointer cannot hover, so touch users get tap-to-reveal instead
+      // of a dead end.
       const hoverSel = blurred.map((s) => `${s}:hover`).join(',\n');
-      out.push(`${hoverSel} { filter: none !important; }`);
+      out.push(
+        `@media (hover: hover) and (pointer: fine) {\n${hoverSel} { filter: none !important; }\n}`,
+      );
     }
     if (reveal === 'click') {
       out.push(`${sel} { cursor: pointer; }`);

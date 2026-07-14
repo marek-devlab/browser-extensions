@@ -3,7 +3,7 @@ import type {
   BlurSettings,
   BlurSiteConfig,
 } from '@blur/core';
-import { DEFAULT_BLUR_SETTINGS } from '@blur/core';
+import { DEFAULT_BLUR_SETTINGS, clampMaskOpacity, isSafeMaskColor, safeMaskColor } from '@blur/core';
 import type { ImageSourceRules } from './storage';
 
 /* ====================================================================== */
@@ -83,7 +83,17 @@ export function presetForRadius(radius: number): PresetName | null {
 /* Feature 3 — keyboard shortcut: panic toggle                             */
 /* ====================================================================== */
 
-/** All media categories on, enabled, heavy radius — the panic state. */
+/**
+ * All media categories on, enabled, and masked as hard as the engine can — the
+ * panic state.
+ *
+ * Panic escalates to a SOLID mask, not merely a heavy blur. Panic exists for the
+ * moment someone is about to look at your screen, and a blur is a weak guarantee
+ * there: shape, colour and layout survive it, and a heavily blurred photo is
+ * still often recognisable. An opaque fill leaves nothing. Since `togglePanic`
+ * snapshots the previous settings and restores them verbatim, escalating the
+ * mask style costs the user nothing — their own choice comes back untouched.
+ */
 export function panicState(base: BlurExtensionSettings): BlurExtensionSettings {
   return {
     ...base,
@@ -94,6 +104,11 @@ export function panicState(base: BlurExtensionSettings): BlurExtensionSettings {
       video: true,
       posters: true,
       radius: BLUR_PRESETS.heavy.radius,
+      maskStyle: 'solid',
+      maskOpacity: 1,
+      // Labels stay OFF in panic: "JPEG · 1200×800" over a redacted box still
+      // tells a bystander that there IS something there worth hiding.
+      showLabels: false,
     },
   };
 }
@@ -153,8 +168,16 @@ function coercePartialBlur(raw: unknown): Partial<BlurSettings> {
   if (typeof raw !== 'object' || raw === null) return {};
   const o = raw as Record<string, unknown>;
   const out: Partial<BlurSettings> = {};
-  for (const key of ['images', 'video', 'posters', 'text'] as const) {
+  for (const key of ['images', 'video', 'posters', 'text', 'showLabels', 'rehideOnBlur'] as const) {
     if (typeof o[key] === 'boolean') out[key] = o[key];
+  }
+  if (o['maskStyle'] === 'solid' || o['maskStyle'] === 'blur') out.maskStyle = o['maskStyle'];
+  // A backup file is untrusted input, and maskColor is interpolated into an SVG
+  // data-URI filter. Only accept a literal #rrggbb — never pass a foreign string
+  // through to the stylesheet.
+  if (isSafeMaskColor(o['maskColor'])) out.maskColor = o['maskColor'];
+  if (typeof o['maskOpacity'] === 'number' && Number.isFinite(o['maskOpacity'])) {
+    out.maskOpacity = clampMaskOpacity(o['maskOpacity']);
   }
   if (typeof o['radius'] === 'number' && Number.isFinite(o['radius'])) {
     out.radius = Math.min(40, Math.max(4, o['radius']));
@@ -180,6 +203,16 @@ function coerceBlurSettings(raw: unknown): BlurSettings {
       : d.radius,
     reveal: reveal === 'hover' || reveal === 'click' || reveal === 'never' ? reveal : d.reveal,
     textPatterns: isStringArray(o['textPatterns']) ? o['textPatterns'] : [...d.textPatterns],
+    // Masking. An older backup predates these fields entirely, so every one falls
+    // back to the shipped default and a v1 file still imports cleanly.
+    maskStyle: o['maskStyle'] === 'solid' || o['maskStyle'] === 'blur' ? o['maskStyle'] : d.maskStyle,
+    // Untrusted input -> SVG data-URI. safeMaskColor is the sanitizer; a hostile
+    // or merely malformed colour degrades to the default rather than reaching the
+    // filter markup.
+    maskColor: safeMaskColor(o['maskColor']),
+    maskOpacity: typeof o['maskOpacity'] === 'number' ? clampMaskOpacity(o['maskOpacity']) : d.maskOpacity,
+    showLabels: typeof o['showLabels'] === 'boolean' ? o['showLabels'] : d.showLabels,
+    rehideOnBlur: typeof o['rehideOnBlur'] === 'boolean' ? o['rehideOnBlur'] : d.rehideOnBlur,
   };
 }
 

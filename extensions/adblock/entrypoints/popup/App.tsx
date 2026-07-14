@@ -13,6 +13,7 @@ import { useStorageItem } from '../../utils/use-storage-item';
 import { useHostAccess } from '../../utils/use-host-access';
 import {
   siteConfigsItem,
+  customFiltersItem,
   pauseUntilItem,
   installDateItem,
   rulesetStatusItem,
@@ -20,7 +21,14 @@ import {
 } from '../../utils/storage';
 import type { RulesetStatus } from '../../utils/storage';
 import { degradedNotice } from '../../utils/backends/rule-budget';
-import type { AdBlockSiteConfigX } from '../../utils/adblock-types';
+import type { AdBlockSiteConfigX, CustomFilters } from '../../utils/adblock-types';
+import {
+  ALL_SITES,
+  hiddenElementsFor,
+  removeFilter,
+  removeSiteFilters,
+} from '../../utils/custom-filters';
+import type { HiddenElement } from '../../utils/custom-filters';
 import { getDnrTabCounts } from '../../utils/matched-rules';
 import { formatCount } from '../../utils/format-count';
 
@@ -282,6 +290,37 @@ export function App(): JSX.Element {
     window.close();
   }
 
+  /* ---- Deferred undo: what YOUR filters are hiding on THIS site ----
+     The in-page toast covers "I just blocked the wrong thing". This covers the
+     other half: "I blocked something here last week and now the page looks
+     wrong." The popup is the surface the user already opens per-site, so the
+     answer belongs here rather than three clicks deep in Options. */
+  const { value: customFilters, update: setCustomFilters } = useStorageItem<CustomFilters>(
+    customFiltersItem,
+    {},
+  );
+  const hidden = onWebPage ? hiddenElementsFor(customFilters, hostname) : [];
+
+  // Restoring is just removing the rule: the content script's storage watcher
+  // re-applies in every open tab, so the element reappears live — no reload.
+  function restoreOne(entry: HiddenElement): void {
+    setCustomFilters(removeFilter(customFilters, entry.host, entry.selector));
+  }
+
+  function restoreAllHere(): void {
+    setCustomFilters(removeSiteFilters(customFilters, hostname));
+  }
+
+  // Flash the element in the page behind the popup. An ENHANCEMENT, never the
+  // only way to identify an entry — the stored label does that, and on Firefox
+  // for Android the popup covers the whole screen so nothing would be visible.
+  function peek(selector: string): void {
+    if (tabId < 0) return;
+    void browser.tabs.sendMessage(tabId, { type: 'peekElement', selector }).catch(() => {});
+  }
+
+  const siteScopedCount = hidden.filter((e) => e.host !== ALL_SITES).length;
+
   if (!loaded) return <main className="popup">Loading…</main>;
 
   return (
@@ -306,7 +345,10 @@ export function App(): JSX.Element {
 
       <section className="row site-row">
         <div>
-          <div className="host">{onWebPage ? hostname : 'This page'}</div>
+          {/* Ellipsized when long — `title` keeps the full hostname reachable. */}
+          <div className="host" title={onWebPage ? hostname : undefined}>
+            {onWebPage ? hostname : 'This page'}
+          </div>
           <div className="sub">
             {!onWebPage
               ? "Blocking doesn't run here"
@@ -348,6 +390,77 @@ export function App(): JSX.Element {
           >
             Block an element on this page…
           </button>
+        </section>
+      )}
+
+      {onWebPage && hidden.length > 0 && (
+        <section className="group hidden-block">
+          <h2>Hidden by you on this site</h2>
+          {/* Honesty: the rules are still stored, but nothing is being hidden right
+              now — don't let the list imply otherwise. Restoring still works. */}
+          {(!siteEnabled || cosmeticDisabled) && (
+            <p className="caveat">
+              Hiding is off on this site right now, so these are not applied.
+            </p>
+          )}
+          <ul className="hidden-list">
+            {hidden.map((entry) => {
+              const name = entry.label ?? entry.selector;
+              return (
+                <li
+                  key={`${entry.host} ${entry.selector}`}
+                  className="hidden-item"
+                  // Hover is a convenience only; the Show button below is the
+                  // real, touch- and keyboard-reachable affordance.
+                  onMouseEnter={() => peek(entry.selector)}
+                >
+                  <div className="hidden-desc">
+                    <span className="hidden-name" title={entry.selector}>
+                      {name}
+                    </span>
+                    <span className="hidden-meta">
+                      {entry.host === ALL_SITES && (
+                        <span className="hidden-tag">all sites</span>
+                      )}
+                      {/* Un-labelled (pre-existing, pasted or hand-typed) rules
+                          have nothing better to show than the selector, so it is
+                          already the name — don't repeat it underneath. */}
+                      {entry.label && <code>{entry.selector}</code>}
+                    </span>
+                  </div>
+                  <div className="hidden-actions">
+                    <button
+                      type="button"
+                      className="peek-btn"
+                      onClick={() => peek(entry.selector)}
+                      onFocus={() => peek(entry.selector)}
+                      aria-label={`Show where ${name} is on the page`}
+                    >
+                      Show
+                    </button>
+                    <button
+                      type="button"
+                      className="restore-btn"
+                      onClick={() => restoreOne(entry)}
+                      aria-label={`Restore ${name}`}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {siteScopedCount > 1 && (
+            <button
+              type="button"
+              className="restore-all-btn"
+              onClick={restoreAllHere}
+              aria-label={`Restore all ${siteScopedCount} elements hidden on ${hostname}`}
+            >
+              Restore all {siteScopedCount} on {hostname}
+            </button>
+          )}
         </section>
       )}
 

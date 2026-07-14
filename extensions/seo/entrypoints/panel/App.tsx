@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  A11yReport,
-  A11yViolation,
-  SeoCheck,
-  SeoSeverity,
-} from '@blur/core';
+import type { A11yReport } from '@blur/core';
+import {
+  A11Y_TERM,
+  CheckRow,
+  IMPACT_MEANING,
+  ViolationRow,
+} from '../../utils/report-ui';
 import {
   descriptionLengthStatus,
   findSkippedHeadingLevels,
@@ -635,25 +636,6 @@ function StructuredDataRow({ item }: { item: StructuredDataItem }) {
   );
 }
 
-/** Text label for a severity, so status is never conveyed by colour alone. */
-const SEVERITY_LABEL: Record<SeoSeverity, string> = {
-  ok: 'Pass',
-  warning: 'Warning',
-  error: 'Error',
-};
-
-function CheckRow({ check }: { check: SeoCheck }) {
-  return (
-    <li className={`check severity--${check.severity}`}>
-      <span className={`check__severity check__severity--${check.severity}`}>
-        {SEVERITY_LABEL[check.severity]}
-      </span>
-      <span className="check__label">{check.label}</span>
-      <span className="check__detail">{check.detail}</span>
-    </li>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Accessibility                                                      */
 /* ------------------------------------------------------------------ */
@@ -716,17 +698,36 @@ function A11yReportView({ report }: { report: A11yReport }) {
 
   return (
     <>
+      {/* The counts alone are unreadable to a non-expert ("what IS incomplete?"),
+          so each carries its plain-language definition as VISIBLE text. */}
       <div className="summary-bar">
         <Stat
           label="Violations"
           value={String(report.violations.length)}
           emphasis={report.violations.length > 0}
+          hint={A11Y_TERM.violations}
         />
-        <Stat label="Passes" value={String(report.passes)} />
-        <Stat label="Incomplete" value={String(report.incomplete)} />
+        <Stat label="Passes" value={String(report.passes)} hint={A11Y_TERM.passes} />
+        <Stat
+          label="Incomplete"
+          value={String(report.incomplete)}
+          hint={A11Y_TERM.incomplete}
+        />
       </div>
 
       <h3 className="section-title">Violations</h3>
+      {sorted.length > 0 && (
+        <ul className="impact-legend">
+          {(['critical', 'serious', 'moderate', 'minor'] as const)
+            .filter((i) => sorted.some((v) => v.impact === i))
+            .map((impact) => (
+              <li key={impact}>
+                <span className={`impact-badge impact-badge--${impact}`}>{impact}</span>
+                <span className="impact-legend__text">{IMPACT_MEANING[impact]}</span>
+              </li>
+            ))}
+        </ul>
+      )}
       {sorted.length === 0 ? (
         <p className="state">No violations detected by axe-core.</p>
       ) : (
@@ -737,34 +738,6 @@ function A11yReportView({ report }: { report: A11yReport }) {
         </ul>
       )}
     </>
-  );
-}
-
-function ViolationRow({ violation }: { violation: A11yViolation }) {
-  return (
-    <li className={`violation impact--${violation.impact}`}>
-      <div className="violation__head">
-        <span className={`impact-badge impact-badge--${violation.impact}`}>
-          {violation.impact}
-        </span>
-        <span className="violation__help">{violation.help}</span>
-      </div>
-      <ul className="violation__nodes">
-        {violation.nodes.map((n) => (
-          <li key={n} className="mono" title={n}>
-            {n}
-          </li>
-        ))}
-      </ul>
-      <a
-        className="violation__link"
-        href={violation.helpUrl}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {violation.id} — how to fix
-      </a>
-    </li>
   );
 }
 

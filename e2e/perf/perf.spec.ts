@@ -7,6 +7,7 @@ import {
   getPageInsight,
   getNetworkEntries,
   getLongFrames,
+  getPageTiming,
   waitFor,
   type Harness,
 } from './harness';
@@ -138,7 +139,7 @@ test('classifies same-origin, cross-origin+TAO (real bytes) and cross-origin no-
 // ---------------------------------------------------------------------------
 // #3 Web vitals: FCP/TTFB/LCP collected with correct ratings
 // ---------------------------------------------------------------------------
-test('collects FCP, TTFB and LCP with valid ratings', async () => {
+test('collects FCP, TTFB and LCP with valid ratings — and each carries its attribution breakdown', async () => {
   const { tabId } = await openFixture('/mixed');
   const vitals = await waitFor(
     () => getWebVitals(h.extPage, tabId),
@@ -153,6 +154,29 @@ test('collects FCP, TTFB and LCP with valid ratings', async () => {
     expect(['good', 'needs-improvement', 'poor']).toContain(v.rating);
     expect(v.value).toBeGreaterThanOrEqual(0);
   }
+
+  // A number and a grade are not actionable. Each metric must also arrive with
+  // the sub-part breakdown that says WHICH PHASE dominated — that is what lets the
+  // popup say "server response, 1.2 s of your 1.6 s LCP" instead of just "poor".
+  const lcp = vitals.find((v) => v.name === 'LCP')!;
+  expect(lcp.detail?.lcp, 'LCP must carry its four-phase breakdown').toBeTruthy();
+  const p = lcp.detail!.lcp!;
+  for (const phase of [p.ttfb, p.resourceLoadDelay, p.resourceLoadDuration, p.elementRenderDelay]) {
+    expect(typeof phase).toBe('number');
+    expect(phase).toBeGreaterThanOrEqual(0);
+  }
+  // The phases are a decomposition of the metric, so they must add back up to it.
+  const sum = p.ttfb + p.resourceLoadDelay + p.resourceLoadDuration + p.elementRenderDelay;
+  expect(Math.abs(sum - lcp.value)).toBeLessThan(2);
+  // …and name the element the user should actually go and look at.
+  expect(lcp.attribution, 'LCP should name its element').toBeTruthy();
+
+  const ttfb = vitals.find((v) => v.name === 'TTFB')!;
+  expect(ttfb.detail?.ttfb, 'TTFB must carry its DNS/connection/server breakdown').toBeTruthy();
+  expect(ttfb.detail!.ttfb!.requestDuration).toBeGreaterThanOrEqual(0);
+
+  const fcp = vitals.find((v) => v.name === 'FCP')!;
+  expect(fcp.detail?.fcp, 'FCP must carry its server-vs-render-blocking split').toBeTruthy();
 });
 
 // ---------------------------------------------------------------------------
@@ -187,6 +211,70 @@ test('unmeasuredRequests is 0 for an all-same-origin page and > 0 with a TAO-les
     (i) => !!i && i.unmeasuredRequests > 0,
   );
   expect(mixedInsight!.unmeasuredRequests).toBeGreaterThan(0);
+});
+
+// ---------------------------------------------------------------------------
+// Feature: CLS ATTRIBUTION — a bad score must name the element responsible.
+//
+// This is the test that proves the headline fix. The /shift fixture stages the
+// real bug (an image with no height that arrives late), and the extension has to
+// come back with more than a grade: the selector of the node that actually moved,
+// and the size of the worst single shift. Anything less and the popup could only
+// say "needs improvement", which is what the user complained about.
+// ---------------------------------------------------------------------------
+test('reports CLS with the DOM element that caused the largest shift', async () => {
+  const { page, tabId } = await openFixture('/shift');
+  const vitals = await waitFor(
+    () => getWebVitals(h.extPage, tabId),
+    (v) => v.some((x) => x.name === 'CLS' && x.value > 0),
+    { timeout: 20_000 },
+  );
+
+  const cls = vitals.find((v) => v.name === 'CLS');
+  expect(cls, 'CLS should be reported for a page that visibly shifts').toBeTruthy();
+  expect(cls!.value, 'a real layout shift must score above zero').toBeGreaterThan(0);
+  // A shift this big is exactly the case the popup must explain rather than grade.
+  expect(cls!.rating, 'this fixture shifts badly enough to fail').not.toBe('good');
+
+  // The actionable half: the browser must hand us a selector for the node that
+  // moved. Prove it is a REAL element, not a plausible-looking string, by resolving
+  // it back against the live page — that is the whole promise of the new UI ("the
+  // largest shift moved THIS element"), so a fabricated selector must fail here.
+  const target = cls!.attribution;
+  expect(target, 'CLS must carry an attribution target').toBeTruthy();
+  const resolves = await page.evaluate(
+    (sel) => !!document.querySelector(sel),
+    target as string,
+  );
+  expect(resolves, `CLS attribution "${target}" must resolve to a node on the page`).toBe(true);
+
+  // And the size of the worst single shift, so the UI can say how much of the total
+  // this one element is responsible for.
+  expect(cls!.detail?.cls?.largestShiftValue).toBeGreaterThan(0);
+  expect(cls!.detail!.cls!.largestShiftValue).toBeLessThanOrEqual(cls!.value + 1e-6);
+});
+
+// ---------------------------------------------------------------------------
+// Feature: Navigation Timing — the load timeline the popup shows
+// ---------------------------------------------------------------------------
+test('collects navigation timing with DOMContentLoaded and load, honestly null when absent', async () => {
+  const { tabId } = await openFixture('/mixed');
+  const timing = await waitFor(
+    () => getPageTiming(h.extPage, tabId),
+    (t) => !!t && t.load !== null,
+    { timeout: 15_000 },
+  );
+  expect(timing, 'page timing should be reported').toBeTruthy();
+  expect(timing!.domContentLoaded).not.toBeNull();
+  expect(timing!.load).toBeGreaterThan(0);
+  expect(timing!.load!).toBeGreaterThanOrEqual(timing!.domContentLoaded!);
+  expect(timing!.redirectMasked).toBe(false);
+  // Plain HTTP fixture: there IS no TLS handshake, so it must be null — never a
+  // fabricated "0 ms of TLS".
+  expect(timing!.tls).toBeNull();
+  // Request/response phases are real numbers on a same-origin, un-redirected load.
+  expect(timing!.request).not.toBeNull();
+  expect(timing!.response).not.toBeNull();
 });
 
 // ---------------------------------------------------------------------------

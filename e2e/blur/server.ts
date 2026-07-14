@@ -9,6 +9,13 @@ import type { AddressInfo } from 'node:net';
 const PIXEL =
   'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 
+// A vivid, fully OPAQUE red 2x2 PNG. The transparent PIXEL above is fine for
+// asserting "an effect is applied", but it is useless for asserting that content
+// is actually HIDDEN: a transparent image looks identical masked or not. The mask
+// tests read real painted pixels, so they need a source that screams if it leaks.
+const RED =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQIABiIBAV6xgv0AAAAASUVORK5CYII=';
+
 const PAGE = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Blur fixture</title>
@@ -40,6 +47,43 @@ const PAGE = `<!doctype html>
     root.innerHTML =
       '<style>img{width:200px;height:120px;display:block}</style>' +
       '<img id="shadow-img" src="${PIXEL}" alt="in shadow">';
+  </script>
+
+  <!-- Opaque, vivid targets for the MASK tests. These read real painted pixels,
+       so a mask that fails to cover shows up as red. The shadow-DOM one is the
+       important one: a document-scoped SVG filter reference silently fails to
+       resolve inside a shadow root and renders the image UNMASKED. -->
+  <img id="red-img" src="${RED}" alt="red">
+  <video id="red-video" muted autoplay playsinline></video>
+  <div id="red-host"></div>
+  <script>
+    (function () {
+      // Give the <video> genuinely painting red frames. An empty <video> renders
+      // nothing, so testing a mask against it would prove nothing at all.
+      var c = document.createElement('canvas');
+      c.width = 32; c.height = 32;
+      var g = c.getContext('2d');
+      function paint() { g.fillStyle = '#ff0000'; g.fillRect(0, 0, 32, 32); }
+      paint();
+      // Paint a short burst, then STOP. A forever-running repaint loop is enough
+      // CPU, on every page this fixture serves, to starve the other specs when
+      // Playwright runs workers in parallel — it made an unrelated shadow-DOM
+      // test time out. A handful of frames is all the <video> needs to have real
+      // pixels on screen; it holds the last frame after the stream goes idle.
+      var frames = 0;
+      var t = setInterval(function () {
+        paint();
+        if (++frames >= 8) clearInterval(t);
+      }, 60);
+      var v = document.getElementById('red-video');
+      v.srcObject = c.captureStream(25);
+      v.play().catch(function () {});
+
+      var sr = document.getElementById('red-host').attachShadow({ mode: 'open' });
+      sr.innerHTML =
+        '<style>img{width:200px;height:120px;display:block}</style>' +
+        '<img id="shadow-red-img" src="${RED}" alt="red in shadow">';
+    })();
   </script>
 
   <div id="dyn"></div>

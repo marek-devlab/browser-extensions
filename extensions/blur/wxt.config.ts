@@ -70,7 +70,11 @@ export default defineConfig({
         },
         'reveal-all': {
           suggested_key: { default: 'Alt+Shift+R' },
-          description: 'Reveal all blurred content on the current page',
+          // A TOGGLE. Reveal-all used to be one-way — the only way to re-hide a
+          // page was to reload it, which is the slowest possible option at the
+          // exact moment you need content off the screen. Press once to look,
+          // press again to put it all back.
+          description: 'Reveal all blurred content on this page (press again to re-hide)',
         },
         'panic-blur': {
           suggested_key: { default: 'Alt+Shift+P' },

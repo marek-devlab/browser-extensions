@@ -1,7 +1,7 @@
 import { scheduleTask, processInChunks } from './scheduler';
 import { collectOpenShadowRoots, deepQuerySelectorAll } from './shadow';
 import { applyStylesheet, buildStylesheet, REVEAL_ATTR, SEEN_ATTR } from './stylesheet';
-import type { RevealMode } from './types';
+import type { MaskStyle, RevealMode } from './types';
 
 /**
  * The shared foundation for content blurring and cosmetic ad filtering.
@@ -35,6 +35,10 @@ export interface DomRuleEngineOptions {
   rules: DomRule[];
   blurRadius: number;
   reveal: RevealMode;
+  /** How matched content is obscured: gaussian `blur` or an opaque `solid` fill. */
+  maskStyle?: MaskStyle;
+  maskColor?: string;
+  maskOpacity?: number;
   hostname: string;
   /** Nodes processed per chunk before yielding to the event loop. */
   batchSize?: number;
@@ -75,6 +79,12 @@ export class DomRuleEngine {
     this.#options = {
       batchSize: 64,
       rootMargin: '200px',
+      // Defaults keep the engine's masking behaviour unchanged for callers that
+      // never opt into solid masking (the adblock extension's cosmetic filtering
+      // uses `hide`, not `blur`, and passes none of these).
+      maskStyle: 'blur',
+      maskColor: '#1f2430',
+      maskOpacity: 1,
       ...options,
     };
   }
@@ -151,8 +161,16 @@ export class DomRuleEngine {
   /* ---------------------------------------------------------------- */
 
   get #css(): string {
-    const { rules, blurRadius, reveal, hostname } = this.#options;
-    return buildStylesheet(rules, { blurRadius, reveal, hostname });
+    const { rules, blurRadius, reveal, hostname, maskStyle, maskColor, maskOpacity } =
+      this.#options;
+    return buildStylesheet(rules, {
+      blurRadius,
+      reveal,
+      hostname,
+      maskStyle,
+      maskColor,
+      maskOpacity,
+    });
   }
 
   #injectInto(root: Document | ShadowRoot): void {

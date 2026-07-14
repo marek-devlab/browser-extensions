@@ -20,7 +20,12 @@ import {
   customRulesForHost,
   addFilter,
   removeFilter,
+  removeSiteFilters,
+  hiddenElementsFor,
+  entriesFor,
+  toFilterText,
 } from '../../extensions/adblock/utils/custom-filters.ts';
+import { labelFor } from '../../extensions/adblock/utils/element-label.ts';
 import { parseBackup } from '../../extensions/adblock/utils/backup-parse.ts';
 import {
   planRulesets,
@@ -170,6 +175,100 @@ check('L17 add/remove custom filters immutably + dedupe', () => {
   assert.deepEqual(f, { '*': ['.g'] });
 });
 
+/* ---- Undo/restore: the human label captured at pick time ----
+   The selector alone is unrecognisable, which is why nobody ever undid a
+   mis-click. `labelFor` is the pure half of the capture (the DOM half,
+   describeElement, is exercised for real by the live harness's T10). */
+check('L29 labelFor: an image reads as its type + rendered size', () => {
+  assert.equal(
+    labelFor({ tag: 'img', text: '', width: 300, height: 250.4, alt: '' }),
+    'Image · 300×250',
+  );
+});
+check('L30 labelFor: text content is what a person actually recognises', () => {
+  assert.equal(
+    labelFor({ tag: 'div', text: '  Subscribe to\n our newsletter ', width: 728, height: 90, alt: '' }),
+    'Block “Subscribe to our newsletter” · 728×90',
+  );
+});
+check('L31 labelFor: falls back to alt, truncates, and is NEVER empty', () => {
+  assert.equal(
+    labelFor({ tag: 'iframe', text: '', width: 0, height: 0, alt: 'Advertisement' }),
+    'Embedded frame “Advertisement”',
+  );
+  const long = labelFor({ tag: 'p', text: 'x'.repeat(200), width: 0, height: 0, alt: '' });
+  assert.ok(long.length < 60, `label too long for a 320px popup: ${long.length}`);
+  assert.match(long, /…/);
+  // An unknown tag with nothing to say still names itself rather than showing ''.
+  assert.equal(labelFor({ tag: 'ytd-promo', text: '', width: 0, height: 0, alt: '' }), '<ytd-promo>');
+});
+
+/* ---- Undo/restore: label capture + add/remove-by-selector round trip ---- */
+check('L32 addFilter stores the picker label; add→remove round-trips by selector', () => {
+  let f = {};
+  f = addFilter(f, 'example.com', '.promo', { label: 'Block “Sale” · 300×250', added: 1000 });
+  const [entry] = entriesFor(f, 'example.com');
+  assert.equal(entry.selector, '.promo');
+  assert.equal(entry.label, 'Block “Sale” · 300×250');
+  assert.equal(entry.added, 1000);
+  // The engine still sees a plain hide rule for the labelled entry.
+  assert.deepEqual(customRulesForHost(f, 'example.com'), [
+    { selector: '.promo', action: 'hide', hostnames: ['example.com'] },
+  ]);
+  // Dedupe is by SELECTOR, across both stored shapes.
+  assert.equal(addFilter(f, 'example.com', '.promo', { label: 'other' }), f);
+  // Undo: remove by selector alone — the caller never needs the label back.
+  assert.deepEqual(removeFilter(f, 'example.com', '.promo'), {});
+});
+check('L33 v1 data (bare selector strings) still reads, and degrades to the selector', () => {
+  // Exactly what an existing user has in local:customFilters today.
+  const legacy = { 'example.com': ['#old-ad'], '*': ['.everywhere'] };
+  assert.deepEqual(entriesFor(legacy, 'example.com'), [{ selector: '#old-ad' }]);
+  assert.equal(entriesFor(legacy, 'example.com')[0].label, undefined); // UI shows the selector
+  assert.deepEqual(customRulesForHost(legacy, 'example.com').map((r) => r.selector), [
+    '#old-ad',
+    '.everywhere',
+  ]);
+  // Export text is unchanged for v1 data — the label is never serialized.
+  assert.equal(toFilterText(legacy), 'example.com###old-ad\n##.everywhere');
+  assert.equal(
+    toFilterText({ 'a.com': [{ selector: '.x', label: 'Block “Ad” · 1×1', added: 9 }] }),
+    'a.com##.x',
+  );
+  // A labelled entry can be removed from a mixed list, leaving the legacy one.
+  const mixed = addFilter(legacy, 'example.com', '.new', { label: 'Image · 1×1', added: 5 });
+  assert.deepEqual(removeFilter(mixed, 'example.com', '.new'), legacy);
+});
+check('L34 hiddenElementsFor: what the popup lists for THIS site, newest first', () => {
+  let f = { 'other.com': ['.not-here'] };
+  f = addFilter(f, 'example.com', '.old', { label: 'Old', added: 100 });
+  f = addFilter(f, 'example.com', '.new', { label: 'New', added: 200 });
+  f = addFilter(f, '', '.generic', { label: 'Generic', added: 150 }); // '' -> '*'
+  const list = hiddenElementsFor(f, 'www.example.com');
+  assert.deepEqual(
+    list.map((e) => [e.host, e.selector, e.label]),
+    [
+      ['example.com', '.new', 'New'],
+      ['*', '.generic', 'Generic'],
+      ['example.com', '.old', 'Old'],
+    ],
+  );
+  // Another site's rules are never offered for restore here.
+  assert.ok(!list.some((e) => e.selector === '.not-here'));
+});
+check('L35 removeSiteFilters restores everything on the site, never cross-site rules', () => {
+  const f = {
+    'example.com': ['.a'],
+    'www.example.com': ['.b'],
+    'other.com': ['.c'],
+    '*': ['.generic'],
+  };
+  const next = removeSiteFilters(f, 'www.example.com');
+  // Both the exact host and the parent-domain rule that was hiding things here.
+  assert.deepEqual(next, { 'other.com': ['.c'], '*': ['.generic'] });
+  assert.deepEqual(hiddenElementsFor(next, 'www.example.com'), [{ host: '*', selector: '.generic' }]);
+});
+
 /* ---- Phase 3 §4: backup parse/validate (untrusted input) ---- */
 check('L18 parseBackup rejects non-JSON', () => {
   assert.throws(() => parseBackup('not json'), /valid JSON/);
@@ -189,6 +288,25 @@ check('L19 parseBackup normalizes + drops garbage, keeps valid parts', () => {
   assert.deepEqual(b.siteConfigs['a.com'], { hostname: 'a.com', disableCosmetic: true });
   assert.equal(b.siteConfigs.bad, undefined);
   assert.deepEqual(b.customFilters, { 'a.com': ['.x'] });
+});
+check('L19b parseBackup accepts BOTH filter shapes and drops garbage entries', () => {
+  const b = parseBackup(
+    JSON.stringify({
+      customFilters: {
+        // an old export (bare strings) and a new one (labelled) in one document
+        'old.com': ['.legacy'],
+        'new.com': [
+          { selector: '.picked', label: 'Image · 300×250', added: 42 },
+          { label: 'no selector' },
+          7,
+        ],
+      },
+    }),
+  );
+  assert.deepEqual(b.customFilters['old.com'], ['.legacy']);
+  assert.deepEqual(b.customFilters['new.com'], [
+    { selector: '.picked', label: 'Image · 300×250', added: 42 },
+  ]);
 });
 check('L20 parseBackup tolerates a fully empty object', () => {
   const b = parseBackup('{}');

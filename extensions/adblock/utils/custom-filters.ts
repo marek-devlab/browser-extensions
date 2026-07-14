@@ -1,5 +1,10 @@
 import type { DomRule } from '@blur/core';
-import type { CustomFilters, ParsedCosmeticFilter } from './adblock-types';
+import type {
+  CustomFilterEntry,
+  CustomFilters,
+  ParsedCosmeticFilter,
+  StoredFilter,
+} from './adblock-types';
 
 /** The "all sites" key for a generic (non-site-specific) user cosmetic rule. */
 export const ALL_SITES = '*';
@@ -13,6 +18,66 @@ export function keyAppliesTo(key: string, hostname: string): boolean {
   return hostname === key || hostname.endsWith(`.${key}`);
 }
 
+/* ---------------------------------------------------------------------------
+ * Reading the two stored shapes.
+ *
+ * Every read goes through these, so a pre-existing v1 filter (a bare selector
+ * string, no label) is never a special case anywhere else in the codebase: it
+ * simply arrives as an entry with `label: undefined` and the UI degrades to
+ * showing the raw selector — the old behaviour, exactly.
+ * ------------------------------------------------------------------------- */
+
+/** The CSS selector of a stored rule, whichever shape it is in. */
+export function entrySelector(stored: StoredFilter): string {
+  return typeof stored === 'string' ? stored : stored.selector;
+}
+
+/** Normalize a stored rule (legacy string OR labelled object) to an entry. */
+export function toEntry(stored: StoredFilter): CustomFilterEntry {
+  return typeof stored === 'string' ? { selector: stored } : stored;
+}
+
+/** Every rule stored under exactly `host`, normalized. */
+export function entriesFor(filters: CustomFilters, host: string): CustomFilterEntry[] {
+  return (filters[host] ?? []).map(toEntry);
+}
+
+/** A rule that is hiding something on the current page, plus the key it lives under. */
+export interface HiddenElement extends CustomFilterEntry {
+  /** The storage key: a hostname, or `'*'` for a rule that applies to all sites. */
+  host: string;
+}
+
+/**
+ * Everything the user's own filters are currently hiding on `hostname` — the
+ * data behind the popup's "Hidden on this site" list. Newest first: the thing you
+ * just blocked (and most likely regret) is at the top.
+ */
+export function hiddenElementsFor(filters: CustomFilters, hostname: string): HiddenElement[] {
+  const out: HiddenElement[] = [];
+  for (const [key, stored] of Object.entries(filters)) {
+    if (!keyAppliesTo(key, hostname)) continue;
+    for (const s of stored) out.push({ host: key, ...toEntry(s) });
+  }
+  // Legacy entries have no `added` and sort last — they are also the oldest.
+  return out.sort((a, b) => (b.added ?? 0) - (a.added ?? 0));
+}
+
+/**
+ * "Restore everything on this site": drop every SITE-SCOPED key that applies to
+ * `hostname`. Generic (`'*'`) rules are deliberately left alone — they were never
+ * about this site, and silently deleting a cross-site rule from a per-site escape
+ * hatch would be a nasty surprise. The popup restores those one by one instead,
+ * with each shown as "all sites".
+ */
+export function removeSiteFilters(filters: CustomFilters, hostname: string): CustomFilters {
+  const copy = { ...filters };
+  for (const key of Object.keys(filters)) {
+    if (key !== ALL_SITES && keyAppliesTo(key, hostname)) delete copy[key];
+  }
+  return copy;
+}
+
 /**
  * Build `DomRule[]` (action `hide`) from the user's custom filters that apply to
  * `hostname`. Generic (`'*'`) rules carry no `hostnames`; site rules are scoped
@@ -20,9 +85,10 @@ export function keyAppliesTo(key: string, hostname: string): boolean {
  */
 export function customRulesForHost(filters: CustomFilters, hostname: string): DomRule[] {
   const out: DomRule[] = [];
-  for (const [key, selectors] of Object.entries(filters)) {
+  for (const [key, stored] of Object.entries(filters)) {
     if (!keyAppliesTo(key, hostname)) continue;
-    for (const selector of selectors) {
+    for (const entry of stored) {
+      const selector = entrySelector(entry);
       out.push(
         key === ALL_SITES
           ? { selector, action: 'hide' }
@@ -33,21 +99,45 @@ export function customRulesForHost(filters: CustomFilters, hostname: string): Do
   return out;
 }
 
-/** Immutably add a selector under `host` (deduped). Returns a new object. */
-export function addFilter(filters: CustomFilters, host: string, selector: string): CustomFilters {
+/**
+ * Immutably add a selector under `host` (deduped by selector, across both stored
+ * shapes). Returns a new object.
+ *
+ * `meta.label` is the human description captured by the element picker. Rules
+ * added WITHOUT one (typed into Options, pasted EasyList text, imported backup)
+ * are stored as bare selector strings — byte-identical to the v1 format — so the
+ * stored document only grows the new shape where there is genuinely something
+ * extra to say.
+ */
+export function addFilter(
+  filters: CustomFilters,
+  host: string,
+  selector: string,
+  meta: { label?: string; added?: number } = {},
+): CustomFilters {
   const key = host || ALL_SITES;
   const sel = selector.trim();
   if (!sel) return filters;
   const existing = filters[key] ?? [];
-  if (existing.includes(sel)) return filters;
-  return { ...filters, [key]: [...existing, sel] };
+  if (existing.some((e) => entrySelector(e) === sel)) return filters;
+  const label = meta.label?.trim();
+  const entry: StoredFilter = label
+    ? { selector: sel, label, added: meta.added ?? Date.now() }
+    : sel;
+  return { ...filters, [key]: [...existing, entry] };
 }
 
-/** Immutably remove one selector under `host`; drops the key if it empties. */
+/**
+ * Immutably remove one selector under `host`; drops the key if it empties. This
+ * is the single "restore" primitive: the toast's Undo, the popup's per-item
+ * Restore and the Options list's Remove all funnel through it, and the content
+ * script's storage watcher re-applies, un-hiding the element in every open tab.
+ */
 export function removeFilter(filters: CustomFilters, host: string, selector: string): CustomFilters {
   const existing = filters[host];
   if (!existing) return filters;
-  const next = existing.filter((s) => s !== selector);
+  const next = existing.filter((e) => entrySelector(e) !== selector);
+  if (next.length === existing.length) return filters;
   const copy = { ...filters };
   if (next.length === 0) delete copy[host];
   else copy[host] = next;
@@ -109,11 +199,16 @@ export function mergeParsed(
   return next;
 }
 
-/** Serialize custom filters back to EasyList cosmetic text (for export/edit). */
+/**
+ * Serialize custom filters back to EasyList cosmetic text (for export/edit). The
+ * label is intentionally NOT serialized: this is interchange format that other
+ * blockers must be able to read, and a rule's identity is its selector.
+ */
 export function toFilterText(filters: CustomFilters): string {
   const lines: string[] = [];
-  for (const [host, selectors] of Object.entries(filters)) {
-    for (const selector of selectors) {
+  for (const [host, stored] of Object.entries(filters)) {
+    for (const entry of stored) {
+      const selector = entrySelector(entry);
       lines.push(host === ALL_SITES ? `##${selector}` : `${host}##${selector}`);
     }
   }

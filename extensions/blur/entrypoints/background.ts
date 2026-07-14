@@ -17,6 +17,7 @@ type BlurMessage =
   | { type: 'getTabStats'; tabId: number }
   | { type: 'toggleSite'; hostname: string }
   | { type: 'revealAll'; tabId: number }
+  | { type: 'hideAll'; tabId: number }
   | { type: 'stats'; stats: BlurTabStats };
 
 export default defineBackground({
@@ -30,6 +31,15 @@ export default defineBackground({
     // re-reports on demand and re-populates the map. There is no cumulative
     // counter to persist, so this extension deliberately adds no `chrome.alarms`.
     const tabStats = new Map<number, BlurTabStats>();
+    /**
+     * Tabs the user has revealed wholesale, so the keyboard shortcut can be a
+     * TOGGLE rather than a one-way door. Reveal-all had no inverse: once a page
+     * was revealed the only way back was a full reload, which is absurd for an
+     * extension whose job is keeping content off the screen — the moment you most
+     * need to re-hide is the moment reloading is slowest. Kept in memory only:
+     * a reveal is per-page and must never survive a navigation or a restart.
+     */
+    const revealedTabs = new Set<number>();
 
     function emptyStats(tabId: number): BlurTabStats {
       return {
@@ -106,6 +116,16 @@ export default defineBackground({
             const tabId = message.tabId ?? sender.tab?.id;
             if (typeof tabId === 'number') {
               await browser.tabs.sendMessage(tabId, { type: 'revealAll' }).catch(() => {});
+              revealedTabs.add(tabId);
+            }
+            sendResponse(true);
+            return;
+          }
+          case 'hideAll': {
+            const tabId = message.tabId ?? sender.tab?.id;
+            if (typeof tabId === 'number') {
+              await browser.tabs.sendMessage(tabId, { type: 'hideAll' }).catch(() => {});
+              revealedTabs.delete(tabId);
             }
             sendResponse(true);
             return;
@@ -147,9 +167,15 @@ export default defineBackground({
           return;
         }
         if (command === 'reveal-all') {
+          // A toggle, not a one-way reveal: press once to look, press again to put
+          // it all back. Same key, no reload, no hunting for the popup.
           const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
           if (typeof tab?.id === 'number') {
-            await browser.tabs.sendMessage(tab.id, { type: 'revealAll' }).catch(() => {});
+            const revealed = revealedTabs.has(tab.id);
+            const type = revealed ? 'hideAll' : 'revealAll';
+            await browser.tabs.sendMessage(tab.id, { type }).catch(() => {});
+            if (revealed) revealedTabs.delete(tab.id);
+            else revealedTabs.add(tab.id);
           }
           return;
         }
@@ -214,6 +240,7 @@ export default defineBackground({
 
     browser.tabs.onRemoved.addListener((tabId) => {
       tabStats.delete(tabId);
+      revealedTabs.delete(tabId);
     });
 
     // Clear on navigation. `webNavigation` is NOT a granted permission, so use
@@ -221,6 +248,9 @@ export default defineBackground({
     browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
       if (changeInfo.status === 'loading') {
         tabStats.delete(tabId);
+        // A new document starts hidden again, so the toggle must not think the
+        // page is still revealed.
+        revealedTabs.delete(tabId);
         updateBadge(tabId);
       }
     });

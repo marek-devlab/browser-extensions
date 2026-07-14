@@ -1,5 +1,10 @@
-import type { NetworkEntry, PageInsight, WebVital } from '@blur/core';
-import type { LongFrameSummary, TimedNetworkEntry } from './perf-types';
+import type { NetworkEntry, PageInsight } from '@blur/core';
+import type {
+  LongFrameSummary,
+  PageTiming,
+  PerfWebVital,
+  TimedNetworkEntry,
+} from './perf-types';
 
 // One responder per message type (PLAN.md §13). Split into what the relay content
 // script pushes and what the popup/panel query — the union is what background
@@ -8,14 +13,16 @@ import type { LongFrameSummary, TimedNetworkEntry } from './perf-types';
 
 export type RelayMessage =
   | { type: 'perf:navigated' }
-  | { type: 'perf:vital'; vital: WebVital }
+  | { type: 'perf:vital'; vital: PerfWebVital }
   | { type: 'perf:insight'; insight: PageInsight; entries: TimedNetworkEntry[] }
+  | { type: 'perf:timing'; timing: PageTiming }
   | { type: 'perf:longframes'; summary: LongFrameSummary };
 
 export type QueryMessage =
   | { type: 'getWebVitals'; tabId: number }
   | { type: 'getPageInsight'; tabId: number }
   | { type: 'getNetworkEntries'; tabId: number }
+  | { type: 'getPageTiming'; tabId: number }
   | { type: 'getLongFrames'; tabId: number }
   | { type: 'measureExactBytes'; tabId: number };
 
@@ -54,7 +61,7 @@ export interface VitalBridgeMessage {
    * to move vitals collection out of the MAIN world).
    */
   nonce: string;
-  vital: WebVital;
+  vital: PerfWebVital;
 }
 
 export function isVitalBridgeMessage(data: unknown): data is VitalBridgeMessage {

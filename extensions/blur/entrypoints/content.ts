@@ -5,6 +5,7 @@ import type {
   BlurTabStats,
   DomRule,
   EngineStats,
+  MaskStyle,
   RevealMode,
 } from '@blur/core';
 import {
@@ -15,8 +16,11 @@ import {
   applyStylesheet,
   buildStylesheet,
   deepQuerySelectorAll,
+  clampMaskOpacity,
   isAllowlisted,
   resolveBlurSettings,
+  resolveRevealMode,
+  safeMaskColor,
   scheduleTask,
 } from '@blur/core';
 import {
@@ -31,6 +35,23 @@ import { createTextBlurrer, type TextBlurrer } from '../utils/text-blur';
 import { installClickReveal } from '../utils/reveal';
 import { buildImageSelector, buildLinkSelector } from '../utils/features';
 import { installImageSizeGate } from '../utils/image-gate';
+import { LabelOverlay } from '../utils/label-overlay';
+
+/**
+ * Can the primary pointer hover? On a phone it cannot, and `reveal: 'hover'` —
+ * the DEFAULT — would leave every masked element permanently unrevealable. This
+ * is read once: a device does not grow a mouse mid-session, and matchMedia here
+ * keeps core DOM-free.
+ */
+const CAN_HOVER = (() => {
+  try {
+    return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  } catch {
+    // Ancient/exotic engine with no matchMedia: assume a pointer device, which
+    // preserves the existing desktop behaviour.
+    return true;
+  }
+})();
 
 const EMPTY_IMAGE_RULES: ImageSourceRules = { never: [], always: [] };
 const DEFAULT_PREFS: ExtensionPrefs = { revealTimeoutSec: 0, minImagePx: 0, linkDomains: [] };
@@ -79,6 +100,13 @@ interface PreblurProfile {
   images: boolean;
   video: boolean;
   posters: boolean;
+  // The mask style must be cached too. Without it the pre-paint sheet would
+  // always use blur, so a user who chose a solid mask would see their media
+  // blurred for one frame and then snap to a solid box — and, worse, a blur is a
+  // weaker mask than the one they explicitly asked for.
+  maskStyle: MaskStyle;
+  maskColor: string;
+  maskOpacity: number;
 }
 
 function readPreblurProfile(): PreblurProfile | null {
@@ -97,6 +125,14 @@ function readPreblurProfile(): PreblurProfile | null {
       images: !!p.images,
       video: !!p.video,
       posters: !!p.posters,
+      // This value is read back out of page-controlled localStorage, so it is
+      // untrusted input on the path into an SVG data-URI. safeMaskColor is the
+      // sanitizer, and it is applied HERE, at the trust boundary.
+      maskStyle: p.maskStyle === 'solid' ? 'solid' : 'blur',
+      maskColor: safeMaskColor(p.maskColor),
+      maskOpacity: clampMaskOpacity(
+        typeof p.maskOpacity === 'number' ? p.maskOpacity : 1,
+      ),
     };
   } catch {
     // No localStorage (sandboxed frame), quota, or malformed JSON — fall back.
@@ -124,16 +160,26 @@ function rulesFromProfile(p: PreblurProfile): DomRule[] {
       radius: p.radius,
       reveal: p.reveal,
       textPatterns: [],
+      maskStyle: p.maskStyle,
+      maskColor: p.maskColor,
+      maskOpacity: p.maskOpacity,
+      // Chips are drawn by JS after settings resolve; they have no place in the
+      // synchronous pre-paint sheet.
+      showLabels: false,
+      rehideOnBlur: false,
     },
   });
 }
 
 type ContentMessage =
   | { type: 'revealAll' }
+  | { type: 'hideAll' }
   | { type: 'reevaluate' }
   | { type: 'blurElement' };
 
 const MANUAL_BLUR_ATTR = 'data-bx-manual';
+/** Root flag that reveals manually-blurred elements WITHOUT discarding them. */
+const MANUAL_REVEAL_ATTR = 'data-bx-manual-revealed';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -153,6 +199,9 @@ export default defineContentScript({
     let reportScheduled = false;
     let prefs: ExtensionPrefs = DEFAULT_PREFS;
     let rehideTimer: ReturnType<typeof setTimeout> | undefined;
+    let labels: LabelOverlay | undefined;
+    let labelSync: (() => void) | undefined;
+    let removeRehideOnBlur: (() => void) | undefined;
 
     // BLOCK-FIRST / FOUC (#6): the content script's async storage read resolves
     // AFTER first paint, so a conservative pre-blur sheet is injected here,
@@ -173,6 +222,9 @@ export default defineContentScript({
           blurRadius: cached.radius,
           reveal: cached.reveal,
           hostname,
+          maskStyle: cached.maskStyle,
+          maskColor: cached.maskColor,
+          maskOpacity: cached.maskOpacity,
         });
         return css ? applyStylesheet(document, css, 'bx-preblur') : () => {};
       }
@@ -184,6 +236,9 @@ export default defineContentScript({
         blurRadius: DEFAULT_BLUR_SETTINGS.blur.radius,
         reveal: DEFAULT_BLUR_SETTINGS.blur.reveal,
         hostname,
+        maskStyle: DEFAULT_BLUR_SETTINGS.blur.maskStyle,
+        maskColor: DEFAULT_BLUR_SETTINGS.blur.maskColor,
+        maskOpacity: DEFAULT_BLUR_SETTINGS.blur.maskOpacity,
       });
       if (!css) return () => {};
       return applyStylesheet(document, css, 'bx-preblur');
@@ -226,6 +281,10 @@ export default defineContentScript({
 
     function onEngineStats(stats: EngineStats): void {
       latestEngineStats = stats;
+      // The engine already batches its own mutation handling, so piggy-backing on
+      // its stats tick picks up lazily-appended feed content without a second
+      // MutationObserver competing with it.
+      labelSync?.();
       report();
     }
 
@@ -235,6 +294,9 @@ export default defineContentScript({
       latestEngineStats = undefined;
       removeClickReveal?.();
       removeClickReveal = undefined;
+      labels?.destroy();
+      labels = undefined;
+      labelSync = undefined;
     }
 
     function stopText(): void {
@@ -250,23 +312,84 @@ export default defineContentScript({
     function teardown(): void {
       clearTimeout(rehideTimer);
       rehideTimer = undefined;
+      removeRehideOnBlur?.();
+      removeRehideOnBlur = undefined;
       stopEngine();
       stopText();
       stopImageGate();
     }
 
+    /**
+     * Re-hide everything the moment the tab stops being looked at.
+     *
+     * The whole premise of this extension is that sensitive content is not on
+     * screen when someone else can see it. A reveal that survives an alt-tab, a
+     * screen share, or a phone being handed over defeats that — so when the
+     * option is on, backgrounding the tab (or the window losing focus) instantly
+     * puts every mask back.
+     *
+     * `visibilitychange` covers tab switches and the phone being locked;
+     * `blur` covers a window that stays visible but loses focus (a second monitor,
+     * a screen-sharing overlay).
+     */
+    function installRehideOnBlur(): () => void {
+      const rehide = (): void => {
+        if (document.visibilityState === 'visible' && document.hasFocus()) return;
+        hideAllNow();
+      };
+      document.addEventListener('visibilitychange', rehide);
+      window.addEventListener('blur', rehide);
+      return () => {
+        document.removeEventListener('visibilitychange', rehide);
+        window.removeEventListener('blur', rehide);
+      };
+    }
+
     function startEngine(rules: DomRule[], settings: BlurExtensionSettings): void {
+      // On a touch device 'hover' is a dead end (nothing can ever hover), so it
+      // becomes tap-to-reveal. Resolve ONCE and use the same value for the
+      // stylesheet, the click handler and the engine — if these disagreed, the
+      // sheet would offer a hover affordance no handler backed, or vice versa.
+      const reveal = resolveRevealMode(settings.blur.reveal, CAN_HOVER);
+
       engine = new DomRuleEngine({
         rules,
         blurRadius: settings.blur.radius,
-        reveal: settings.blur.reveal,
+        reveal,
         hostname,
+        maskStyle: settings.blur.maskStyle,
+        maskColor: settings.blur.maskColor,
+        maskOpacity: settings.blur.maskOpacity,
         onStatsChange: onEngineStats,
       });
       // `filter: blur()` on a playing <video> knocks it off the hardware-overlay
-      // compositing path, so blurred video costs real GPU and battery.
+      // compositing path, so blurred video costs real GPU and battery. A solid
+      // mask is a single flood — no convolution — so it is markedly cheaper, which
+      // is why it is the better default on mobile.
       engine.start();
-      if (settings.blur.reveal === 'click') {
+
+      // "What's under the mask?" chips. Built only when asked for: when the
+      // option is off, no overlay, no observers, no cost at all.
+      if (settings.blur.showLabels) {
+        labels = new LabelOverlay();
+        labels.start();
+        const selector = rules.map((r) => r.selector).join(',');
+        if (selector) {
+          const sync = (): void => {
+            try {
+              labels?.track(deepQuerySelectorAll(document, selector));
+            } catch {
+              // A malformed user selector must not take the page down.
+            }
+          };
+          sync();
+          // Feeds append content forever; re-sync on the engine's own stats tick
+          // rather than running a second MutationObserver of our own.
+          labelSync = sync;
+        }
+      }
+
+      if (reveal === 'click') {
         removeClickReveal = installClickReveal(
           engine,
           rules.map((r) => r.selector).join(','),
@@ -288,6 +411,16 @@ export default defineContentScript({
       patternsKey: string;
       revealTimeout: number;
       minImagePx: number;
+      /**
+       * Mask style + colour + opacity + label toggle, collapsed into one string.
+       * All of them live in the injected stylesheet (or, for labels, in the
+       * overlay built at engine start), so any change to them means the engine
+       * must be rebuilt — exactly like radius and reveal. Collapsing them into a
+       * single key keeps the comparison below honest instead of growing four more
+       * `!==` clauses that are easy to forget to add.
+       */
+      maskKey: string;
+      rehideOnBlur: boolean;
     }
     let applied: Applied | undefined;
     let generation = 0;
@@ -323,6 +456,9 @@ export default defineContentScript({
         images: settings.blur.images,
         video: settings.blur.video,
         posters: settings.blur.posters,
+        maskStyle: settings.blur.maskStyle,
+        maskColor: safeMaskColor(settings.blur.maskColor),
+        maskOpacity: clampMaskOpacity(settings.blur.maskOpacity),
       });
 
       if (!active) {
@@ -337,6 +473,8 @@ export default defineContentScript({
           patternsKey: '',
           revealTimeout: 0,
           minImagePx: 0,
+          maskKey: '',
+          rehideOnBlur: false,
         };
         report();
         return;
@@ -353,6 +491,19 @@ export default defineContentScript({
       const radius = settings.blur.radius;
       const reveal = settings.blur.reveal;
       const revealTimeout = prefs.revealTimeoutSec;
+      const maskKey = [
+        settings.blur.maskStyle,
+        settings.blur.maskColor,
+        settings.blur.maskOpacity,
+        settings.blur.showLabels,
+      ].join('|');
+
+      // Re-hide-on-blur is independent of the engine: it only listens for the tab
+      // losing focus, so it can be toggled without a rebuild.
+      if (settings.blur.rehideOnBlur !== (applied?.active ? applied.rehideOnBlur : false)) {
+        removeRehideOnBlur?.();
+        removeRehideOnBlur = settings.blur.rehideOnBlur ? installRehideOnBlur() : undefined;
+      }
 
       if (rules.length === 0) {
         stopEngine();
@@ -360,7 +511,8 @@ export default defineContentScript({
         !engine ||
         !applied?.active ||
         radius !== applied.radius ||
-        reveal !== applied.reveal
+        reveal !== applied.reveal ||
+        maskKey !== applied.maskKey
       ) {
         // A radius or reveal change is not expressible through `updateRules`
         // (both live in the stylesheet), so the engine must be rebuilt — but
@@ -408,6 +560,8 @@ export default defineContentScript({
         patternsKey,
         revealTimeout,
         minImagePx: prefs.minImagePx,
+        maskKey,
+        rehideOnBlur: settings.blur.rehideOnBlur,
       };
       report();
     }
@@ -456,7 +610,14 @@ export default defineContentScript({
           applyStylesheet(
             root,
             `[${MANUAL_BLUR_ATTR}]{filter:blur(${r}px)!important;transition:filter 120ms ease-out}` +
-              `[${MANUAL_BLUR_ATTR}]:hover{filter:none!important}`,
+              `[${MANUAL_BLUR_ATTR}]:hover{filter:none!important}` +
+              // "Reveal all" must be REVERSIBLE. It used to call clearManualBlur(),
+              // which stripped the attribute and tore down this sheet — destroying
+              // every hand-picked blur permanently, with no way back short of
+              // re-picking each element. Instead the reveal is expressed as a flag
+              // on the root, exactly like the engine's REVEAL_ATTR: the elements
+              // keep their marks, so hiding again is one attribute away.
+              `:root[${MANUAL_REVEAL_ATTR}] [${MANUAL_BLUR_ATTR}]{filter:none!important}`,
             'bx-manual',
           ),
         );
@@ -472,6 +633,38 @@ export default defineContentScript({
       }
     }
 
+    /** Reveal everything on the page, reversibly. */
+    function revealAllNow(): void {
+      engine?.revealAll();
+      textBlurrer?.revealAll();
+      // Flag, not destruction — see the manual stylesheet above.
+      document.documentElement.setAttribute(MANUAL_REVEAL_ATTR, '');
+      labelSync?.();
+      scheduleRehide();
+    }
+
+    /**
+     * The inverse of "Reveal all", which the UI previously did not have at all:
+     * once you revealed a page there was no way back except a full reload. For an
+     * extension whose whole job is keeping content off the screen, a one-way
+     * reveal is the wrong shape — the moment you most need to re-hide (someone
+     * walked over) is exactly when reloading the page is the slowest option.
+     *
+     * Restores all three reveal mechanisms, which are deliberately independent:
+     * the engine's per-element attribute, the text blurrer's own root attribute,
+     * and the manual-blur reveal flag.
+     */
+    function hideAllNow(): void {
+      clearTimeout(rehideTimer);
+      rehideTimer = undefined;
+      for (const el of deepQuerySelectorAll(document, `[${REVEAL_ATTR}]`)) {
+        el.removeAttribute(REVEAL_ATTR);
+      }
+      textBlurrer?.reblur();
+      document.documentElement.removeAttribute(MANUAL_REVEAL_ATTR);
+      labelSync?.();
+    }
+
     // Undo a "reveal all" once the reveal-timeout elapses: re-blur the engine's
     // elements (dropping REVEAL_ATTR restores the CSS) and the text.
     function scheduleRehide(): void {
@@ -480,19 +673,15 @@ export default defineContentScript({
       if (prefs.revealTimeoutSec <= 0) return;
       rehideTimer = setTimeout(() => {
         rehideTimer = undefined;
-        for (const el of deepQuerySelectorAll(document, `[${REVEAL_ATTR}]`)) {
-          el.removeAttribute(REVEAL_ATTR);
-        }
-        textBlurrer?.reblur();
+        hideAllNow();
       }, prefs.revealTimeoutSec * 1000);
     }
 
     browser.runtime.onMessage.addListener((message: ContentMessage) => {
       if (message?.type === 'revealAll') {
-        engine?.revealAll();
-        textBlurrer?.revealAll();
-        clearManualBlur();
-        scheduleRehide();
+        revealAllNow();
+      } else if (message?.type === 'hideAll') {
+        hideAllNow();
       } else if (message?.type === 'reevaluate') {
         void apply();
       } else if (message?.type === 'blurElement') {

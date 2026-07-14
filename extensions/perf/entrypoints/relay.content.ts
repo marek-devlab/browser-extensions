@@ -7,6 +7,7 @@ import {
   VITAL_NONCE_ATTR,
 } from '../utils/protocol';
 import type { PerfMessage } from '../utils/protocol';
+import { toPageTiming } from '../utils/perf-types';
 import type { TimedNetworkEntry } from '../utils/perf-types';
 
 // ISOLATED-world companion to content.ts. It has both the per-Document
@@ -48,6 +49,30 @@ export default defineContentScript({
         post({ type: 'perf:longframes', summary: data.summary });
       }
     });
+
+    // Navigation Timing for the document itself: DNS / TCP / TLS / request /
+    // response, plus DOMContentLoaded and the load event. The Performance Timeline
+    // is per-Document and only exists in a page context, so it has to be read here
+    // and pushed — the popup cannot reach it.
+    //
+    // The phases fill in over the life of the load (loadEventEnd is 0 until the
+    // load event has FINISHED, which is after this handler returns), so post on
+    // every stage rather than once: whatever is not measured yet is reported as
+    // null, and the next post upgrades it.
+    function postTiming(): void {
+      const [nav] = performance.getEntriesByType('navigation');
+      if (nav) post({ type: 'perf:timing', timing: toPageTiming(nav as PerformanceNavigationTiming) });
+    }
+    document.addEventListener('DOMContentLoaded', postTiming);
+    window.addEventListener('load', () => {
+      // loadEventEnd is only written once the load handlers have all run, so read
+      // it from the next task, not from inside the event.
+      globalThis.setTimeout(postTiming, 0);
+    });
+    // Covers a bfcache restore (no fresh navigation, so no DOMContentLoaded/load)
+    // and the pathological case of the document already being complete.
+    window.addEventListener('pageshow', postTiming);
+    postTiming();
 
     const hostname = location.hostname;
     const collector = new ResourceTimingCollector(

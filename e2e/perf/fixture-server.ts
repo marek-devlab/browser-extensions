@@ -133,6 +133,44 @@ function startPageServer(getCrossOrigin: () => string): Server {
       return;
     }
 
+    if (url === '/shift') {
+      // The classic CLS bug, staged deliberately: an image with NO height that
+      // arrives late, so everything under it is shoved down the moment it lands.
+      // The point of the fixture is the ATTRIBUTION — the extension must be able to
+      // name `#shifter` as the element that moved, which is the difference between
+      // "CLS 0.13, needs improvement" and a fix the user can act on.
+      send(
+        res,
+        200,
+        'text/html; charset=utf-8',
+        `<!doctype html><html><head><meta charset="utf-8"><title>shift</title>
+<style>
+  body { margin: 0; font: 16px system-ui; }
+  /* Width but NO height: the box is 600x0 until the bytes arrive, then 600x600 —
+     so everything below it is shoved down most of a viewport. */
+  #shifter { display: block; width: 600px; }
+  .below { padding: 8px; margin: 0 0 40px; }
+</style>
+</head><body>
+<h1 id="top">Layout shift fixture</h1>
+<img id="shifter" src="/slow.png" alt="late image">
+<p class="below" id="below">This paragraph gets pushed down when the image finally loads.</p>
+<p class="below">More content that moves with it.</p>
+<p class="below">And more, so a large fraction of the viewport is affected.</p>
+<p class="below">And more still.</p>
+<p class="below">The bigger the moved area, the worse the CLS score.</p>
+</body></html>`,
+      );
+      return;
+    }
+
+    if (url === '/slow.png') {
+      // Deliberately late so the image cannot be laid out with the first paint —
+      // that delay is what turns a missing height into a real layout shift.
+      setTimeout(() => send(res, 200, 'image/png', PNG_1x1), 600);
+      return;
+    }
+
     if (url === '/app.js') {
       send(res, 200, 'application/javascript; charset=utf-8', jsBody('app', 2048));
       return;

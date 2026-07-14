@@ -274,6 +274,21 @@
 .filter-row code {
   overflow-wrap: anywhere;
 }
+/* A picked rule shows WHAT it hid (captured at pick time) above the selector; a
+   pasted/typed rule has no label and shows the selector alone, as before. */
+.filter-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.filter-label {
+  font-size: 12px;
+}
+.filter-what code {
+  font-size: 11px;
+  color: var(--sub);
+}
 .filter-paste {
   width: 100%;
   box-sizing: border-box;

@@ -176,6 +176,169 @@ input[type='range'] {
   padding: 4px 10px;
 }
 
+/* Segmented controls live inside `.field`, and `.panel .field button` above is a
+   MORE specific selector than `.seg.on` (0,2,1 vs 0,2,0) — so it was silently
+   repainting the selected segment as a plain button and the active preset never
+   looked active. Restate the segment colours at matching specificity. */
+.panel .field .seg {
+  color: var(--sub);
+}
+
+.panel .field .seg.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Masking                                                             */
+/* ------------------------------------------------------------------ */
+
+/* The primary choice. Bigger than a preset chip on purpose — it outranks
+   everything below it — and ≥40px tall so it is a real touch target on Firefox
+   for Android. */
+.mask-styles {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.mask-styles .seg {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* Controls that only exist BECAUSE of the selected mask style. Indented under
+   it with a rule down the side so the dependency is visible, not implied. The
+   ones that would do nothing for the current style are not rendered at all. */
+.subordinate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+  margin-left: 2px;
+}
+
+/* Before / after. Same sample image, unmasked and with the live mask applied,
+   built from core's own solidMaskFilter() so it cannot drift from the page. */
+.mask-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.preview-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* `overflow: hidden` matters: a CSS blur bleeds well outside the element box,
+   and the frame is what makes the preview read as "an image on a page". Its
+   background is the PAGE background, which is precisely (and only) what shows
+   through a sub-100% solid fill. */
+.preview-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  aspect-ratio: 8 / 3;
+}
+
+.preview-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Mirrors the real chip drawn by label-overlay.ts. */
+.preview-chip {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(12, 14, 20, 0.82);
+  color: #e8eaf0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.preview-fig figcaption {
+  color: var(--sub);
+  font-size: 11px;
+}
+
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 32px square: a comfortable tap target that still reads as a colour chip. */
+.swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  padding: 0;
+}
+
+.swatch.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The native picker IS the sanitizer — it can only emit #rrggbb. */
+.swatch-input {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.swatch-hex {
+  color: var(--sub);
+  font-size: 12px;
+}
+
+/* Inline colour dot for the per-site override summary. */
+.swatch-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+/* Secondary line under a switch label, for options that need a sentence of
+   honest explanation (re-hide on blur, labels) rather than a bare noun. */
+.sub-line {
+  display: block;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 2px;
+  max-width: 46ch;
+}
+
+/* A switch row's label is a block of text; top-align the switch with its first
+   line instead of centring it against the whole paragraph. */
+.subpanel .field:has(.sub-line) {
+  align-items: flex-start;
+}
+
 /* Technical-details disclosure — mirrors the Ad & Tracker Blocker options. */
 .advanced {
   border-top: 1px solid var(--line);

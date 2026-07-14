@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { browser } from '#imports';
-import type { NetworkEntry, PageInsight, ResourceKind, VitalRating, WebVital } from '@blur/core';
-import { formatBytes, formatVital, rateVital, VITAL_THRESHOLDS } from '@blur/core';
+import type { NetworkEntry, PageInsight, ResourceKind } from '@blur/core';
+import { formatBytes } from '@blur/core';
 import type { MeasureResult } from '../../utils/protocol';
+import type { LongFrameSummary, PageTiming, PerfWebVital } from '../../utils/perf-types';
 import { getRegistrableDomain } from '../../utils/registrable-domain';
 import { lastReportItem } from '../../utils/storage';
+import { VitalsSection } from './Vitals';
 
 // The popup works WITHOUT DevTools open, so it shows what is available cross-origin
 // and accurately: request count, type breakdown, third-party domains, and
@@ -37,7 +39,9 @@ export function App() {
   const { tabId, hostname } = useActiveTab();
   const [insight, setInsight] = useState<PageInsight | null>(null);
   const [entries, setEntries] = useState<NetworkEntry[]>([]);
-  const [vitals, setVitals] = useState<WebVital[]>([]);
+  const [vitals, setVitals] = useState<PerfWebVital[]>([]);
+  const [timing, setTiming] = useState<PageTiming | null>(null);
+  const [longFrames, setLongFrames] = useState<LongFrameSummary | null>(null);
   const [exact, setExact] = useState<PageInsight | null>(null);
   const [exactEntries, setExactEntries] = useState<NetworkEntry[]>([]);
   const [confirming, setConfirming] = useState(false);
@@ -54,15 +58,27 @@ export function App() {
     let active = true;
     async function load() {
       try {
-        const [i, v, e] = (await Promise.all([
+        const [i, v, e, t, lf] = (await Promise.all([
           browser.runtime.sendMessage({ type: 'getPageInsight', tabId }),
           browser.runtime.sendMessage({ type: 'getWebVitals', tabId }),
           browser.runtime.sendMessage({ type: 'getNetworkEntries', tabId }),
-        ])) as [PageInsight | null, WebVital[], NetworkEntry[]];
+          browser.runtime.sendMessage({ type: 'getPageTiming', tabId }),
+          browser.runtime.sendMessage({ type: 'getLongFrames', tabId }),
+        ])) as [
+          PageInsight | null,
+          PerfWebVital[],
+          NetworkEntry[],
+          PageTiming | null,
+          LongFrameSummary | null,
+        ];
         if (!active) return;
         if (i) setInsight(i);
         if (v) setVitals(v);
         if (e) setEntries(e);
+        // `null` is a real answer here (the page has not reported timing yet), so
+        // it is stored as-is rather than skipped like the truthy guards above.
+        setTiming(t);
+        if (lf) setLongFrames(lf);
       } catch {
         // Background asleep — leave the last snapshot.
       }
@@ -110,7 +126,11 @@ export function App() {
       <div className="popup">
         <header className="head">
           <h1>Page Insight</h1>
-          <span className="host mono">{hostname}</span>
+          {/* The hostname ellipsizes when it is too long for the header, so the
+              full value has to stay reachable on hover. */}
+          <span className="host mono" title={hostname}>
+            {hostname}
+          </span>
         </header>
         <p className="caveat" role="status" aria-live="polite">
           No measurements yet for this tab. Reload the page to collect Web Vitals
@@ -164,11 +184,6 @@ export function App() {
   }
   const thirdParties = [...tpGroups.entries()].sort((a, b) => b[1].bytes - a[1].bytes);
 
-  const order: WebVital['name'][] = ['LCP', 'INP', 'CLS', 'FCP', 'TTFB'];
-  const sortedVitals = [...vitals].sort(
-    (a, b) => order.indexOf(a.name) - order.indexOf(b.name),
-  );
-
   async function saveSnapshot() {
     await lastReportItem.setValue(shown);
     setSnapshot(shown);
@@ -185,7 +200,10 @@ export function App() {
     <div className="popup">
       <header className="head">
         <h1>Page Insight</h1>
-        <span className="host mono">{shown.hostname || hostname}</span>
+        {/* Ellipsized when long — `title` keeps the full hostname reachable. */}
+        <span className="host mono" title={shown.hostname || hostname}>
+          {shown.hostname || hostname}
+        </span>
       </header>
 
       <div className="content" role="status" aria-live="polite">
@@ -350,31 +368,11 @@ export function App() {
         )}
       </section>
 
-      <section>
-        <h2>Vitals</h2>
-        {sortedVitals.length === 0 ? (
-          <p className="caveat">Vitals arrive as the page settles — LCP and CLS finalise on interaction or when the tab is hidden.</p>
-        ) : (
-          <ul className="vitals">
-            {sortedVitals.map((v) => {
-              const rating = rateVital(v.name, v.value);
-              return (
-                <li key={v.name} className={`vital rating--${rating}`}>
-                  <span className="vital__name">{v.name}</span>
-                  <span className="vital__value mono">{formatVital(v)}</span>
-                  {/* Rating in text too — never conveyed by the border colour alone. */}
-                  <span className="vital__rating">{ratingLabel(rating)}</span>
-                  {/* Good/poor cutoffs give the raw value context. */}
-                  <span className="vital__thresh mono">
-                    ≤{formatThreshold(v.name, VITAL_THRESHOLDS[v.name].good)} · &gt;
-                    {formatThreshold(v.name, VITAL_THRESHOLDS[v.name].poor)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      {/* Vitals live in their own component: each metric is spelled out in plain
+          language, and a score that is not `good` carries the attribution the
+          browser gave us (the element that shifted, the phase that dominated) plus
+          the fix for that specific cause. */}
+      <VitalsSection vitals={vitals} timing={timing} longFrames={longFrames} />
 
       <footer className="foot">
         Open the Performance panel (F12) for the full request table.
@@ -415,19 +413,6 @@ function Delta({
       </span>
     </div>
   );
-}
-
-function ratingLabel(rating: VitalRating): string {
-  if (rating === 'good') return 'Good';
-  if (rating === 'needs-improvement') return 'Needs improvement';
-  return 'Poor';
-}
-
-/** Format a Core Web Vitals threshold in the metric's own unit. */
-function formatThreshold(name: WebVital['name'], v: number): string {
-  if (name === 'CLS') return v.toFixed(2);
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}s`;
-  return `${v}ms`;
 }
 
 function ConsentDialog({

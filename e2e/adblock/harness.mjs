@@ -15,6 +15,11 @@
 //  - Settings are changed by driving the REAL options-page UI (clicks), the exact
 //    flow a user takes, so the harness exercises the storage->background
 //    reconcile path end to end.
+//  - UNDO (T10-T13) is proven by OBSERVING THE PAGE, never by asserting that a
+//    function ran: an element is picked, confirmed display:none, the undo is
+//    triggered the way a user triggers it (a real mouse click on the in-page
+//    toast, whose closed shadow root nothing can select into; or a click on the
+//    popup's real Restore button), and the element is then asserted VISIBLE again.
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -342,10 +347,14 @@ async function main() {
       return d.customFilters ?? null;
     });
     await sleep(100);
+    // A picked rule is stored as `{ selector, label, added }` (the label is what
+    // makes it recognisable in the popup later); a rule typed in Options or pasted
+    // is still a bare selector string. Both shapes are read the same way.
+    const selectorOf = (e) => (typeof e === 'string' ? e : e?.selector);
     const gotSelector =
       persisted &&
       Object.values(persisted).some(
-        (arr) => Array.isArray(arr) && arr.some((s) => /sponsored-slot|promo-box/.test(s)),
+        (arr) => Array.isArray(arr) && arr.some((e) => /sponsored-slot|promo-box/.test(selectorOf(e) ?? '')),
       );
     const pass = hiddenNow === true && Boolean(gotSelector);
     record(
@@ -434,6 +443,246 @@ async function main() {
       'backup export/import applies (allowlist round-trip)',
       pass,
       `validJson=${validJson} dynamicRules=${dyn.length} adBlockedAfterImport=${adBlocked}`,
+    );
+  });
+
+  // ---- TEST 10: IMMEDIATE UNDO — pick, then click Undo on the in-page toast ----
+  //
+  // The whole point of the feature: the element must be VISIBLE again after one
+  // click, with no settings page involved. The toast lives in a CLOSED shadow
+  // root, so Playwright cannot select the button — which is exactly the property
+  // we want (the page can't reach it either). We therefore click it the way a
+  // user does: a real mouse click at its viewport coordinates. Its geometry is
+  // fixed by design in utils/undo-toast.ts (360×56 panel, 20px above the bottom,
+  // 8px padding, an 80px Undo button left of a 32px close button with a 4px gap)
+  // — those constants are mirrored here.
+  await withCtx(port, async ({ context, sw }) => {
+    const page = await context.newPage();
+    await page.goto(pageUrl(PAGE_HOST, 'custom.html'), { waitUntil: 'load' });
+    await sleep(500);
+    const tabId = await activeTabId(sw);
+    await sw.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'startPicker' }), tabId);
+    await sleep(300);
+    await page.click('#sponsored-slot', { force: true });
+    await sleep(600);
+
+    const hiddenAfterPick = await isHidden(page, '#sponsored-slot');
+    // The toast exists in the light DOM but its shadow root is CLOSED: the page
+    // (and Playwright) can see the host and nothing else.
+    const toast = await page.evaluate(() => {
+      const host = document.querySelector('[data-abx-undo]');
+      if (!host) return null;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const w = Math.min(360, vw - 24);
+      const left = (vw - w) / 2;
+      return {
+        closed: host.shadowRoot === null, // closed root -> null, even from the page
+        // Undo button centre: [panel right] - 8 (pad) - 32 (close) - 4 (gap) - 40 (half of 80)
+        x: left + w - 84,
+        y: vh - 20 - 28, // 20px above the bottom, half of the 56px panel height
+      };
+    });
+    // The label captured at pick time is what makes the entry recognisable later.
+    const stored = await sw.evaluate(async () => {
+      const d = await chrome.storage.local.get('customFilters');
+      return d.customFilters ?? null;
+    });
+    const entry = stored?.[PAGE_HOST]?.[0];
+    const labelled = typeof entry === 'object' && typeof entry.label === 'string';
+
+    let visibleAfterUndo = null;
+    let cleared = null;
+    if (toast) {
+      await page.mouse.click(toast.x, toast.y);
+      await sleep(600);
+      visibleAfterUndo = (await isHidden(page, '#sponsored-slot')) === false;
+      const after = await sw.evaluate(async () => {
+        const d = await chrome.storage.local.get('customFilters');
+        return d.customFilters ?? {};
+      });
+      cleared = !JSON.stringify(after).includes('sponsored-slot');
+    }
+    await page.close();
+    const pass =
+      hiddenAfterPick === true &&
+      toast?.closed === true &&
+      labelled &&
+      visibleAfterUndo === true &&
+      cleared === true;
+    record(
+      'T10',
+      'in-page toast Undo restores the element (one click, no settings)',
+      pass,
+      `hiddenAfterPick=${hiddenAfterPick} toastShadowClosed=${toast?.closed} label=${JSON.stringify(entry?.label)} visibleAfterUndo=${visibleAfterUndo} filterRemoved=${cleared}`,
+    );
+  });
+
+  // ---- TEST 11: DEFERRED UNDO — restoring from another context un-hides live ----
+  //
+  // This is the write the popup's "Restore" button makes (removeFilter -> storage).
+  // Driving the popup's own React button is impossible in this harness — a popup
+  // opened as a tab is its OWN active tab, so it can never see victim.test's
+  // entries (same limitation noted on T4) — so the storage write is issued from
+  // the service worker instead. What it proves is the part that could break: the
+  // open page un-hides the element with NO reload, off the storage watcher.
+  await withCtx(port, async ({ context, sw }) => {
+    await sw.evaluate(() =>
+      chrome.storage.local.set({
+        customFilters: {
+          'victim.test': [
+            { selector: '#sponsored-slot', label: 'Block “custom junk” · 784×18', added: 1 },
+          ],
+        },
+        customFilters$: { v: 1 },
+      }),
+    );
+    await sleep(200);
+    const page = await context.newPage();
+    await page.goto(pageUrl(PAGE_HOST, 'custom.html'), { waitUntil: 'load' });
+    await sleep(700);
+    const hiddenBefore = await isHidden(page, '#sponsored-slot');
+    // Restore (exactly what the popup persists: the key drops when it empties).
+    await sw.evaluate(() => chrome.storage.local.set({ customFilters: {} }));
+    await sleep(700);
+    const visibleAfter = (await isHidden(page, '#sponsored-slot')) === false;
+    await page.close();
+    const pass = hiddenBefore === true && visibleAfter === true;
+    record(
+      'T11',
+      'popup Restore (storage write) un-hides an open page with no reload',
+      pass,
+      `hiddenBefore=${hiddenBefore} visibleAfterRestore=${visibleAfter}`,
+    );
+  });
+
+  // ---- TEST 12: "Show" (peek) reveals a hidden element, then re-hides it ----
+  await withCtx(port, async ({ context, sw }) => {
+    await sw.evaluate(() =>
+      chrome.storage.local.set({
+        customFilters: { 'victim.test': [{ selector: '#sponsored-slot', label: 'Block', added: 1 }] },
+        customFilters$: { v: 1 },
+      }),
+    );
+    await sleep(200);
+    const page = await context.newPage();
+    await page.goto(pageUrl(PAGE_HOST, 'custom.html'), { waitUntil: 'load' });
+    await sleep(700);
+    const hiddenBefore = await isHidden(page, '#sponsored-slot');
+    const tabId = await activeTabId(sw);
+    await sw.evaluate(
+      (id) => chrome.tabs.sendMessage(id, { type: 'peekElement', selector: '#sponsored-slot' }),
+      tabId,
+    );
+    await sleep(300);
+    const visibleDuringPeek = (await isHidden(page, '#sponsored-slot')) === false;
+    // The peek is transient: it must put the page back exactly as it was.
+    await sleep(2400);
+    const hiddenAfter = await isHidden(page, '#sponsored-slot');
+    const noResidue = await page.evaluate(
+      () => document.querySelector('#sponsored-slot')?.outerHTML ?? null,
+    );
+    // "No residue" = the peek left NOTHING on the page's own element (no marker
+    // attribute, no inline style) and removed its override stylesheet.
+    const sheets = await page.evaluate(
+      // Style tags that are NOT the engine's own fallback sheet — i.e. ours.
+      () => document.querySelectorAll('style:not([data-bx-marker])').length,
+    );
+    await page.close();
+    const cleanedUp =
+      typeof noResidue === 'string' && !/style=|data-abx-peek/.test(noResidue) && sheets === 0;
+    const pass =
+      hiddenBefore === true && visibleDuringPeek === true && hiddenAfter === true && cleanedUp;
+    record(
+      'T12',
+      'peek shows a hidden element temporarily, leaving no residue',
+      pass,
+      `hidden=${hiddenBefore} visibleDuringPeek=${visibleDuringPeek} hiddenAgain=${hiddenAfter} leftoverStyleTags=${sheets} html=${JSON.stringify(noResidue)}`,
+    );
+  });
+
+  // ---- TEST 13: the REAL popup lists hidden elements by LABEL, and its Restore
+  //               button un-hides them in a REAL page ----
+  //
+  // ONE stub, and only one: the extension has no `tabs` permission, so Chrome
+  // strips `Tab.url` from `tabs.query()` (verified: it comes back `undefined`).
+  // A popup opened as a tab therefore has no hostname and renders its "can't run
+  // here" state — a harness artifact, not product behaviour (in the real toolbar
+  // popup Chrome supplies the active tab's URL). We hand back exactly that one
+  // withheld field, pointing at the victim.test page open in the other tab, and
+  // everything else is real: the real React list, the real Restore button, the
+  // real storage write, and the real content script un-hiding the real element.
+  await withCtx(port, async ({ context, extId, sw }) => {
+    const page = await context.newPage();
+    await page.goto(pageUrl(PAGE_HOST, 'custom.html'), { waitUntil: 'load' });
+    await sleep(400);
+    const tabId = await activeTabId(sw);
+
+    await sw.evaluate(() =>
+      chrome.storage.local.set({
+        customFilters: {
+          'victim.test': [
+            { selector: '#sponsored-slot', label: 'Block “custom junk” · 728×90', added: 7 },
+            // A pre-labels (v1) entry: a bare string. It must still list (degrading
+            // to its selector) and still be restorable.
+            '#legacy-ad',
+          ],
+        },
+        customFilters$: { v: 1 },
+      }),
+    );
+    await sleep(600);
+    const hiddenBefore = await isHidden(page, '#sponsored-slot');
+
+    const popup = await context.newPage();
+    await popup.addInitScript(
+      ({ id, url }) => {
+        const orig = chrome.tabs.query.bind(chrome.tabs);
+        chrome.tabs.query = (q) =>
+          q?.active ? Promise.resolve([{ id, url }]) : orig(q);
+      },
+      { id: tabId, url: pageUrl(PAGE_HOST, 'custom.html') },
+    );
+    await popup.goto(`chrome-extension://${extId}/popup.html`, { waitUntil: 'load' });
+    await sleep(700);
+
+    // The list shows the HUMAN label captured at pick time — not a CSS selector.
+    const showsLabel = await popup
+      .getByText('Block “custom junk” · 728×90')
+      .isVisible()
+      .catch(() => false);
+    // ... and an un-labelled v1 rule degrades to its selector rather than vanishing.
+    const showsLegacy = await popup.getByText('#legacy-ad').isVisible().catch(() => false);
+    // "Restore all" — the cheap escape hatch — is offered once there are 2+.
+    const showsRestoreAll = await popup
+      .getByRole('button', { name: /Restore all 2 elements/ })
+      .isVisible()
+      .catch(() => false);
+
+    await popup
+      .getByRole('button', { name: 'Restore Block “custom junk” · 728×90' })
+      .click();
+    await sleep(700);
+    const stored = await sw.evaluate(async () => {
+      const d = await chrome.storage.local.get('customFilters');
+      return d.customFilters ?? {};
+    });
+    // Only that one rule went; the other is untouched.
+    const removedOne =
+      !JSON.stringify(stored).includes('sponsored-slot') &&
+      JSON.stringify(stored).includes('legacy-ad');
+    // ...and the element is VISIBLE again in the live page, with no reload.
+    const visibleAfter = (await isHidden(page, '#sponsored-slot')) === false;
+
+    await popup.close();
+    await page.close();
+    const pass =
+      hiddenBefore === true && showsLabel && showsLegacy && showsRestoreAll && removedOne && visibleAfter;
+    record(
+      'T13',
+      'popup lists hidden elements by label; Restore un-hides the real page',
+      pass,
+      `hiddenBefore=${hiddenBefore} showsLabel=${showsLabel} legacyFallsBackToSelector=${showsLegacy} restoreAllOffered=${showsRestoreAll} onlyThatRuleRemoved=${removedOne} elementVisibleAfterRestore=${visibleAfter}`,
     );
   });
 

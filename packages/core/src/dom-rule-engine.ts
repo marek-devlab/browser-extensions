@@ -139,6 +139,37 @@ export class DomRuleEngine {
     this.#emitStats();
   }
 
+  /**
+   * Stop observing, but LEAVE THE MASKS IN PLACE. Fail closed.
+   *
+   * `stop()` is a clean teardown: it removes the injected stylesheets and strips
+   * the engine's attributes, which un-hides everything. That is right when the
+   * user turns the extension off — and catastrophic when the extension context is
+   * merely INVALIDATED (an update, or a reload during development). In that case
+   * every open tab would suddenly repaint the exact content it was hiding, with
+   * no action from the user and no warning. For a tool whose whole purpose is
+   * keeping content off the screen, un-hiding as a side effect of an update is
+   * the worst possible failure.
+   *
+   * So on invalidation we freeze instead: the observers (which would leak, since
+   * nothing will ever tear them down) are disconnected, while the stylesheet stays
+   * adopted and the attributes stay put. The page keeps whatever it is already
+   * masking until it is reloaded — content never becomes visible by accident.
+   */
+  freeze(): void {
+    if (!this.#running) return;
+    this.#running = false;
+    this.#mutationObserver?.disconnect();
+    this.#intersectionObserver?.disconnect();
+    this.#mutationObserver = undefined;
+    this.#intersectionObserver = undefined;
+    this.#pending.clear();
+    this.#observed.clear();
+    this.#drainScheduled = false;
+    // Deliberately NOT run: this.#teardowns (they remove the stylesheets) and the
+    // attribute cleanup. Those are what would reveal the content.
+  }
+
   /** Swap the rule set without a full teardown, e.g. on a settings change. */
   updateRules(rules: DomRule[]): void {
     const wasRunning = this.#running;

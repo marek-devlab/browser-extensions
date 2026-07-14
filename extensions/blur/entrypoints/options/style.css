@@ -166,10 +166,13 @@ input[type='range'] {
   padding: 10px 12px;
 }
 
+/* The head now carries a summary line under the hostname, so top-align the reset
+   button with the hostname rather than centring it against the whole block. */
 .override-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .presets .seg {
@@ -358,6 +361,72 @@ input[type='range'] {
 
 .advanced > .note {
   margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-site override markers                                           */
+/* ------------------------------------------------------------------ */
+
+/* Amber on the global Blur tab, where an override means "some sites ignore this".
+   Rendered only when at least one site actually overrides something. */
+.ovr {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-sm, 6px);
+}
+
+/* Inside a per-site row an override is the intent, not a trap — so the same marker
+   drops the alarm and simply distinguishes this site's own settings from the ones
+   it inherits. */
+.ovr-inherit {
+  background: var(--bg);
+  color: var(--sub);
+  border-left-color: var(--accent);
+}
+
+.ovr-icon {
+  flex: none;
+}
+
+.ovr-txt {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+/* A real button, never a hover-only affordance: Firefox for Android cannot hover. */
+.ovr-btn {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  min-height: 32px;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* A control a site pins for itself, flagged in place so the marker below it and
+   the control it is about read as one statement. `box-shadow` (not `border`) so
+   flagging cannot reflow the chip row. */
+.chip.flagged-own {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The host plus its "overrides N settings: …" summary line. */
+.override-title {
+  min-width: 0;
 }
 
 /* Async feedback. Colour is never the only signal — the JSX pairs each with a

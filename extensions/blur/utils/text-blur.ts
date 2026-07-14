@@ -44,6 +44,12 @@ const SKIP_TAGS = new Set([
 export interface TextBlurrer {
   start(): void;
   stop(): void;
+  /**
+   * Stop observing but LEAVE THE TEXT BLURRED. Used when the extension context is
+   * invalidated (an update): `stop()` removes the stylesheet and the effect, which
+   * would repaint every hidden word on screen. See DomRuleEngine.freeze().
+   */
+  freeze(): void;
   /** Reveal all blurred text, until the next navigation. */
   revealAll(): void;
   /** Undo a `revealAll` and re-blur everything (used by the reveal-timeout). */
@@ -277,6 +283,23 @@ abstract class BaseTextBlurrer implements TextBlurrer {
     this.styleTeardown?.();
     this.styleTeardown = undefined;
     this.count = 0;
+  }
+
+  /**
+   * Fail closed: release the observer, keep the blur. On an extension update the
+   * content script is invalidated, and a full `stop()` here would strip the
+   * stylesheet and the effect — un-blurring every matched word on every open tab,
+   * with no user action. Freezing leaves the page exactly as hidden as it was.
+   */
+  freeze(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.#observer?.disconnect();
+    this.#observer = undefined;
+    this.#pending.clear();
+    this.#drainScheduled = false;
+    // Deliberately NOT run: clearEffect() and styleTeardown() — those are what
+    // would reveal the text.
   }
 
   revealAll(): void {

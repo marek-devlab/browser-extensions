@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { JSX, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { BlurSettings, BlurSiteConfig, MaskStyle, RevealMode } from '@blur/core';
 import { clampMaskOpacity, safeMaskColor, solidMaskFilter } from '@blur/core';
@@ -11,6 +11,7 @@ import {
   presetForRadius,
   setSiteOverride,
   clearSiteOverride,
+  hasSiteOverride,
   serializeBackup,
   parseBackup,
   mergeKeywords,
@@ -96,6 +97,95 @@ function maskFilterFor(blur: {
     : `blur(${blur.radius}px)`;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Per-site override markers                                               */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * `resolveBlurSettings` merges a site's `blur` OVER the global one, so any field a
+ * site overrides is a field the global controls on the Blur tab can no longer move
+ * on that site. Options had the same blind spot the popup had: the per-site rows
+ * rendered the MERGED values, so an inherited toggle and an overriding one looked
+ * identical, and nothing on the Blur tab hinted that some sites ignore it.
+ */
+const FIELD_LABELS: Partial<Record<keyof BlurSettings, string>> = {
+  images: 'Images',
+  video: 'Video',
+  posters: 'Thumbnails & posters',
+  text: 'Text',
+  maskStyle: 'Mask style',
+  radius: 'Blur radius',
+  maskOpacity: 'Fill opacity',
+  maskColor: 'Fill colour',
+  reveal: 'Show blurred content',
+  rehideOnBlur: 'Re-hide when I switch away',
+  showLabels: 'Labels',
+  textPatterns: 'Text patterns',
+};
+
+function describeBlurValue(field: keyof BlurSettings, v: unknown): string {
+  switch (field) {
+    case 'maskStyle':
+      return v === 'solid' ? 'Solid colour' : 'Blur';
+    case 'radius':
+      return `${String(v)}px`;
+    case 'maskOpacity':
+      return `${Math.round(clampMaskOpacity(Number(v)) * 100)}%`;
+    case 'maskColor':
+      return safeMaskColor(v);
+    case 'reveal':
+      return REVEAL_MODES.find((m) => m.value === v)?.label ?? String(v);
+    case 'textPatterns':
+      return `${Array.isArray(v) ? v.length : 0} pattern${Array.isArray(v) && v.length === 1 ? '' : 's'}`;
+    default:
+      return v ? 'On' : 'Off';
+  }
+}
+
+/** The fields a site config actually pins, in a stable, human order. */
+function overriddenFields(config: BlurSiteConfig | undefined): (keyof BlurSettings)[] {
+  const own = config?.blur ?? {};
+  return (Object.keys(FIELD_LABELS) as (keyof BlurSettings)[]).filter(
+    (k) => own[k] !== undefined,
+  );
+}
+
+/**
+ * One overriding field inside a per-site row: what it pins, what global says, and
+ * a per-field way back to global — the counterpart of "Reset to global", which
+ * drops the row entirely.
+ */
+function OverrideMark({
+  label,
+  globalValue,
+  host,
+  onInherit,
+}: {
+  label: string;
+  globalValue: string;
+  host: string;
+  onInherit: () => void;
+}): JSX.Element {
+  return (
+    <p className="ovr ovr-inherit">
+      <span className="ovr-icon" aria-hidden="true">
+        ↳
+      </span>
+      <span className="ovr-txt">
+        <strong>{label}</strong> overrides global (<strong>{globalValue}</strong>).
+      </span>
+      <button
+        type="button"
+        className="ovr-btn"
+        aria-label={`Use the global ${label} setting on ${host}`}
+        onClick={onInherit}
+      >
+        Use global
+      </button>
+    </p>
+  );
+}
+
 /**
  * Normalize free-form user input into a bare hostname. A pasted
  * `https://example.com/path` must become `example.com`, or the entry never
@@ -160,7 +250,9 @@ export function App(): JSX.Element {
       <TabBar tabs={TABS} current={tab} onSelect={setTab} />
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {tab === 'blur' && <BlurPanel settings={settings} setBlur={setBlur} />}
+        {tab === 'blur' && (
+          <BlurPanel settings={settings} setBlur={setBlur} onManageSites={() => setTab('sites')} />
+        )}
 
         {tab === 'text' && (
           <TextPatternsPanel
@@ -437,12 +529,43 @@ function MaskSection({
   );
 }
 
+/**
+ * Every control on this tab is GLOBAL, and a site with an override quietly ignores
+ * the ones it overrides. Options has no "current tab" to speak of, so it cannot
+ * mark individual controls the way the popup does — but it can refuse to let the
+ * user believe the values here are the last word everywhere. Renders nothing when
+ * no site overrides anything, which is the common case.
+ */
+function GlobalOverridesNotice({ onManageSites }: { onManageSites: () => void }): JSX.Element | null {
+  const { value: configs } = useStorageItem(siteConfigsItem);
+  const hosts = Object.keys(configs).filter((h) => hasSiteOverride(configs[h]));
+  if (hosts.length === 0) return null;
+  const shown = hosts.slice(0, 4);
+  return (
+    <p className="ovr" role="status">
+      <span className="ovr-icon" aria-hidden="true">
+        ⚠
+      </span>
+      <span className="ovr-txt">
+        {hosts.length === 1 ? '1 site overrides' : `${hosts.length} sites override`} some of
+        these settings and will not follow changes made here: {shown.join(', ')}
+        {hosts.length > shown.length ? ` and ${hosts.length - shown.length} more` : ''}.
+      </span>
+      <button type="button" className="ovr-btn" onClick={onManageSites}>
+        Review per-site overrides
+      </button>
+    </p>
+  );
+}
+
 function BlurPanel({
   settings,
   setBlur,
+  onManageSites,
 }: {
   settings: { blur: BlurSettings };
   setBlur: (patch: Partial<BlurSettings>) => void;
+  onManageSites: () => void;
 }): JSX.Element {
   const [radius, setRadius] = useState(settings.blur.radius);
   useEffect(() => setRadius(settings.blur.radius), [settings.blur.radius]);
@@ -457,6 +580,7 @@ function BlurPanel({
 
   return (
     <section className="panel">
+      <GlobalOverridesNotice onManageSites={onManageSites} />
       <div className="toggles">
         {BLUR_TARGETS.map(({ key, label }) => (
           <label key={key} className="chip">
@@ -875,9 +999,12 @@ function SiteOverridesPanel(): JSX.Element {
     <div className="subpanel">
       <h2>Per-site overrides</h2>
       <p className="note">
-        Choose exactly which categories blur, and how strongly, on a specific site. Every toggle here
-        explicitly overrides your global setting for that site; use <strong>Remove</strong> to clear a
-        site's overrides and fall back to global. This needs no extra browser permission.
+        Choose exactly which categories blur, and how strongly, on a specific site. A site's
+        overrides <strong>beat your global settings</strong> there — so a marked control below is
+        one the Blur tab can no longer move on that site. Marked settings are the site's own;
+        everything else follows global. Use <strong>Use global</strong> to give a single setting
+        back, or <strong>Reset to global</strong> to clear the site entirely. This needs no extra
+        browser permission.
       </p>
       <div className="field">
         <input
@@ -931,17 +1058,55 @@ function SiteOverrideRow({
 }): JSX.Element {
   const effective = { ...globalBlur, ...config?.blur };
   const solid = effective.maskStyle === 'solid';
+  const own = config?.blur ?? {};
+  const owned = overriddenFields(config);
+
+  /** Give one field back to global. An empty config removes the row's entry. */
+  function inherit(field: keyof BlurSettings): void {
+    onChange({ blur: { [field]: undefined } as Partial<BlurSettings> });
+  }
+
+  /** Marker for a field this site actually pins — nothing for an inherited one. */
+  function mark(field: keyof BlurSettings): JSX.Element | null {
+    if (own[field] === undefined) return null;
+    return (
+      <OverrideMark
+        label={FIELD_LABELS[field] ?? field}
+        globalValue={describeBlurValue(field, globalBlur[field])}
+        host={host}
+        onInherit={() => inherit(field)}
+      />
+    );
+  }
+
   return (
     <div className="override-row">
       <div className="override-head">
-        <strong>{host}</strong>
-        <button type="button" aria-label={`Remove overrides for ${host}`} onClick={onRemove}>
-          Remove
+        <span className="override-title">
+          <strong>{host}</strong>
+          {/* Merged values are what the site GETS, so the toggles below must show
+              them — which means an inherited toggle and an overriding one look
+              identical. This line, and the marks under each control, are what tell
+              them apart. */}
+          <span className="sub-line">
+            {owned.length === 0
+              ? 'Follows global for everything.'
+              : `Overrides ${owned.length} setting${owned.length === 1 ? '' : 's'}: ${owned
+                  .map((k) => FIELD_LABELS[k] ?? k)
+                  .join(', ')}. Everything else follows global.`}
+          </span>
+        </span>
+        <button
+          type="button"
+          aria-label={`Clear ${host}'s overrides and use global settings there`}
+          onClick={onRemove}
+        >
+          Reset to global
         </button>
       </div>
       <div className="toggles">
         {BLUR_TARGETS.map(({ key, label }) => (
-          <label key={key} className="chip">
+          <label key={key} className={own[key] !== undefined ? 'chip flagged-own' : 'chip'}>
             <input
               type="checkbox"
               aria-label={`Blur ${label.toLowerCase()} on ${host}`}
@@ -952,6 +1117,9 @@ function SiteOverrideRow({
           </label>
         ))}
       </div>
+      {BLUR_TARGETS.map(({ key }) => (
+        <Fragment key={key}>{mark(key)}</Fragment>
+      ))}
       {/* Mask STYLE is per-site: "solid on the work intranet, blur everywhere else"
           is the whole reason overrides exist. The fill COLOUR and OPACITY are not —
           they are one global look, and per-site copies of them would be four more
@@ -974,6 +1142,7 @@ function SiteOverrideRow({
           ))}
         </div>
       </div>
+      {mark('maskStyle')}
       <div className="subordinate">
         {solid ? (
           <p className="note">
@@ -988,17 +1157,20 @@ function SiteOverrideRow({
             global — change them under <strong>Blur</strong>.
           </p>
         ) : (
-          <label className="field">
-            <span>Radius: {effective.radius}px</span>
-            <input
-              type="range"
-              min={4}
-              max={40}
-              value={effective.radius}
-              aria-label={`Blur radius on ${host}`}
-              onChange={(e) => onChange({ blur: { radius: Number(e.target.value) } })}
-            />
-          </label>
+          <>
+            <label className="field">
+              <span>Radius: {effective.radius}px</span>
+              <input
+                type="range"
+                min={4}
+                max={40}
+                value={effective.radius}
+                aria-label={`Blur radius on ${host}`}
+                onChange={(e) => onChange({ blur: { radius: Number(e.target.value) } })}
+              />
+            </label>
+            {mark('radius')}
+          </>
         )}
       </div>
     </div>

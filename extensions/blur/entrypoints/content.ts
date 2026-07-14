@@ -175,7 +175,27 @@ type ContentMessage =
   | { type: 'revealAll' }
   | { type: 'hideAll' }
   | { type: 'reevaluate' }
-  | { type: 'blurElement' };
+  | { type: 'blurElement' }
+  /**
+   * "What are you ACTUALLY applying right now?" — asked by the popup on open.
+   *
+   * A content script injected before an extension update is orphaned: it keeps the
+   * stylesheet it already adopted (so the page still looks masked) but it no longer
+   * receives storage events or messages. The popup, which is always freshly loaded,
+   * therefore shows the new settings while the page silently ignores them — and the
+   * feature reads as broken, with nothing anywhere to explain why. That is a browser
+   * constraint, not something the dead script can fix; but a LIVE script can answer
+   * this ping, so silence is itself the diagnosis.
+   */
+  | { type: 'whatIsApplied' };
+
+/** The content script's honest report of what it is currently enforcing. */
+export interface AppliedInfo {
+  active: boolean;
+  maskStyle: MaskStyle;
+  radius: number;
+  reveal: RevealMode;
+}
 
 const MANUAL_BLUR_ATTR = 'data-bx-manual';
 /** Root flag that reveals manually-blurred elements WITHOUT discarding them. */
@@ -201,6 +221,8 @@ export default defineContentScript({
     let rehideTimer: ReturnType<typeof setTimeout> | undefined;
     let labels: LabelOverlay | undefined;
     let labelSync: (() => void) | undefined;
+    /** The mask style the CURRENTLY-INJECTED stylesheet was built with. */
+    let appliedMaskStyle: MaskStyle = 'blur';
     let removeRehideOnBlur: (() => void) | undefined;
 
     // BLOCK-FIRST / FOUC (#6): the content script's async storage read resolves
@@ -352,6 +374,7 @@ export default defineContentScript({
       // sheet would offer a hover affordance no handler backed, or vice versa.
       const reveal = resolveRevealMode(settings.blur.reveal, CAN_HOVER);
 
+      appliedMaskStyle = settings.blur.maskStyle === 'solid' ? 'solid' : 'blur';
       engine = new DomRuleEngine({
         rules,
         blurRadius: settings.blur.radius,
@@ -677,7 +700,24 @@ export default defineContentScript({
       }, prefs.revealTimeoutSec * 1000);
     }
 
-    browser.runtime.onMessage.addListener((message: ContentMessage) => {
+    browser.runtime.onMessage.addListener((
+      message: ContentMessage,
+      _sender: unknown,
+      sendResponse: (response: AppliedInfo) => void,
+    ) => {
+      if (message?.type === 'whatIsApplied') {
+        // Answer from the RECONCILED state, never by re-reading storage: a stale
+        // script must not be able to look healthy by reporting what it SHOULD be
+        // doing instead of what it IS doing. (A stale script never gets here at
+        // all — its listener is dead — and that silence is the whole signal.)
+        sendResponse({
+          active: !!applied?.active,
+          maskStyle: appliedMaskStyle,
+          radius: applied?.radius ?? 0,
+          reveal: (applied?.reveal as RevealMode) || 'never',
+        });
+        return true;
+      }
       if (message?.type === 'revealAll') {
         revealAllNow();
       } else if (message?.type === 'hideAll') {
@@ -689,10 +729,37 @@ export default defineContentScript({
       }
     });
 
+    // FAIL CLOSED on invalidation (an extension update, or a reload in dev).
+    //
+    // This used to call teardown() + clearManualBlur() + clearPreblur(), which
+    // removes every injected stylesheet and strips the engine's attributes. The
+    // effect: the instant the extension updated, every open tab REPAINTED THE
+    // CONTENT IT WAS HIDING — no user action, no warning. That is the one thing
+    // this extension must never do.
+    //
+    // Now the masks stay exactly as they are and only the machinery stops: the
+    // observers are disconnected (nothing will ever tear them down otherwise, so
+    // they would leak), and the storage watchers are released. The page stays
+    // masked, frozen, until it is reloaded — at which point the new content
+    // script takes over cleanly.
+    //
+    // Note this is also why a page open across an extension update stops
+    // responding to the popup: its content script is orphaned. That is a browser
+    // constraint, not a bug we can fix from inside the dead context — but freezing
+    // means the failure is "settings don't apply until you reload", never
+    // "your content is suddenly on screen".
     ctx.onInvalidated(() => {
-      teardown();
-      clearManualBlur();
-      clearPreblur();
+      clearTimeout(rehideTimer);
+      rehideTimer = undefined;
+      removeRehideOnBlur?.();
+      removeClickReveal?.();
+      removeImageGate?.();
+      labels?.destroy();
+      // Freeze, do NOT stop: stop() removes the stylesheets and un-hides the page.
+      engine?.freeze();
+      // The text blurrer's CSS stays applied for the same reason; only its
+      // observer is released.
+      textBlurrer?.freeze();
       unwatchSettings();
       unwatchSites();
       unwatchImageRules();

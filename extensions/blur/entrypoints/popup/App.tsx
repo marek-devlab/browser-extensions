@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { JSX, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { browser } from '#imports';
 import type { BlurSettings, BlurTabStats, MaskStyle, RevealMode } from '@blur/core';
@@ -72,7 +72,169 @@ function toPct(v: number): number {
   return Math.round(clampMaskOpacity(v) * 100);
 }
 
+/* ---------------------------------------------------------------------- */
+/* Per-site override markers                                               */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * A per-site override SHADOWS the global value (`resolveBlurSettings` merges
+ * `site.blur` OVER `blur`). That precedence is right; its INVISIBILITY was not.
+ * The user sits on the Global tab, sees "Solid" selected, flips it, and the page
+ * keeps doing what an override they made weeks ago says — so the feature reads as
+ * broken.
+ *
+ * The fix is per-control, not a banner: a generic "this site has overrides" strip
+ * does not tell you WHICH switch you are about to waste your time on. Every field
+ * the popup can edit therefore names itself, its site value and a one-tap way back
+ * to global — and renders NOTHING at all in the common no-override case.
+ */
+const FIELD_LABELS: Partial<Record<keyof BlurSettings, string>> = {
+  images: 'Images',
+  video: 'Video',
+  posters: 'Thumbnails & posters',
+  text: 'Text',
+  maskStyle: 'Mask style',
+  radius: 'Blur radius',
+  maskOpacity: 'Fill opacity',
+  maskColor: 'Fill colour',
+  reveal: 'Show blurred content',
+  rehideOnBlur: 'Re-hide when I switch away',
+  showLabels: 'Labels',
+  textPatterns: 'Text patterns',
+};
+
+/** Say what a stored value IS, in the words the control beside it uses. */
+function describeBlurValue(field: keyof BlurSettings, v: unknown): string {
+  switch (field) {
+    case 'maskStyle':
+      return v === 'solid' ? 'Solid' : 'Blur';
+    case 'radius':
+      return `${String(v)}px`;
+    case 'maskOpacity':
+      return `${toPct(Number(v))}%`;
+    case 'maskColor':
+      return safeMaskColor(v);
+    case 'reveal':
+      return REVEAL_MODES.find((m) => m.value === v)?.label ?? String(v);
+    case 'textPatterns':
+      return `${Array.isArray(v) ? v.length : 0} pattern${Array.isArray(v) && v.length === 1 ? '' : 's'}`;
+    default:
+      return v ? 'On' : 'Off';
+  }
+}
+
+/** "Video", "Video and Mask style", "Video, Mask style and Blur radius". */
+function formatList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The marker itself. Two voices, because the two scopes ask different questions:
+ *
+ *  - `mode="global"` — "you are editing a control this site ignores". Amber, names
+ *    the field and the value the site actually uses. This is the bug being fixed.
+ *  - `mode="site"` — "this field is yours, the rest follow global". Quiet, and the
+ *    inherit button is the per-field way back out.
+ *
+ * The action is a real button with a 28px hit box and permanent underline: Firefox
+ * for Android has no hover, so nothing here may depend on one.
+ */
+function OverrideMark({
+  label,
+  hostname,
+  siteValue,
+  globalValue,
+  mode,
+  onInherit,
+}: {
+  label: string;
+  hostname: string;
+  siteValue: string;
+  globalValue: string;
+  mode: 'global' | 'site';
+  onInherit: () => void;
+}): JSX.Element {
+  return (
+    <p className={mode === 'site' ? 'ovr ovr-inherit' : 'ovr'}>
+      <span className="ovr-icon" aria-hidden="true">
+        {mode === 'site' ? '↳' : '⚠'}
+      </span>
+      <span className="ovr-txt">
+        {mode === 'site' ? (
+          <>
+            <strong>{label}</strong> overrides global (<strong>{globalValue}</strong>).
+          </>
+        ) : (
+          <>
+            <strong>{label}</strong> is overridden on this site — {hostname} uses{' '}
+            <strong>{siteValue}</strong>.
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        className="ovr-btn"
+        aria-label={`Use the global ${label} setting on ${hostname}`}
+        onClick={onInherit}
+      >
+        Use global
+      </button>
+    </p>
+  );
+}
+
 type Scope = 'global' | 'site';
+
+/** What the page's content script says it is ACTUALLY enforcing right now. */
+interface AppliedInfo {
+  active: boolean;
+  maskStyle: MaskStyle;
+  radius: number;
+  reveal: RevealMode;
+}
+
+/**
+ * Ask the page what it is really doing — and treat silence as the answer.
+ *
+ * A content script injected BEFORE an extension update is orphaned: it keeps the
+ * stylesheet it already adopted, so the page still looks masked, but it receives
+ * no storage events and no messages. The popup, always freshly loaded, cheerfully
+ * shows the new settings while the page ignores every one of them. The user flips
+ * "Solid", nothing happens, and there is nothing anywhere to explain why — it just
+ * reads as a broken feature. (This is a browser constraint; the dead script cannot
+ * fix itself. But the popup can notice.)
+ *
+ * `tabs.sendMessage` to a tab with no live listener REJECTS. So:
+ *   - an answer  -> the script is alive, and tells us what it is enforcing;
+ *   - a rejection -> the script is stale, and the page needs a reload.
+ *
+ * `null` = still asking. `'stale'` = no one answered.
+ */
+function useAppliedInfo(tabId: number): AppliedInfo | 'stale' | null {
+  const [info, setInfo] = useState<AppliedInfo | 'stale' | null>(null);
+  useEffect(() => {
+    if (tabId < 0) return;
+    let cancelled = false;
+    void browser.tabs
+      .sendMessage(tabId, { type: 'whatIsApplied' })
+      .then((res: unknown) => {
+        if (cancelled) return;
+        setInfo(res && typeof res === 'object' ? (res as AppliedInfo) : 'stale');
+      })
+      .catch(() => {
+        // "Receiving end does not exist" — no live content script in this tab.
+        // Also the honest answer for chrome:// pages and the store, where the
+        // extension legitimately does not run; the banner is only shown when the
+        // settings say we SHOULD be masking, so those stay quiet.
+        if (!cancelled) setInfo('stale');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tabId]);
+  return info;
+}
 
 function useActiveTab(): { hostname: string; tabId: number } {
   const [state, setState] = useState({ hostname: '', tabId: -1 });
@@ -96,6 +258,7 @@ export function App(): JSX.Element {
   const { settings, update, loaded, error } = useSettings();
   const { value: siteConfigs, setValue: setSiteConfigs } = useStorageItem(siteConfigsItem);
   const { hostname, tabId } = useActiveTab();
+  const appliedInfo = useAppliedInfo(tabId);
   const [tabStats, setTabStats] = useState<BlurTabStats>(() => emptyStats(-1, ''));
   const [scope, setScope] = useState<Scope>('global');
 
@@ -161,6 +324,56 @@ export function App(): JSX.Element {
     update({ allowlist: [...allow] });
   }
 
+  /* --- per-site override plumbing ------------------------------------- */
+
+  /**
+   * What this host pins, NAMED — not counted. A count would be a fresh little lie
+   * whenever an override has no control on screen to mark (a `radius` override is
+   * invisible while the Solid mask is selected, since the radius slider isn't
+   * rendered), leaving "3 settings" above two markers. Naming them is honest in
+   * every case and is what the user needs anyway.
+   */
+  const ownFieldLabels = [
+    ...(siteConfig?.enabled !== undefined ? ['Blur on this site'] : []),
+    ...(Object.keys(FIELD_LABELS) as (keyof BlurSettings)[])
+      .filter((k) => siteConfig?.blur?.[k] !== undefined)
+      .map((k) => FIELD_LABELS[k] ?? k),
+  ];
+  const siteHasOverride = hasSiteOverride(siteConfig);
+
+  /**
+   * Drop ONE field's override. `setSiteOverride` deletes keys set back to
+   * `undefined` and removes the whole site entry once nothing is left, so a
+   * per-field "Use global" is also the last-one-out cleanup — no orphan entries.
+   */
+  function inheritBlurField(field: keyof BlurSettings): void {
+    setSiteConfigs(
+      setSiteOverride(siteConfigs, hostname, {
+        blur: { [field]: undefined } as Partial<BlurSettings>,
+      }),
+    );
+  }
+
+  function clearSite(): void {
+    setSiteConfigs(clearSiteOverride(siteConfigs, hostname));
+  }
+
+  /** Marker for one blur field, or nothing at all when the site doesn't override it. */
+  function mark(field: keyof BlurSettings, mode: Scope = scope): JSX.Element | null {
+    const siteValue = siteConfig?.blur?.[field];
+    if (!hasHost || siteValue === undefined) return null;
+    return (
+      <OverrideMark
+        label={FIELD_LABELS[field] ?? field}
+        hostname={hostname}
+        siteValue={describeBlurValue(field, siteValue)}
+        globalValue={describeBlurValue(field, settings.blur[field])}
+        mode={mode === 'site' ? 'site' : 'global'}
+        onInherit={() => inheritBlurField(field)}
+      />
+    );
+  }
+
   function setBlurField(patch: Partial<BlurSettings>): void {
     if (editingSite) {
       setSiteConfigs(setSiteOverride(siteConfigs, hostname, { blur: patch }));
@@ -223,8 +436,60 @@ export function App(): JSX.Element {
   const activePreset = presetForRadius(radius);
   const solidMask = shown.maskStyle === 'solid';
 
+  // Would we expect this page to be masked at all? Only complain about a stale
+  // script when the answer is yes — otherwise a chrome:// tab or an allowlisted
+  // site would nag for no reason.
+  const shouldBeMasking =
+    settings.enabled &&
+    hostname.length > 0 &&
+    !isAllowlisted(settings.allowlist, hostname) &&
+    (effective.images || effective.video || effective.posters || effective.text);
+
+  const staleScript = appliedInfo === 'stale' && shouldBeMasking;
+  // The script is alive but enforcing a DIFFERENT mask than the settings say. This
+  // should be impossible once reconciliation lands, so if it ever shows, it is a
+  // real bug — not a stale page — and saying "reload" would be a lie.
+  const maskMismatch =
+    appliedInfo !== null &&
+    appliedInfo !== 'stale' &&
+    appliedInfo.active &&
+    appliedInfo.maskStyle !== effective.maskStyle;
+
   return (
     <main className="popup">
+      {staleScript && (
+        <div className="stale" role="alert">
+          <strong>This page is out of date.</strong> It was loaded before the extension
+          was updated, so it kept the old settings and ignores changes made here —
+          including the mask style. Reload the page to fix it.
+          <button
+            type="button"
+            className="stale-btn"
+            onClick={() => {
+              void browser.tabs.reload(tabId).then(() => window.close());
+            }}
+          >
+            Reload this page
+          </button>
+        </div>
+      )}
+      {maskMismatch && !staleScript && (
+        <div className="stale" role="alert">
+          <strong>The page is showing {appliedInfo.maskStyle === 'solid' ? 'a solid mask' : 'blur'}</strong>{' '}
+          but your settings say{' '}
+          {effective.maskStyle === 'solid' ? 'solid' : 'blur'}. Reload the page; if it
+          persists, this is a bug worth reporting.
+          <button
+            type="button"
+            className="stale-btn"
+            onClick={() => {
+              void browser.tabs.reload(tabId).then(() => window.close());
+            }}
+          >
+            Reload this page
+          </button>
+        </div>
+      )}
       <header className="row master">
         <div>
           <div className="host">Content Blur</div>
@@ -270,6 +535,24 @@ export function App(): JSX.Element {
           <span className="slider" />
         </label>
       </section>
+
+      {/* An `enabled` override (a backup import can carry one) silently decides
+          whether the engine runs here, and the switch above — which reads the
+          ALLOWLIST — would cheerfully claim "Active on this site" while it does
+          not. Same class of lie as the mask-style one, so it gets the same
+          marker rather than being left as the one invisible case. */}
+      {hasHost && siteConfig?.enabled !== undefined && (
+        <OverrideMark
+          label="Blur on this site"
+          hostname={hostname}
+          siteValue={siteConfig.enabled ? 'On' : 'Off'}
+          globalValue={settings.enabled ? 'On' : 'Off'}
+          mode="global"
+          onInherit={() =>
+            setSiteConfigs(setSiteOverride(siteConfigs, hostname, { enabled: undefined }))
+          }
+        />
+      )}
 
       {hasHost ? (
         // Counts are EXACT (read from the engine's per-label tally), so a real 0
@@ -348,18 +631,39 @@ export function App(): JSX.Element {
           id="scope-panel"
           aria-labelledby={scope === 'site' ? 'scope-tab-site' : 'scope-tab-global'}
         >
+        {/* The one-click way out, and the only thing here that costs vertical space
+            — so it exists ONLY when an override actually does. No override (the
+            common case) means not a pixel of this section renders. */}
+        {!editingSite && siteHasOverride && (
+          <p className="ovr ovr-sum" role="status">
+            <span className="ovr-icon" aria-hidden="true">
+              ⚠
+            </span>
+            <span className="ovr-txt">
+              <strong>{hostname}</strong> has its own{' '}
+              <strong>{formatList(ownFieldLabels)}</strong>. Changes on this tab won’t reach
+              it.
+            </span>
+            <button
+              type="button"
+              className="ovr-btn"
+              aria-label={`Clear this site's overrides and use global settings on ${hostname}`}
+              onClick={clearSite}
+            >
+              Use global settings on this site
+            </button>
+          </p>
+        )}
+
         {editingSite && (
           <p className="note" role="status">
-            Editing overrides for <strong>{hostname}</strong>.
-            {hasSiteOverride(siteConfig) && (
+            Editing overrides for <strong>{hostname}</strong>. Marked settings are this
+            site’s own; everything else follows global.
+            {siteHasOverride && (
               <>
                 {' '}
-                <button
-                  type="button"
-                  className="linkbtn"
-                  onClick={() => setSiteConfigs(clearSiteOverride(siteConfigs, hostname))}
-                >
-                  Reset to global
+                <button type="button" className="linkbtn" onClick={clearSite}>
+                  Clear this site’s overrides
                 </button>
               </>
             )}
@@ -368,7 +672,20 @@ export function App(): JSX.Element {
 
         <div className="toggles">
           {BLUR_TARGETS.map(({ key, label }) => (
-            <label key={key} className="chip">
+            // The four categories share one wrapping row, so — unlike every other
+            // control here — a marker underneath cannot sit against the control it
+            // is about. The chip therefore carries the flag itself and the marker
+            // below names the category, so the two are unmistakably one statement.
+            <label
+              key={key}
+              className={
+                hasHost && siteConfig?.blur?.[key] !== undefined
+                  ? editingSite
+                    ? 'chip flagged-own'
+                    : 'chip flagged'
+                  : 'chip'
+              }
+            >
               <input
                 type="checkbox"
                 aria-label={`Blur ${label.toLowerCase()}${editingSite ? ` on ${hostname}` : ''}`}
@@ -379,6 +696,9 @@ export function App(): JSX.Element {
             </label>
           ))}
         </div>
+        {BLUR_TARGETS.map(({ key }) => (
+          <Fragment key={key}>{mark(key)}</Fragment>
+        ))}
         {shown.text && (
           <p className="note">
             Blurred text stays in the DOM and accessibility tree — screen readers still read it and
@@ -403,6 +723,9 @@ export function App(): JSX.Element {
             ))}
           </div>
         </div>
+        {/* The reported bug, exactly: "Solid" is highlighted above, the site says
+            Blur, and the page obeys the site. Now it says so. */}
+        {mark('maskStyle')}
 
         {/* Strictly the controls the CHOSEN style uses — a radius slider under a
             solid fill would move nothing, a colour swatch under a blur would tint
@@ -441,6 +764,7 @@ export function App(): JSX.Element {
                 onChange={(e) => onOpacityChange(Number(e.target.value))}
               />
             </label>
+            {mark('maskOpacity')}
 
             <div className="field">
               <span id="fill-colour-label">Fill colour</span>
@@ -469,6 +793,7 @@ export function App(): JSX.Element {
                 />
               </div>
             </div>
+            {mark('maskColor')}
 
             <p className="note">
               Opacity does <strong>not</strong> uncover the content. Below 100% you see the{' '}
@@ -506,6 +831,7 @@ export function App(): JSX.Element {
                 onChange={(e) => onRadiusChange(Number(e.target.value))}
               />
             </label>
+            {mark('radius')}
           </>
         )}
         <label className="field">
@@ -522,6 +848,7 @@ export function App(): JSX.Element {
             ))}
           </select>
         </label>
+        {mark('reveal')}
         {shown.reveal === 'hover' && (
           <p className="note">On touch devices, hover becomes tap-to-reveal.</p>
         )}
@@ -547,6 +874,10 @@ export function App(): JSX.Element {
             <span className="slider" />
           </span>
         </label>
+        {/* This switch always writes GLOBAL, whichever scope tab is open — so its
+            marker always speaks in the global voice, and "Applies everywhere"
+            above it stops being a half-truth on an overriding site. */}
+        {mark('rehideOnBlur', 'global')}
       </section>
 
       <footer className="actions actions--reveal">

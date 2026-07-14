@@ -45,7 +45,7 @@
     "id": "T7",
     "name": "element picker hides + persists a filter",
     "pass": true,
-    "detail": "hiddenAfterPick=true persisted={\"victim.test\":[{\"added\":1784025844033,\"label\":\"Block “custom junk” · 1264×18\",\"selector\":\"#sponsored-slot\"}]}"
+    "detail": "hiddenAfterPick=true persisted={\"victim.test\":[{\"added\":1784028342753,\"label\":\"Block “custom junk” · 1264×18\",\"selector\":\"#sponsored-slot\"}]}"
   },
   {
     "id": "T8",

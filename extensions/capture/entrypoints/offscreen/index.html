@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Capture Studio — offscreen</title>
+  </head>
+  <body>
+    <!-- CHROME ONLY, invisible. This document exists solely because MediaRecorder
+         needs a DOM and a service worker has none (design §9.5). It owns the
+         MediaStream + MediaRecorder and streams chunks to IndexedDB. It has NO
+         visible UI (so it cannot show a mic permission prompt — design §5.9).
+         Firefox never loads this: its recorder WINDOW owns the stream instead. -->
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

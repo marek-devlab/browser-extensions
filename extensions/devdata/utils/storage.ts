@@ -1,0 +1,128 @@
+import { storage } from '#imports';
+
+// Storage layout. The sync/local split is a HARD requirement in this repo:
+//   - `sync`  : lightweight UI prefs only. Quotas are HARD failures on exceed
+//               (102,400 bytes total / 8,192 per item / 512 items). The 8 KB
+//               per-item cap silently shredded data in `blur` (PLAN.md §18a),
+//               so anything that could ever exceed it goes to `local` instead.
+//   - `local` : cached document + schema text. ~10 MB, no per-item cap.
+//
+// `DevdataPrefs` is a flat object of ~15 boolean/enum fields (~300 bytes) — it
+// fits `sync` with huge margin. The last document (up to 1 MB) and the last
+// schema text (up to 256 KB) can obviously blow the sync per-item cap, so they
+// live in `local`.
+//
+// NEVER persisted, at any setting (design §7.2): the JWT token, the HS256
+// secret, and the public key. Those live ONLY in React state (RAM) on the JWT
+// tab and have no storage item here by design — that is an architectural
+// invariant, not a "remember not to". The JWT tab must never feed `local:document`.
+//
+// `version` + `migrations` are declared from day one so the schema can evolve
+// without wiping user data on update.
+
+export type Theme = 'auto' | 'light' | 'dark';
+export type ToolTab = 'data' | 'jwt' | 'schema';
+export type IndentPref = '2' | '4' | 'tab' | 'min';
+export type FormatPref =
+  | 'auto'
+  | 'json'
+  | 'json5'
+  | 'jsonc'
+  | 'yaml'
+  | 'xml'
+  | 'csv';
+export type CsvDelimiterPref = 'comma' | 'semicolon' | 'tab' | 'auto';
+export type SchemaDraftPref = '2020-12' | '2019-09' | '7' | '4';
+
+export interface DevdataPrefs {
+  // --- View ---
+  theme: Theme;
+  /** Which tab the tool page opens on. */
+  defaultTab: ToolTab;
+  indent: IndentPref;
+  wrap: boolean;
+  lineNumbers: boolean;
+  // --- Parse ---
+  defaultFormat: FormatPref;
+  sortKeys: boolean;
+  /** 0..5 — how deep the tree auto-expands on load. */
+  expandDepth: number;
+  /** Use JSON.parse source access for exact big numbers (design §5.6). */
+  exactNumbers: boolean;
+  csvDelimiter: CsvDelimiterPref;
+  csvBom: boolean;
+  // --- Schema ---
+  schemaDraft: SchemaDraftPref;
+  schemaFormats: boolean;
+  // --- Storage ---
+  /** Whether to write `local:document` at all. */
+  restore: boolean;
+  // --- Page formatting ---
+  /**
+   * INTENT to auto-format JSON pages. This is separate from whether the
+   * `<all_urls>` permission is actually granted — the UI must always show the
+   * PERMISSION FACT (`permissions.contains`), and use this only to offer
+   * "you asked for this on another device — grant it here?" (design §3, §8).
+   */
+  autoFormat: boolean;
+}
+
+export const DEFAULT_PREFS: DevdataPrefs = {
+  theme: 'auto',
+  defaultTab: 'data',
+  indent: '2',
+  wrap: true,
+  lineNumbers: true,
+  defaultFormat: 'auto',
+  sortKeys: false,
+  expandDepth: 2,
+  exactNumbers: true,
+  csvDelimiter: 'auto',
+  csvBom: true,
+  schemaDraft: '2020-12',
+  schemaFormats: false,
+  restore: true,
+  autoFormat: false,
+};
+
+export const prefsItem = storage.defineItem<DevdataPrefs>('sync:prefs', {
+  fallback: DEFAULT_PREFS,
+  version: 1,
+  migrations: {
+    // Populate as the prefs schema evolves, e.g. `2: (old) => ({ ...old })`.
+  },
+});
+
+/** A parsed document cached for "restore last document". Never larger than 1 MB
+ *  (design §3, §8) — larger docs are intentionally NOT saved and the UI says so.
+ *  JWT-tab content is NEVER stored here. */
+export interface CachedDocument {
+  /** Raw source text, as typed/dropped. */
+  text: string;
+  /** Detected/overridden format at save time. */
+  format: FormatPref;
+  /** Byte length, so the UI can warn before rehydrating a big doc. */
+  bytes: number;
+  /** Original file name, if the doc came from a dropped file. */
+  name: string | null;
+  savedAt: number;
+}
+
+export const documentItem = storage.defineItem<CachedDocument | null>(
+  'local:document',
+  {
+    fallback: null,
+    version: 1,
+    migrations: {},
+  },
+);
+
+/** Last JSON Schema text, cached only when "restore" is on. ≤256 KB (design §3). */
+export const schemaItem = storage.defineItem<string | null>('local:schema', {
+  fallback: null,
+  version: 1,
+  migrations: {},
+});
+
+/** Hard cap: documents larger than this are not persisted (design §3, §8). */
+export const MAX_PERSIST_BYTES = 1_000_000;

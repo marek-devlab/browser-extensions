@@ -1,0 +1,46 @@
+/* Options page (design §2.11) — a single 640px column, all controls right-aligned.
+ * Keys off the shared @blur/ui tokens, so theme is free. */
+
+body { background: var(--bg); }
+
+.opt {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+.opt h1 { font-size: 18px; margin: 0 0 8px; }
+
+.opt section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px 12px;
+  margin: 12px 0;
+  background: var(--bg-elev);
+}
+
+.opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.opt-row:last-child { border-bottom: none; }
+
+.opt-row select,
+.opt-row input[type='number'] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.opt-row input[type='number'] { width: 72px; }
+
+.opt-flags { display: flex; gap: 10px; font-size: 12px; }
+.opt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.opt-loading { padding: 24px; color: var(--text-dim); }

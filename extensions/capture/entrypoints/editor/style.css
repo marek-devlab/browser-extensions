@@ -1,0 +1,578 @@
+/* Studio (editor.html) — full-tab, fluid. Tokens + primitives from @blur/ui. */
+
+.studio {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 12px 16px 48px;
+}
+
+.studio-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.studio-head h1 {
+  font-size: 16px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--poor);
+  display: inline-block;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tab--on {
+  background: var(--bg-elev);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.icon-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.muted {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.warn-text {
+  color: var(--warn-fg);
+  font-size: 12px;
+}
+
+/* ── Library ──────────────────────────────────────────────────────────────── */
+.lib-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.clip-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clip {
+  display: flex;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-elev);
+}
+
+.clip-thumb {
+  width: 72px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex: none;
+}
+
+.clip-title {
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+
+.clip-meta {
+  margin: 0 0 6px;
+}
+
+.clip-actions,
+.lib-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  margin-top: 16px;
+}
+
+.dropzone p {
+  margin: 4px 0;
+}
+
+/* ── Clip editor ──────────────────────────────────────────────────────────── */
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+@media (max-width: 860px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Checkerboard preview — NEVER --bg, so a black fill can't hide in dark mode
+   (design §11.3). */
+.preview,
+.preview-frame {
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.preview-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background-color: #808080;
+  background-image:
+    linear-gradient(45deg, #6b6b6b 25%, transparent 25%),
+    linear-gradient(-45deg, #6b6b6b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #6b6b6b 75%),
+    linear-gradient(-45deg, transparent 75%, #6b6b6b 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.preview-frame--shot {
+  aspect-ratio: auto;
+  padding: 16px;
+  color: #111;
+}
+
+.redact {
+  position: absolute;
+}
+
+.redact--fill {
+  background: #000;
+}
+
+.redact--fill.inline {
+  position: static;
+  display: inline-block;
+  color: transparent;
+  border-radius: 2px;
+}
+
+.redact--cosmetic {
+  border: 2px dashed var(--warn);
+  color: var(--warn-fg);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.redact--cosmetic.inline {
+  position: static;
+  display: inline-block;
+  padding: 2px 6px;
+}
+
+.wm-preview {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  color: #fff;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+.transport {
+  margin: 8px 0;
+  color: var(--text-dim);
+}
+
+.timeline {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-elev);
+}
+
+.track {
+  position: relative;
+  height: 22px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.trim-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  opacity: 0.35;
+}
+
+.trim-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.trim-inputs label {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-side h3,
+.settings h3,
+.tool-group h4 {
+  margin: 0 0 6px;
+}
+
+.layers {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.layers li {
+  padding: 3px 0;
+}
+
+.tool-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 12px;
+  background: var(--bg-elev);
+}
+
+.tool-group--cosmetic {
+  border-color: var(--warn);
+}
+
+.tool-group h4 {
+  font-size: 12px;
+}
+
+.cosmetic-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.region-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.check-inline,
+.radio-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+/* ── Export dialog ────────────────────────────────────────────────────────── */
+.export-dialog {
+  max-width: 680px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--bg-elev);
+}
+
+.ed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ed-head h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.export-dialog fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 10px 0;
+  padding: 8px 10px;
+}
+
+.export-dialog legend {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.ed-fields {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.ed-fields label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip--on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--badge-fill-text);
+}
+
+.chip input {
+  width: 52px;
+  margin: 0 4px;
+}
+
+.budget {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 12px;
+  margin: 12px 0;
+  background: var(--bg);
+}
+
+.budget--ok {
+  border-left-color: var(--good);
+}
+.budget--warn {
+  border-left-color: var(--warn);
+}
+.budget--poor {
+  border-left-color: var(--poor);
+}
+
+.budget-head {
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.budget-lines {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.budget-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 4px 0;
+}
+
+.budget-fix {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.fix-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.anyway summary {
+  cursor: pointer;
+  color: var(--accent-fg);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.ed-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.progress {
+  height: 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .progress-fill {
+    transition: width 0.3s ease;
+  }
+}
+
+.pass-log {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* ── Screenshot ───────────────────────────────────────────────────────────── */
+.shot-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 860px) {
+  .shot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shot-out {
+  display: flex;
+  gap: 16px;
+  margin: 10px 0;
+}
+
+.shot-out label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+/* ── Settings ─────────────────────────────────────────────────────────────── */
+.settings {
+  max-width: 720px;
+}
+
+.set-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--bg-elev);
+}
+
+.set-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.set-row:first-of-type {
+  border-top: none;
+}
+
+.set-row__label {
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+.set-row__note {
+  font-size: 10px;
+  color: var(--warn-fg);
+  margin-top: 1px;
+}
+
+.set-row__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-dialog input[type='text'],
+.export-dialog input[type='number'],
+.set-row input[type='text'],
+select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  font-size: 12px;
+}

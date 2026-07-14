@@ -1,0 +1,360 @@
+/* Full report page. Tokens + primitives from @blur/ui; whoami layout only here.
+   The FieldRow / chip / popover / consent rules are shared with the popup — this
+   page redeclares just the ones it needs so it can stand alone. */
+
+.report {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.report__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.report__head h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.report__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.report__headctl {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.report__toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.report__filter {
+  flex: 1 1 240px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+}
+
+.report__toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.report__grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 680px) {
+  .report__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.report__nav {
+  position: sticky;
+  top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--bg-elev);
+}
+
+.report__nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.report__nav a {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.report__nav a:hover {
+  background: var(--bg);
+}
+
+.report__navcount {
+  color: var(--text-dim);
+}
+
+.report__unavail {
+  margin: 8px 4px 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.report__section {
+  margin-bottom: 20px;
+  scroll-margin-top: 16px;
+}
+
+.report__section h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 0 0 6px;
+}
+
+.report__fields {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 12px;
+  background: var(--bg-elev);
+}
+
+.report__empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.report__export {
+  margin-top: 24px;
+}
+
+.report__export h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.report__exportrow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* ---- FieldRow (shared with popup) ----------------------------------------- */
+
+.frow {
+  display: grid;
+  grid-template-columns: minmax(140px, 30%) 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.frow:last-child {
+  border-bottom: none;
+}
+
+.frow__label {
+  color: var(--text-dim);
+}
+
+.frow__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.frow__value--ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.frow__copy {
+  min-width: 20px;
+  text-align: end;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--warn);
+  background: transparent;
+  color: var(--warn-fg);
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+@media (forced-colors: active) {
+  .chip {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+}
+
+.approx {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--warn-fg);
+  cursor: help;
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+.copybtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.copybtn:hover {
+  color: var(--accent-fg);
+}
+
+.popover {
+  max-width: 340px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.popover__title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.popover__body {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+/* ---- Connection section (shared) ------------------------------------------ */
+
+.conn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  background: var(--bg-elev);
+}
+
+.conn__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+}
+
+.conn__divider {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 8px 0 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.ipblock__source {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+}
+
+.linkbtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent-fg);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+/* ---- Consent dialog (shared) ---------------------------------------------- */
+
+.consent {
+  max-width: 460px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.consent::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.consent__title {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.consent p {
+  margin: 0 0 10px;
+}
+
+.consent__links a {
+  color: var(--accent-fg);
+}
+
+.consent__en {
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.consent__en summary {
+  cursor: pointer;
+  color: var(--accent-fg);
+}
+
+.consent__never {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 0;
+  color: var(--text-dim);
+}
+
+.consent__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}

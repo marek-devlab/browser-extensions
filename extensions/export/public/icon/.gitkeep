@@ -1,0 +1,7 @@
+# TODO(icons): add 16/32/48/128 PNGs for the Page Content Exporter.
+#
+# WXT auto-discovers `public/icon/{16,32,48,128}.png` into the manifest `icons`
+# map, and `wxt.config.ts` wires the same set to `action.default_icon`. Until the
+# real art exists this placeholder keeps the folder in git. Generate via the
+# repo-root `npm run icons` pipeline (scripts/gen-icons.mjs) once a source SVG is
+# added, exactly like the other extensions.

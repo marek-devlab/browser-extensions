@@ -1,0 +1,97 @@
+/* Popup-launcher styling. Tokens + primitives come from @blur/ui (imported in
+   main.tsx BEFORE this file); this stylesheet only adds popup-specific layout. */
+
+.popup {
+  width: 320px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.host {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Make the shared <Button> primitives fill the popup width. */
+.stack .ui-btn,
+.popup section > .ui-btn {
+  width: 100%;
+  text-align: center;
+  padding: 9px 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.row--gap {
+  gap: 8px;
+  margin-top: 6px;
+}
+
+kbd {
+  font: inherit;
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 6px;
+}
+
+.fine {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.foot {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-dim);
+}

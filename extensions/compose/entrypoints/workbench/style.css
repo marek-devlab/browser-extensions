@@ -1,0 +1,14 @@
+/* Full-page Workbench overrides (design §5.8, 700–1600+px). Shared styling lives
+ * in components/workbench.css; this file just gives the page a comfortable
+ * background gutter around the centered app. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-elev);
+}

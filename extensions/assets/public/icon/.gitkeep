@@ -1,0 +1,4 @@
+# TODO(assets): add real toolbar/store icons 16/32/48/128 PNG here.
+# This scaffold ships NO icon PNGs on purpose. WXT auto-discovers the top-level
+# `icons` map from public/icon/{16,32,48,128}.png, and wxt.config wires
+# action.default_icon to the same files. Drop the four PNGs in and both light up.

@@ -1,0 +1,189 @@
+/* @blur/ui — styling for the shared primitives in components.tsx. Import AFTER
+ * tokens.css and BEFORE the extension's own style.css:
+ *
+ *     import '@blur/ui/tokens.css';
+ *     import '@blur/ui/components.css';   // via the '.' export? No — see below.
+ *     import './style.css';
+ *
+ * NOTE: this file is exported from the package "./components.css" path (add it
+ * to package.json exports if you import it directly), or an extension may simply
+ * copy the rules it needs. It intentionally only uses tokens.css variables, so
+ * it themes for free. */
+
+.ui-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px;
+  color: var(--text-dim);
+}
+
+.ui-state--error {
+  color: var(--poor-fg);
+}
+
+.ui-empty {
+  padding: 16px 8px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.ui-empty__title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ui-empty__hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ui-section-heading {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 12px 0 4px;
+}
+
+.ui-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.ui-badge--ok {
+  border-color: var(--good);
+  color: var(--good-fg);
+}
+.ui-badge--warn {
+  border-color: var(--warn);
+  color: var(--warn-fg);
+}
+.ui-badge--poor {
+  border-color: var(--poor);
+  color: var(--poor-fg);
+}
+.ui-badge--info {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.ui-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ui-btn:hover {
+  border-color: var(--accent);
+}
+
+.ui-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-btn--primary {
+  background: var(--accent);
+  color: var(--badge-fill-text);
+  border-color: var(--accent);
+}
+
+.ui-btn--ghost {
+  background: transparent;
+}
+
+.ui-btn--sm {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.ui-callout {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  margin: 8px 0;
+}
+
+.ui-callout--info {
+  border-left-color: var(--accent);
+}
+.ui-callout--ok {
+  border-left-color: var(--good);
+}
+.ui-callout--warn {
+  border-left-color: var(--warn);
+}
+.ui-callout--poor {
+  border-left-color: var(--poor);
+}
+
+.ui-callout__title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.ui-callout__body {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+/* The scaffold-phase "mock data" banner. Deliberately loud (dashed border) so
+ * nobody mistakes a scaffold screen for a finished one. */
+.ui-mock {
+  border: 1px dashed var(--warn);
+  color: var(--warn-fg);
+  background: var(--bg-elev);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 10px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* Segmented Auto/Light/Dark control (ThemeToggle). */
+.theme-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex: none;
+}
+
+.theme-toggle__btn {
+  appearance: none;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 3px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  border-left: 1px solid var(--border);
+}
+
+.theme-toggle__btn:first-child {
+  border-left: none;
+}
+
+.theme-toggle__btn--active {
+  background: var(--accent);
+  color: var(--badge-fill-text);
+}

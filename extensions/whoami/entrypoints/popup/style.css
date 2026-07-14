@@ -1,0 +1,314 @@
+/* Popup — 380px, device-first (design §1.1, §2.1). Tokens + primitives come from
+   @blur/ui (tokens.css + components.css, imported first in main.tsx); this file
+   only adds whoami-specific layout. Everything keys off the shared CSS variables,
+   so the theme (data-theme / prefers-color-scheme) applies for free. */
+
+.popup {
+  width: 380px;
+  padding: 12px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 20px 8px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.head h1 {
+  font-size: 15px;
+  margin: 0;
+  flex: none;
+}
+
+/* ---- Collapsible tiles ---------------------------------------------------- */
+
+.tile {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.tile__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: start;
+}
+
+.tile__head--static {
+  cursor: default;
+}
+
+.tile__icon {
+  flex: none;
+}
+
+.tile__title {
+  flex: 1 1 auto;
+}
+
+.tile__caret {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.tile__body {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Field rows (the FieldRow renderer, utils/field.tsx) ------------------- */
+
+.frow {
+  display: grid;
+  grid-template-columns: minmax(88px, 40%) 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.frow:last-child {
+  border-bottom: none;
+}
+
+.frow__label {
+  color: var(--text-dim);
+}
+
+.frow__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.frow__value--ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.frow__text {
+  font-variant-numeric: tabular-nums;
+}
+
+.frow__copy {
+  min-width: 20px;
+  text-align: end;
+}
+
+/* Chip for an unavailable field — 🔴 the only rendering of an absent value. It is
+   a real, keyboard-operable button (popover explainer), never a "—". */
+.chip {
+  appearance: none;
+  border: 1px solid var(--warn);
+  background: transparent;
+  color: var(--warn-fg);
+  border-radius: 10px;
+  padding: 0 7px;
+  font-size: 10px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+/* High-contrast (forced-colors): the chip is our main carrier of meaning, so it
+   must never dissolve into the background (design §11). */
+@media (forced-colors: active) {
+  .chip {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+}
+
+.approx {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--warn-fg);
+  cursor: help;
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+.copybtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.copybtn:hover {
+  color: var(--accent-fg);
+}
+
+/* Native Popover API explainer (design §2.8). Plain absolute positioning — CSS
+   Anchor Positioning is Chromium-only, so we centre it in the viewport instead. */
+.popover {
+  max-width: 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.popover__title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.popover__body {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+/* ---- Connection section --------------------------------------------------- */
+
+.conn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conn__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  margin: 4px 0;
+}
+
+.conn__isp {
+  margin-top: 6px;
+}
+
+.conn__divider {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 8px 0 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.ipblock {
+  display: flex;
+  flex-direction: column;
+}
+
+.ipblock__source {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.linkbtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent-fg);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+/* ---- Consent dialog (design §2.4) ---------------------------------------- */
+
+.consent {
+  max-width: 380px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.consent::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.consent__title {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.consent p {
+  margin: 0 0 8px;
+}
+
+.consent__links a {
+  color: var(--accent-fg);
+}
+
+.consent__en {
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.consent__en summary {
+  cursor: pointer;
+  color: var(--accent-fg);
+}
+
+.consent__never {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.consent__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ---- Footer --------------------------------------------------------------- */
+
+.foot {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+}

@@ -1,0 +1,140 @@
+/* Recorder window — fixed ~380×190 OS window (design §2.3). Compact, no frame
+   preview (deliberate: a live <video> would cost decode+render 30×/s for a
+   picture the user already sees in the tab — design §2.3). */
+
+body {
+  font-size: 12px;
+}
+
+.recorder {
+  padding: 8px 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rec-word {
+  font-weight: 700;
+  color: var(--poor-fg);
+}
+
+.rec-word--paused {
+  color: var(--warn-fg);
+}
+
+.rec-time {
+  font-size: 22px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
+}
+
+.src,
+.specs,
+.disk {
+  margin: 2px 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.mic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.mic-meter {
+  flex: 1;
+  color: var(--good-fg);
+  letter-spacing: 1px;
+  font-family: var(--mono);
+}
+
+.mini-btn,
+.ctl {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mini-btn:hover,
+.ctl:hover {
+  border-color: var(--accent);
+}
+
+.controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ctl {
+  flex: 1;
+  padding: 7px 6px;
+}
+
+.ctl--stop {
+  border-color: var(--poor);
+  color: var(--poor-fg);
+  font-weight: 600;
+}
+
+.ctl--danger {
+  background: var(--poor);
+  color: var(--badge-fill-text);
+  border-color: var(--poor);
+}
+
+.keys {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 10px;
+  margin: 4px 0;
+}
+
+.note {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  margin: 4px 0 0;
+}
+
+.note--warn {
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--text);
+}
+
+/* prefers-reduced-motion: the design forbids the pulsing red dot animating —
+   there is no animation here to disable, but keep the rule as a guard for any
+   future pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .rec-word {
+    animation: none;
+  }
+}

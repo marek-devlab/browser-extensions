@@ -1,0 +1,6 @@
+# Icon placeholder — no PNGs generated yet.
+#
+# TODO(icons): generate icon/{16,32,48,128}.png (see scripts/gen-icons.mjs at the
+# repo root, as used by the shipped extensions). The manifest's action.default_icon
+# and the top-level icons map both reference these paths; the build copies public/
+# verbatim to the extension root. A red-dot "REC" mark is the natural motif.

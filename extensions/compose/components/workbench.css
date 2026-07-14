@@ -1,0 +1,209 @@
+/* Shared Workbench styles (design §2, §5.8, §9.3). Imported by both the side
+ * panel and the full-page Workbench entrypoints AFTER @blur/ui tokens.css +
+ * components.css. Everything keys off the shared tokens, so theme is free.
+ *
+ * Adaptivity uses `container-type: inline-size` + `@container` (design §5.8): a
+ * panel is NOT the viewport, so @media is wrong. The tabs-vs-split RENDER choice
+ * is made in JS (ResizeObserver) since it changes the DOM/aria; the CSS handles
+ * everything visual. */
+
+.cw-root {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 300px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.cw-root[data-surface='workbench'] {
+  max-width: 1600px;
+  margin: 0 auto;
+  height: 100vh;
+}
+
+.cw-loading {
+  padding: 24px;
+  color: var(--text-dim);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.cw-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.cw-header__draft,
+.cw-header__target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cw-header select {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  max-width: 160px;
+  font-size: 12px;
+}
+.cw-header__spacer { flex: 1 1 auto; }
+.cw-save { font-size: 10px; color: var(--text-dim); min-width: 84px; text-align: right; }
+
+/* ── Toolbar ────────────────────────────────────────────────────────────── */
+.cw-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.cw-tool {
+  appearance: none;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+.cw-tool:hover { background: var(--bg-elev); border-color: var(--border); }
+.cw-tool--inline { min-width: 22px; height: 22px; }
+
+/* ── View tabs (narrow) + drawer tabs ───────────────────────────────────── */
+.cw-viewtabs,
+.cw-tablist { display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.cw-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cw-tab--active { background: var(--bg-elev); color: var(--text); border-color: var(--border); font-weight: 600; }
+
+/* ── Panes ──────────────────────────────────────────────────────────────── */
+.cw-panes { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.cw-panes--split { flex-direction: row; }
+.cw-panes--split > * { flex: 1 1 50%; min-width: 0; border-right: 1px solid var(--border); overflow: auto; }
+.cw-panes--split > *:last-child { border-right: none; }
+
+.cw-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+  box-sizing: border-box;
+  border: none;
+  resize: none;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+@supports (field-sizing: content) {
+  .cw-root[data-surface='workbench'] .cw-editor { field-sizing: content; }
+}
+
+.cw-preview-wrap { padding: 10px 12px; }
+.cw-preview { line-height: 1.5; }
+.cw-preview h2 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+.cw-preview pre { background: var(--bg-elev); padding: 8px; border-radius: var(--radius-sm); overflow-x: auto; font-family: var(--mono); }
+.cw-preview .cw-task-list { list-style: none; padding-left: 4px; }
+.cw-preview details { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; }
+
+/* ── CounterStrip ───────────────────────────────────────────────────────── */
+.cw-counter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cw-counter__compat { flex: 1 1 auto; }
+
+/* ── Drawer / panels ────────────────────────────────────────────────────── */
+.cw-drawer { border-top: 1px solid var(--border); max-height: 45vh; overflow: auto; background: var(--bg-elev); }
+.cw-panel { padding: 8px 10px; }
+.cw-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); margin: 6px 0; }
+.cw-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  font-size: 12px;
+  width: 100%;
+}
+.cw-flags, .cw-sim { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 11px; margin: 6px 0; }
+.cw-hint { font-size: 10px; color: var(--text-dim); line-height: 1.4; margin: 4px 0; }
+.cw-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.cw-preview-list { list-style: none; padding: 6px; margin: 4px 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; }
+.cw-invalid { color: var(--warn-fg); }
+.cw-invalid pre { white-space: pre-wrap; }
+
+.cw-std { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
+.cw-std__row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.cw-std__ex { margin-left: auto; color: var(--text-dim); }
+.cw-result { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; margin: 4px 0; }
+
+.cw-stats__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cw-stats__table th, .cw-stats__table td { text-align: right; padding: 2px 6px; }
+.cw-stats__table td:first-child, .cw-stats__table th:first-child { text-align: left; color: var(--text-dim); }
+.cw-limits { list-style: none; padding: 0; margin: 4px 0; }
+.cw-limit { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 2px 0; }
+.cw-bar { flex: 1 1 auto; height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.cw-bar__fill { display: block; height: 100%; background: var(--accent); }
+
+/* ── Copy bar ───────────────────────────────────────────────────────────── */
+.cw-copybar { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
+.cw-copybar .ui-btn { flex: 1 1 auto; }
+
+/* ── Popovers (Popover API) ─────────────────────────────────────────────── */
+.cw-popover {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+  max-width: 320px;
+}
+.cw-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+.cw-menu-item:hover { background: var(--bg-elev); }
+.cw-emoji__group { font-size: 10px; color: var(--text-dim); margin: 6px 2px 2px; }
+.cw-emoji__grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.cw-emoji__btn { appearance: none; border: none; background: transparent; font-size: 16px; padding: 3px; cursor: pointer; border-radius: var(--radius-sm); }
+.cw-emoji__btn:hover { background: var(--bg-elev); }
+.cw-emoji__mode { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; margin-top: 6px; font-size: 11px; display: grid; gap: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-drawer, .cw-popover { transition: none !important; }
+}

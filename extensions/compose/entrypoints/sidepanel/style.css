@@ -1,0 +1,14 @@
+/* Side-panel-specific overrides (design §5.8, ~320–600px). The bulk of the
+ * styling is shared in components/workbench.css; this file only pins the panel
+ * to fill its narrow container. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 300px;
+}

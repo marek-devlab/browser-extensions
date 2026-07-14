@@ -1,0 +1,142 @@
+/* Popup layout. Colour tokens come from @blur/ui tokens.css (imported first in
+   main.tsx); shared primitive classes from components.css. Only popup-specific
+   structure lives here. */
+
+.popup {
+  width: 320px;
+  padding: 12px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head h1 {
+  font-size: 14px;
+  margin: 0;
+  flex: none;
+  white-space: nowrap;
+}
+
+.host {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+section h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 12px 0 4px;
+}
+
+.line {
+  margin: 2px 0;
+  font-size: 12px;
+}
+
+.btnrow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.tables {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tbl {
+  margin-bottom: 6px;
+}
+
+.tbl__btn {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.tbl__btn:hover {
+  border-color: var(--accent);
+}
+
+.tbl__num {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--badge-fill-text);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tbl__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tbl__dim {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.tbl__arrow {
+  color: var(--accent-fg);
+  font-weight: 700;
+}
+
+.tbl__warn {
+  margin: 2px 0 0 26px;
+  font-size: 11px;
+  color: var(--warn-fg);
+}
+
+.foot {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.demo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+}

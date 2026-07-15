@@ -160,6 +160,63 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 /**
+ * A text pattern from an untrusted backup drives a `RegExp` run against every text
+ * node on every page. The import path used to accept any string array, so a copied
+ * `/(a+)+$/` — valid regex, catastrophic backtracking — would compile and then
+ * hang the tab (the options UI at least runs `validateTextPattern`; import ran
+ * nothing). Drop any pattern that is over-long, fails to compile, or trips a
+ * conservative nested-unbounded-quantifier heuristic — the classic ReDoS shape.
+ * Plain keywords carry no quantifier and are unaffected; only `/…/` literals can
+ * hit the heuristic, and a user who truly needs one can re-add it through the UI.
+ */
+const MAX_PATTERN_LEN = 200;
+// A group that CONTAINS an unbounded quantifier (`*`/`+`) and is itself quantified
+// (`(a+)+`, `(x*)*`, `(.*)+`) — the catastrophic-backtracking signature. A
+// heuristic, not a proof: a false reject costs one pattern the user can rebuild.
+const NESTED_QUANTIFIER = /\([^)]*[*+][^)]*\)[*+]/;
+
+function isSafeTextPattern(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_PATTERN_LEN) return false;
+  const literal = /^\/(.+)\/([a-z]*)$/.exec(trimmed);
+  const body = literal ? (literal[1] ?? '') : trimmed;
+  if (NESTED_QUANTIFIER.test(body)) return false;
+  try {
+    // Compile with the effective flags the matcher will use: a `/…/` literal
+    // keeps its own flags, a plain keyword is Unicode-bounded (needs `u`).
+    new RegExp(body, literal ? (literal[2] ?? '') : 'u');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeTextPatterns(patterns: readonly string[]): string[] {
+  return patterns.filter(isSafeTextPattern);
+}
+
+/**
+ * A domain/substring rule is concatenated verbatim into a CSS attribute-substring
+ * selector. `cssAttrValue` escapes `"` and `\`, but a raw newline or other control
+ * character cannot appear in a CSS string at all — one such char turns the whole
+ * comma-joined selector list into a parse error, and an invalid selector drops the
+ * ENTIRE rule, so a single poisoned entry silently disables ALL blur (fail-open —
+ * the worst outcome for this product). Reject any value carrying a control char.
+ * Used both on import and at selector BUILD time, so a bad already-stored value
+ * can never nuke the selector either.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR = /[\x00-\x1f\x7f]/;
+
+function isSafeSelectorValue(value: string): boolean {
+  return value.length > 0 && !CONTROL_CHAR.test(value);
+}
+
+function sanitizeDomainList(list: readonly string[]): string[] {
+  return list.filter((d) => isSafeSelectorValue(d.trim()));
+}
+
+/**
  * Coerce a per-site `blur` override, preserving its PARTIAL nature: only keys
  * actually present (and valid) are kept, so a site that overrode just `video`
  * does not silently start overriding every category after a backup round-trip.
@@ -184,7 +241,7 @@ function coercePartialBlur(raw: unknown): Partial<BlurSettings> {
   }
   const reveal = o['reveal'];
   if (reveal === 'hover' || reveal === 'click' || reveal === 'never') out.reveal = reveal;
-  if (isStringArray(o['textPatterns'])) out.textPatterns = o['textPatterns'];
+  if (isStringArray(o['textPatterns'])) out.textPatterns = sanitizeTextPatterns(o['textPatterns']);
   return out;
 }
 
@@ -202,7 +259,7 @@ function coerceBlurSettings(raw: unknown): BlurSettings {
       ? Math.min(40, Math.max(4, o['radius']))
       : d.radius,
     reveal: reveal === 'hover' || reveal === 'click' || reveal === 'never' ? reveal : d.reveal,
-    textPatterns: isStringArray(o['textPatterns']) ? o['textPatterns'] : [...d.textPatterns],
+    textPatterns: isStringArray(o['textPatterns']) ? sanitizeTextPatterns(o['textPatterns']) : [...d.textPatterns],
     // Masking. An older backup predates these fields entirely, so every one falls
     // back to the shipped default and a v1 file still imports cleanly.
     maskStyle: o['maskStyle'] === 'solid' || o['maskStyle'] === 'blur' ? o['maskStyle'] : d.maskStyle,
@@ -262,13 +319,16 @@ export function parseBackup(text: string): {
     }
   }
 
+  // Drop any domain entry carrying a newline / control char: concatenated into a
+  // CSS attribute-substring selector it would break the whole comma-joined rule
+  // and silently disable ALL blur (fail-open). See `sanitizeDomainList`.
   const rawImg = o['imageSourceRules'];
   const imageSourceRules: ImageSourceRules = {
     never: typeof rawImg === 'object' && rawImg !== null && isStringArray((rawImg as Record<string, unknown>)['never'])
-      ? (rawImg as { never: string[] }).never
+      ? sanitizeDomainList((rawImg as { never: string[] }).never)
       : [],
     always: typeof rawImg === 'object' && rawImg !== null && isStringArray((rawImg as Record<string, unknown>)['always'])
-      ? (rawImg as { always: string[] }).always
+      ? sanitizeDomainList((rawImg as { always: string[] }).always)
       : [],
   };
 
@@ -305,8 +365,11 @@ export function buildImageSelector(
   rules: ImageSourceRules,
 ): string {
   const parts: string[] = [];
-  const never = rules.never.filter((d) => d.trim());
-  const always = rules.always.filter((d) => d.trim());
+  // Guard at BUILD time too (not just on import): a control char in a stored value
+  // would break the whole comma-joined selector and disable ALL blur (fail-open),
+  // so an already-poisoned entry can never nuke the selector.
+  const never = rules.never.filter((d) => isSafeSelectorValue(d.trim()));
+  const always = rules.always.filter((d) => isSafeSelectorValue(d.trim()));
   // Size-gate exclusion, always present so a favicon / 1px tracker the JS gate
   // has marked un-blurs live. Harmless when the gate is off (nothing is marked).
   const small = `:not([${SMALL_IMAGE_ATTR}])`;
@@ -347,7 +410,7 @@ export function buildImageSelector(
 export function buildLinkSelector(domains: readonly string[]): string {
   return domains
     .map((d) => d.trim().replace(/^\.+/, ''))
-    .filter(Boolean)
+    .filter(isSafeSelectorValue)
     .flatMap((d) => {
       const v = cssAttrValue(d);
       return [`a[href*="//${v}"]`, `a[href*=".${v}"]`];

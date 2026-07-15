@@ -351,6 +351,27 @@ body {
   color: #fff;
 }
 
+/* Inline, link-styled action (e.g. "Revoke consent") — sits in running text. */
+.btn-link {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-fg);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.btn-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.confirm__body a {
+  color: var(--accent-fg);
+}
+
 /* Debugger-attach confirmation */
 .confirm {
   margin-bottom: 10px;

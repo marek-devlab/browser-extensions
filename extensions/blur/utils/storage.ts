@@ -18,20 +18,29 @@ import { DEFAULT_BLUR_SETTINGS } from '@blur/core';
 // without wiping user data on update.
 
 /**
- * Serialize a settings read-modify-write across EVERY extension context — the
- * background service worker (toggleSite / command RMWs) and the popup / options
- * documents (use-settings). A module-level write queue only orders writes within
- * one document; two contexts each doing get→modify→set can still interleave and
+ * Serialize a read-modify-write across EVERY extension context — the background
+ * service worker (toggleSite / command / context-menu RMWs) and the popup /
+ * options documents. A per-document write queue only orders writes within one
+ * document; two contexts each doing get→modify→set can still interleave and
  * clobber a field. The Web Locks API is shared process-wide for the extension
  * origin, so holding one named lock makes those RMWs mutually exclusive. Falls
  * back to running directly where `navigator.locks` is unavailable.
+ *
+ * The lock is keyed by NAME so each storage item gets its own critical section:
+ * settings share `SETTINGS_LOCK`, while `siteConfigs` / `extensionPrefs` /
+ * `imageSourceRules` are serialized under their storage key (`item.key`) by
+ * `useStorageItem` and by the background writers that touch the same item.
  */
+export function withStorageLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  if (!locks?.request) return fn();
+  return locks.request(name, fn);
+}
+
 const SETTINGS_LOCK = 'blur-settings';
 
 export function withSettingsLock<T>(fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
-  if (!locks?.request) return fn();
-  return locks.request(SETTINGS_LOCK, fn);
+  return withStorageLock(SETTINGS_LOCK, fn);
 }
 
 export const settingsItem = storage.defineItem<BlurExtensionSettings>('local:settings', {

@@ -13,7 +13,11 @@ import {
 } from './harness';
 import { resolveTransferSize } from '../../extensions/perf/utils/resource-timing';
 import { isVitalBridgeMessage, isLongFrameBridgeMessage } from '../../extensions/perf/utils/protocol';
-import { isAuditableUrl } from '../../extensions/perf/utils/psi';
+import {
+  hasQueryOrFragment,
+  isAuditableUrl,
+  stripToOriginPath,
+} from '../../extensions/perf/utils/psi';
 import { entriesToCsv, toJson } from '../../extensions/perf/utils/export';
 import type { TimedNetworkEntry } from '../../extensions/perf/utils/perf-types';
 
@@ -370,6 +374,21 @@ test('[logic] PSI refuses localhost/private URLs before spending a call', () => 
   expect(isAuditableUrl('http://127.0.0.1:8080/').ok).toBe(false);
   expect(isAuditableUrl('http://192.168.1.5/').ok).toBe(false);
   expect(isAuditableUrl('https://example.com/').ok).toBe(true);
+});
+
+test('[logic] the "domain and path only" affordance strips query + fragment before PSI', () => {
+  // Secrets in the query/fragment must be removable so they are not sent to Google.
+  expect(stripToOriginPath('https://example.com/reset?token=SECRET#frag')).toBe(
+    'https://example.com/reset',
+  );
+  expect(stripToOriginPath('https://example.com/path/')).toBe('https://example.com/path/');
+  // Non-URL input is returned unchanged rather than throwing.
+  expect(stripToOriginPath('not a url')).toBe('not a url');
+
+  // The warning only fires when there is actually something to strip.
+  expect(hasQueryOrFragment('https://example.com/p?token=x')).toBe(true);
+  expect(hasQueryOrFragment('https://example.com/p#frag')).toBe(true);
+  expect(hasQueryOrFragment('https://example.com/p')).toBe(false);
 });
 
 // Note: the CDP byte path (utils/debugger-bytes.ts) imports the WXT `#imports`

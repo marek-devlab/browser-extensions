@@ -318,10 +318,21 @@ export function App(): JSX.Element {
 
   function toggleSite(): void {
     if (!hasHost) return;
-    const allow = new Set(settings.allowlist);
-    if (allow.has(hostname)) allow.delete(hostname);
-    else allow.add(hostname);
-    update({ allowlist: [...allow] });
+    // Mirror `isAllowlisted` (used for the toggle's ON/OFF state), which is
+    // subdomain-aware: an `example.com` entry also covers `www.example.com`. An
+    // exact `Set.has`/`delete` here would leave the covering parent in place, so
+    // un-pausing a subdomain would silently fail and stack up a garbage entry.
+    if (siteAllowlisted) {
+      // Currently paused — un-pause by dropping EVERY entry that covers this host
+      // (the exact host and any parent domain allowlisting it).
+      update({
+        allowlist: settings.allowlist.filter(
+          (h) => !(hostname === h || hostname.endsWith(`.${h}`)),
+        ),
+      });
+    } else {
+      update({ allowlist: [...settings.allowlist, hostname] });
+    }
   }
 
   /* --- per-site override plumbing ------------------------------------- */
@@ -347,15 +358,15 @@ export function App(): JSX.Element {
    * per-field "Use global" is also the last-one-out cleanup — no orphan entries.
    */
   function inheritBlurField(field: keyof BlurSettings): void {
-    setSiteConfigs(
-      setSiteOverride(siteConfigs, hostname, {
+    setSiteConfigs((prev) =>
+      setSiteOverride(prev, hostname, {
         blur: { [field]: undefined } as Partial<BlurSettings>,
       }),
     );
   }
 
   function clearSite(): void {
-    setSiteConfigs(clearSiteOverride(siteConfigs, hostname));
+    setSiteConfigs((prev) => clearSiteOverride(prev, hostname));
   }
 
   /** Marker for one blur field, or nothing at all when the site doesn't override it. */
@@ -376,7 +387,7 @@ export function App(): JSX.Element {
 
   function setBlurField(patch: Partial<BlurSettings>): void {
     if (editingSite) {
-      setSiteConfigs(setSiteOverride(siteConfigs, hostname, { blur: patch }));
+      setSiteConfigs((prev) => setSiteOverride(prev, hostname, { blur: patch }));
     } else {
       // Only the changed fields: `update` deep-merges onto the freshest stored
       // `blur`, so a stale `settings.blur` spread here would clobber a concurrent
@@ -549,14 +560,16 @@ export function App(): JSX.Element {
           globalValue={settings.enabled ? 'On' : 'Off'}
           mode="global"
           onInherit={() =>
-            setSiteConfigs(setSiteOverride(siteConfigs, hostname, { enabled: undefined }))
+            setSiteConfigs((prev) => setSiteOverride(prev, hostname, { enabled: undefined }))
           }
         />
       )}
 
       {hasHost ? (
-        // Counts are EXACT (read from the engine's per-label tally), so a real 0
-        // is honest and shown as 0 — never faked, never hidden.
+        // Counts come from the engine's per-label tally (never faked, and a real 0
+        // is shown as 0). They can run slightly high when the min-image-size gate
+        // is on: an image tallied before the gate marks it small un-blurs live but
+        // is not subtracted — so this is an honest count, not an exact one.
         <section className="stats" aria-live="polite">
           <div className="stat">
             <span className="num">{tabStats.imagesBlurred}</span>

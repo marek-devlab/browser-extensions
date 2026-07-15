@@ -51,13 +51,16 @@ export default defineConfig({
         },
       },
 
-      // `scripting` injects the block-first stylesheet; `activeTab` + `storage`
-      // cover the popup/options round-trip. `contextMenus` powers the right-click
-      // "Blur this / Always blur images here" actions — it adds NO host-access
-      // warning and no network capability, so it stays within the single purpose.
-      // No network-blocking permission appears here — that belongs to the
-      // separate ad-block add-on.
-      permissions: ['storage', 'activeTab', 'scripting', 'contextMenus'],
+      // `activeTab` + `storage` cover the popup/options round-trip. `contextMenus`
+      // powers the right-click "Blur this / Always blur images here" actions — it
+      // adds NO host-access warning and no network capability, so it stays within
+      // the single purpose. No `scripting`: the block-first stylesheet is injected
+      // by the declared `<all_urls>` content script itself (via `applyStylesheet`),
+      // never through `scripting.executeScript`, so the permission would be dead
+      // weight and an unjustified entry a reviewer must ask about. No
+      // network-blocking permission appears here — that belongs to the separate
+      // ad-block add-on.
+      permissions: ['storage', 'activeTab', 'contextMenus'],
 
       // Keyboard shortcuts. The `commands` key shows NO permission warning and no
       // host access; every command only toggles this extension's own state or

@@ -6,6 +6,7 @@ import {
   siteConfigsItem,
   panicSnapshotItem,
   withSettingsLock,
+  withStorageLock,
 } from '../utils/storage';
 import { togglePanic, setSiteOverride } from '../utils/features';
 
@@ -22,9 +23,11 @@ type BlurMessage =
 
 export default defineBackground({
   main() {
-    // Per-tab stats, populated from content-script reports. Every count is EXACT
-    // — the content script knows precisely what it blurred (unlike the network
-    // counts in the ad-block add-on).
+    // Per-tab stats, populated from content-script reports. The content script
+    // measures what it blurred from the engine's own tally (unlike the network
+    // counts in the ad-block add-on); the number can run marginally high when the
+    // min-image-size gate un-blurs an already-tallied small image without
+    // subtracting it, so it is an honest measured count, not an exact one.
     //
     // MV3 SERVICE WORKER: this dies after ~30s idle, so these in-memory counters
     // are ephemeral. That is acceptable for per-tab counts — the content script
@@ -227,10 +230,16 @@ export default defineBackground({
           const hostname =
             typeof tab?.id === 'number' ? await hostnameOfTab(tab.id) : undefined;
           if (!hostname) return;
-          const configs = await siteConfigsItem.getValue();
-          await siteConfigsItem.setValue(
-            setSiteOverride(configs, hostname, { blur: { images: true } }),
-          );
+          // Serialize this read-modify-write under the SAME per-item lock the
+          // popup / options `useStorageItem` writers take (keyed on the storage
+          // key), so a concurrent per-site edit in another context cannot clobber
+          // the override just added here (V6).
+          await withStorageLock(siteConfigsItem.key, async () => {
+            const configs = await siteConfigsItem.getValue();
+            await siteConfigsItem.setValue(
+              setSiteOverride(configs, hostname, { blur: { images: true } }),
+            );
+          });
           await reevaluateHost(hostname);
         }
       })();

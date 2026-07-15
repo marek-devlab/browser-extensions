@@ -47,12 +47,15 @@ function isA11yResult(data: unknown): data is A11yResultMessage {
   );
 }
 
-// A per-request correlation token. `crypto.randomUUID` is unavailable in
-// insecure contexts (plain http pages), and this script runs on `<all_urls>`, so
-// derive one that works everywhere — it only needs to be unguessable enough to
-// reject casual page-forged messages, not cryptographic.
+// A per-audit correlation token that authenticates the axe runner's reply, so it
+// MUST be unguessable: a page that can predict it can forge an a11y result mid-
+// audit. `Date.now()` + `Math.random()` are both predictable, so use
+// `crypto.getRandomValues` (128 bits) — unlike `crypto.randomUUID`, it is
+// available in insecure contexts too, and this script runs on `<all_urls>`
+// (including plain http). Verified on receipt in `onMessage` below.
 function makeNonce(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Inject the axe runner into the page and resolve with the report it posts back.

@@ -47,6 +47,36 @@ export interface UrlVerdict {
   reason?: string;
 }
 
+/**
+ * Strip the query string and fragment, leaving `origin + pathname`. The audited
+ * URL is sent verbatim to Google's PSI API, so query params (`?token=…`, reset
+ * links, PII) would be exfiltrated as-is. This backs the panel's one-click
+ * "domain and path only" affordance so the user can remove secrets before
+ * auditing. Never applied silently — the path/query can be legitimately needed,
+ * so the UI surfaces it and lets the user decide. Returns the input unchanged if
+ * it doesn't parse as a URL.
+ */
+export function stripToOriginPath(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    return u.origin + u.pathname;
+  } catch {
+    return rawUrl;
+  }
+}
+
+/** Whether a URL carries a query string or fragment — i.e. whether the "domain
+ * and path only" affordance would change what is sent to Google. Drives the
+ * "these params may contain secrets" warning. */
+export function hasQueryOrFragment(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl);
+    return u.search !== '' || u.hash !== '';
+  } catch {
+    return false;
+  }
+}
+
 /** Refuse non-public URLs before spending a PSI request. */
 export function isAuditableUrl(rawUrl: string): UrlVerdict {
   let url: URL;

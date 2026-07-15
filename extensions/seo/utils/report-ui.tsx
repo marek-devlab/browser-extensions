@@ -62,6 +62,21 @@ export const SEO_TERM: Record<'errors' | 'warnings' | 'imagesWithoutAlt', string
 /** How many offending selectors a violation shows before collapsing the rest. */
 export const MAX_NODES_SHOWN = 3;
 
+/**
+ * The whole `A11yReport` is untrusted: axe runs in the page's MAIN world, so a
+ * hostile page can influence (or forge) its output, including `helpUrl`. Only
+ * emit an anchor for an `http:`/`https:` URL — a `javascript:`/`data:` URL must
+ * never reach an `href`. Anything else falls back to plain text.
+ */
+function safeHelpUrl(url: string): string | null {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** One SEO check: severity chip, human label, and the detail it already carries. */
 export function CheckRow({ check }: { check: SeoCheck }) {
   return (
@@ -85,6 +100,7 @@ export function ViolationRow({ violation }: { violation: A11yViolation }) {
   const shown = violation.nodes.slice(0, MAX_NODES_SHOWN);
   const hidden = violation.nodes.length - shown.length;
   const count = violation.nodes.length;
+  const helpHref = safeHelpUrl(violation.helpUrl);
 
   return (
     <li className={`violation impact--${violation.impact}`}>
@@ -109,14 +125,18 @@ export function ViolationRow({ violation }: { violation: A11yViolation }) {
           </li>
         )}
       </ul>
-      <a
-        className="violation__link"
-        href={violation.helpUrl}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {violation.id} — how to fix
-      </a>
+      {helpHref !== null ? (
+        <a
+          className="violation__link"
+          href={helpHref}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {violation.id} — how to fix
+        </a>
+      ) : (
+        <span className="violation__link">{violation.id} — how to fix</span>
+      )}
     </li>
   );
 }

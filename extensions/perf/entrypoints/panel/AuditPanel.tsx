@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { browser } from '#imports';
 import type { VitalRating, WebVital } from '@blur/core';
 import { formatVital, rateVital } from '@blur/core';
-import { isAuditableUrl, runPsiAudit } from '../../utils/psi';
+import {
+  hasQueryOrFragment,
+  isAuditableUrl,
+  runPsiAudit,
+  stripToOriginPath,
+} from '../../utils/psi';
 import type { PsiAuditResult, PsiStrategy } from '../../utils/psi';
 import type { CruxFieldMetric } from '../../utils/perf-types';
 import { psiConfigItem } from '../../utils/storage';
@@ -52,7 +57,21 @@ export function AuditPanel() {
     void persist({ disclosureAccepted: true });
   }
 
+  // Withdraw consent: clears the persisted flag so the disclosure gate shows
+  // again before the next PSI call (audit B2 — consent must be revocable).
+  function onRevoke() {
+    setAccepted(false);
+    void persist({ disclosureAccepted: false });
+  }
+
+  // One-click "domain and path only": rewrite the field to origin + pathname,
+  // dropping query and fragment. Surfaced, never silent (audit B1).
+  function onStripQuery() {
+    setUrl((current) => stripToOriginPath(current));
+  }
+
   const verdict = isAuditableUrl(url);
+  const hasParams = hasQueryOrFragment(url);
 
   async function run() {
     setError(null);
@@ -83,9 +102,9 @@ export function AuditPanel() {
       <p className="note">
         PageSpeed Insights runs Lighthouse on Google's servers and returns lab +
         field data. Lighthouse itself cannot be bundled (Node app; MV3 bans remote
-        code), so this is the realistic path. <strong>Running an audit sends this
-        page's URL to Google.</strong> Public URLs only — localhost and pages behind
-        auth are unreachable.
+        code), so this is the realistic path. <strong>Running an audit sends the URL
+        below — including any query string — to Google.</strong> Public URLs
+        only — localhost and pages behind auth are unreachable.
       </p>
 
       <label className="field">
@@ -103,7 +122,33 @@ export function AuditPanel() {
         </span>
       </label>
 
-      <div className="audit-url mono" title={url}>{url || '—'}</div>
+      <label className="field">
+        <span className="field__label">URL to audit (editable — sent to Google)</span>
+        <input
+          className="field__input mono"
+          type="url"
+          value={url}
+          disabled={running}
+          placeholder="https://example.com/page"
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <span className="field__hint">
+          Defaults to the inspected page. <strong>The exact address you run is
+          sent to Google as-is</strong> — anything after <code>?</code> or{' '}
+          <code>#</code> (session tokens, password-reset links, search queries)
+          goes too. Edit it before auditing if it holds a secret.
+        </span>
+      </label>
+
+      {hasParams && (
+        <p className="note" role="alert">
+          This address has query or fragment parameters that may contain private
+          data. They will be sent to Google unless you remove them.{' '}
+          <button className="btn btn--sm" type="button" disabled={running} onClick={onStripQuery}>
+            Domain and path only
+          </button>
+        </p>
+      )}
 
       <fieldset className="strategy" disabled={running}>
         <legend className="strategy__legend">Device</legend>
@@ -126,19 +171,52 @@ export function AuditPanel() {
       {!accepted ? (
         <div className="confirm" role="alertdialog" aria-label="PSI disclosure">
           <p className="confirm__body">
-            To audit, you must acknowledge that the page URL will be sent to Google's
-            PageSpeed Insights API.
+            <strong>This audit sends the URL to Google</strong>
+          </p>
+          <p className="confirm__body">
+            To run PageSpeed Insights, the extension sends the{' '}
+            <strong>full address of this page, including the query parameters
+            after “?”</strong>, to Google's PageSpeed Insights API
+            (<code>www.googleapis.com</code>). Google loads and measures the page
+            and returns the results.
+          </p>
+          <p className="confirm__body">
+            ⚠️ Query parameters may contain private data — session tokens,
+            password-reset links, search queries. <strong>Review and, if needed,
+            edit the address above before running.</strong> Remove every
+            parameter with the “Domain and path only” button.
+          </p>
+          <p className="confirm__body">
+            Sent only when you explicitly run an audit. The address passed to
+            Google is handled under{' '}
+            <a
+              href="https://policies.google.com/privacy"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Google's privacy policy
+            </a>
+            . Fully local metrics (Web Vitals, resource timing, exact bytes) send
+            nothing.
           </p>
           <div className="confirm__actions">
             <button className="btn btn--primary" onClick={onAccept}>
-              I understand — send the URL to Google
+              I understand — send the address to Google
             </button>
           </div>
         </div>
       ) : (
-        <button className="btn btn--primary" disabled={running || !verdict.ok} onClick={run}>
-          {running ? 'Auditing…' : 'Run PageSpeed audit'}
-        </button>
+        <>
+          <button className="btn btn--primary" disabled={running || !verdict.ok} onClick={run}>
+            {running ? 'Auditing…' : 'Run PageSpeed audit'}
+          </button>
+          <p className="field__hint">
+            PSI disclosure accepted.{' '}
+            <button className="btn-link" type="button" disabled={running} onClick={onRevoke}>
+              Revoke consent
+            </button>
+          </p>
+        </>
       )}
 
       {error && <p className="note" role="alert">{error}</p>}

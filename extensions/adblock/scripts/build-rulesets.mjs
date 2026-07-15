@@ -30,6 +30,17 @@ const MAX_ENABLED_STATIC_RULESETS = 50; // enabled at once
 const MAX_REGEX_RULES = 1_000;
 
 /**
+ * Rule-id watershed that lets the popup's counter tell a genuine BLOCK from an
+ * exception at runtime. `getMatchedRules()` (the only per-tab signal Chromium
+ * gives us) reports a matched rule's ruleset + id but NOT its action, so a static
+ * `allow`/`allowAllRequests` exception matching looked identical to a block and
+ * inflated "~N Blocked" (easylist alone carries ~3,000 `allow` rules). We assign
+ * every non-block rule an id at or above this base and every block rule one
+ * below it, so `matched-rules.ts` can count blocks only. See utils/matched-rules.ts.
+ */
+const NON_BLOCK_RULE_ID_BASE = 1_000_000;
+
+/**
  * Output list → AdGuard source filter ids + a per-list cap.
  * EasyList/EasyPrivacy are folded into AdGuard's Base/Tracking Protection filters
  * (AdGuard does not ship them standalone). The caps keep the STANDARD tier
@@ -94,6 +105,12 @@ function sourcePath(dir, id) {
  * - drop the sentinel rule that carries AdGuard's `metadata` blob,
  * - drop `redirect` rules (they reference $redirect web-accessible resources we
  *   do not bundle, so they would fail at load),
+ * - drop `modifyHeaders` rules. Chrome treats them as an "unsafe" action that
+ *   fires ONLY on origins the extension holds a GRANTED host permission for.
+ *   Host access here is `optional_host_permissions` (not granted by default), so
+ *   in a static ruleset these rules are silently inert on a normal install — a
+ *   piece of protection that never runs and that inflated `unsafeCount`. Dropping
+ *   them (like `redirect`) keeps the shipped set to what actually fires.
  * - strip `id` (reassigned later, unique per output ruleset) and any stray `metadata`.
  */
 function cleanRules(rawArr) {
@@ -103,7 +120,7 @@ function cleanRules(rawArr) {
     if ('metadata' in r) continue;
     const action = r.action;
     if (!action || typeof action.type !== 'string') continue;
-    if (action.type === 'redirect') continue;
+    if (action.type === 'redirect' || action.type === 'modifyHeaders') continue;
     const { id: _id, metadata: _m, ...rest } = r;
     out.push(rest);
   }
@@ -116,10 +133,9 @@ function countRegex(rules) {
   return n;
 }
 
-function countUnsafe(rules) {
-  // "unsafe" static actions: modifyHeaders (redirect already dropped).
+function countBlock(rules) {
   let n = 0;
-  for (const r of rules) if (r.action && r.action.type === 'modifyHeaders') n += 1;
+  for (const r of rules) if (r.action && r.action.type === 'block') n += 1;
   return n;
 }
 
@@ -151,24 +167,49 @@ async function main() {
       merged = merged.concat(cleanRules(raw));
     }
 
-    const capped = merged.slice(0, list.cap).map((r, i) => ({ id: i + 1, ...r }));
+    const sliced = merged.slice(0, list.cap);
+    // Block rules get ids 1..B; every non-block (allow/allowAllRequests) rule gets
+    // an id >= NON_BLOCK_RULE_ID_BASE, so the runtime counter can exclude
+    // exceptions from "~N Blocked" (see the constant's doc + matched-rules.ts).
+    let blockId = 0;
+    let nonBlockId = NON_BLOCK_RULE_ID_BASE;
+    const capped = sliced.map((r) => ({
+      id: r.action && r.action.type === 'block' ? (blockId += 1) : (nonBlockId += 1),
+      ...r,
+    }));
     const regexCount = countRegex(capped);
-    const unsafeCount = countUnsafe(capped);
+    const blockCount = countBlock(capped);
+
+    // Honest truncation (V3): the AdGuard source is larger than the per-list cap,
+    // so `slice` drops the tail. Say how much rather than degrade silently — this
+    // is a documented subset of AdGuard Base, not the full upstream filter.
+    const droppedByCap = merged.length - sliced.length;
+    if (droppedByCap > 0) {
+      console.warn(
+        `[build-rulesets] ${list.id}: capped at ${list.cap} rules — dropped ${droppedByCap} ` +
+          `of ${merged.length} source rules (${Math.round((sliced.length / merged.length) * 100)}% kept). ` +
+          `This is a deliberate subset (Chrome's ${GUARANTEED_STATIC_RULES}-rule guarantee), not the full list.`,
+      );
+    }
 
     writeFileSync(join(OUT_DIR, `${list.id}.json`), JSON.stringify(capped));
     built.push({
       id: list.id,
       title: list.title,
       ruleCount: capped.length,
+      blockCount,
+      droppedByCap,
       regexCount,
-      unsafeCount,
+      // Static modifyHeaders/redirect are dropped in cleanRules, so nothing
+      // "unsafe" ships in a static ruleset any more.
+      unsafeCount: 0,
       license: list.license,
       enabledAt: list.enabledAt,
       sourceIds: list.sourceIds,
     });
     console.log(
       `[build-rulesets] ${list.id}: ${capped.length} rules ` +
-        `(${regexCount} regex, ${unsafeCount} unsafe) from AdGuard filter(s) ${list.sourceIds.join(', ')}`,
+        `(${blockCount} block, ${regexCount} regex) from AdGuard filter(s) ${list.sourceIds.join(', ')}`,
     );
   }
 

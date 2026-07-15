@@ -132,6 +132,24 @@ export function splitSelectorList(selector: string): string[] {
   return out;
 }
 
+/**
+ * Reject any selector that could break out of the `{ … }` block it is about to be
+ * concatenated into. A cosmetic selector arrives from untrusted input (imported
+ * backup, pasted "EasyList" text, the element picker) and is interpolated raw
+ * into `${sel} { display: none }`. A payload like `x} input[value^=a]{…}` closes
+ * our rule early and injects an attacker-controlled one — a CSS-exfiltration
+ * vector on every page. `{`, `}`, `@`, `<` and the CSS comment-closer are the
+ * sequences that let a selector escape; none is valid in a plain CSS selector, so
+ * denylisting them
+ * costs nothing legitimate. This is the LAST line of defence — the adblock input
+ * paths validate (and `querySelector`-check) before a rule is ever stored — but
+ * it lives here so no caller can ever concatenate a break-out selector into the
+ * sheet. Core stays DOM-free, so this is a pure character check (no CSSOM).
+ */
+export function isCssSafeSelector(selector: string): boolean {
+  return selector.length > 0 && !/[{}@<]|\*\//.test(selector);
+}
+
 function selectorsFor(
   rules: readonly DomRule[],
   action: RuleAction,
@@ -169,8 +187,14 @@ export function buildStylesheet(
     : 16;
   // Flatten every rule's selector into individual selectors so suffixes below
   // attach to each one, not just the last in a comma list (see splitSelectorList).
-  const blurred = selectorsFor(rules, 'blur', hostname).flatMap(splitSelectorList);
-  const hidden = selectorsFor(rules, 'hide', hostname).flatMap(splitSelectorList);
+  // Then drop any individual selector that could break out of its `{ … }` block
+  // (see isCssSafeSelector) — one poisoned selector must never taint the sheet.
+  const blurred = selectorsFor(rules, 'blur', hostname)
+    .flatMap(splitSelectorList)
+    .filter(isCssSafeSelector);
+  const hidden = selectorsFor(rules, 'hide', hostname)
+    .flatMap(splitSelectorList)
+    .filter(isCssSafeSelector);
   const out: string[] = [];
 
   if (hidden.length > 0) {

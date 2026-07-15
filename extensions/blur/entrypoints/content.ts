@@ -293,9 +293,12 @@ export default defineContentScript({
     }
 
     // A content script cannot know its own tab id — the background fills it in
-    // from `sender.tab.id`, so `tabId` is a placeholder here. Counts are exact,
-    // read straight from the engine's per-label tally (no DOM re-scan). Posters
-    // are thumbnails, so they fold into the popup's "Images" bucket.
+    // from `sender.tab.id`, so `tabId` is a placeholder here. Counts are read
+    // straight from the engine's per-label tally (no DOM re-scan). They are
+    // marginally GENEROUS, not exact: an image the engine tallied before the
+    // min-size gate stamped it `data-bx-small` is un-blurred live via CSS but not
+    // subtracted, so the number can run slightly high. Posters are thumbnails, so
+    // they fold into the popup's "Images" bucket.
     function computeStats(): BlurTabStats {
       const byLabel = latestEngineStats?.byLabel ?? {};
       return {

@@ -76,14 +76,30 @@ export default defineBackground({
     const accuracy: CountAccuracy = import.meta.env.FIREFOX ? 'exact' : 'approximate';
     const stats = new StatsStore(accuracy);
 
-    void init();
-
     // Last settings the backend was reconciled against. The UI (popup/options)
     // persists changes by writing storage directly — it does NOT send a message —
     // so the background MUST watch storage and reconcile, or level/allowlist
     // changes made in the UI would update cosmetic filtering (content script reads
     // storage) but silently leave the DNR/webRequest network engine untouched.
     let lastSettings: AdBlockExtensionSettings | null = null;
+
+    // Serialize every backend reconcile (init, settings changes, host-grant
+    // changes). Each one issues `updateEnabledRulesets`/`updateDynamicRules`, and
+    // those are async: a fast burst of toggle flips (or a mass allowlist import
+    // landing at the same time as a level change) could otherwise overlap and
+    // apply out of order. Chaining onto a single promise makes the LAST write win
+    // deterministically. Failures are logged, never left to reject the chain.
+    let reconcileChain: Promise<unknown> = Promise.resolve();
+    function enqueueReconcile(task: () => Promise<void>): Promise<unknown> {
+      reconcileChain = reconcileChain.then(task).catch((err) => {
+        console.error('[adblock] reconcile failed', err);
+      });
+      return reconcileChain;
+    }
+
+    // First link in the chain: bring the backend up from stored settings before
+    // any settings-change reconcile can run.
+    void enqueueReconcile(init);
 
     // The network engine is driven by an EFFECTIVE level: the master `enabled`
     // switch (and the temporary "pause everywhere") collapse it to `off` so
@@ -117,7 +133,7 @@ export default defineBackground({
     }
 
     settingsItem.watch((next) => {
-      if (next) void reconcileFromSettings(next);
+      if (next) void enqueueReconcile(() => reconcileFromSettings(next));
     });
 
     // Context menu (feature §5). `removeAll` before create keeps it idempotent
@@ -352,6 +368,13 @@ export default defineBackground({
             case 'reportCosmeticHidden': {
               // Content scripts can't know their own tabId — trust the sender.
               const tabId = sender.tab?.id ?? message.tabId;
+              // A report with no real tab (sender.tab absent → message.tabId is
+              // -1) has no page to attribute to. Recording it would pollute the
+              // aggregate with a phantom tab id -1 that resetTabState never clears.
+              if (tabId < 0) {
+                sendResponse(true);
+                return;
+              }
               stats.recordCosmetic(tabId, message.total, message.delta);
               updateBadge(tabId);
               sendResponse(true);
@@ -415,10 +438,10 @@ export default defineBackground({
     // so the rule is actually installed. No-op on Firefox (install-time grant).
     if (!import.meta.env.FIREFOX) {
       const reReconcile = (): void => {
-        void (async () => {
+        void enqueueReconcile(async () => {
           const current = await settingsItem.getValue();
           await backend.setLevel(effectiveLevel(current));
-        })();
+        });
       };
       browser.permissions.onAdded?.addListener(reReconcile);
       browser.permissions.onRemoved?.addListener(reReconcile);

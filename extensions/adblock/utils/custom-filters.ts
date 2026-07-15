@@ -10,6 +10,37 @@ import type {
 export const ALL_SITES = '*';
 
 /**
+ * Guard against CSS injection through an untrusted cosmetic selector. The engine
+ * interpolates every stored selector RAW into `${sel} { display: none !important }`
+ * (see @blur/core buildStylesheet), so a payload like `x} input[value^=a]{…}`
+ * closes our rule early and injects an attacker-controlled one — a form-value
+ * exfiltration vector on EVERY page. Two checks, since neither alone suffices:
+ *   - a character denylist for `{`, `}`, `@`, `<` and the CSS comment-closer (the
+ *     break-out characters; none is valid in a plain selector). `querySelector`
+ *     accepts some of these payloads, so this is mandatory.
+ *   - `document.querySelector(sel)` in try/catch — a syntactically invalid
+ *     selector throws and is dropped (skipped when there's no DOM, e.g. Node
+ *     unit tests, where the denylist still applies).
+ * Callers drop an unsafe selector INDIVIDUALLY, so one bad rule never poisons the
+ * whole stylesheet. (Kept in-file rather than a shared module so the pure parser
+ * stays resolvable by the Node logic test — no cross-module value import.)
+ */
+const SELECTOR_BREAKOUT = /[{}@<]|\*\//;
+export function isSafeCosmeticSelector(selector: string): boolean {
+  const sel = selector.trim();
+  if (!sel) return false;
+  if (SELECTOR_BREAKOUT.test(sel)) return false;
+  if (typeof document !== 'undefined') {
+    try {
+      document.querySelector(sel);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * True if a stored custom-filter key applies to `hostname`. `'*'` is generic;
  * a bare host matches itself and its subdomains.
  */
@@ -118,6 +149,10 @@ export function addFilter(
   const key = host || ALL_SITES;
   const sel = selector.trim();
   if (!sel) return filters;
+  // Drop a selector that could break out of the `{ display:none }` rule it will
+  // be interpolated into (CSS-injection / form-value exfiltration). See
+  // cosmetic-safety.ts — every write funnels through addFilter.
+  if (!isSafeCosmeticSelector(sel)) return filters;
   const existing = filters[key] ?? [];
   if (existing.some((e) => entrySelector(e) === sel)) return filters;
   const label = meta.label?.trim();
@@ -181,6 +216,12 @@ export function parseCosmeticFilters(text: string): {
     // are not plain CSS and would throw in querySelector — skip them.
     if (/:-abp-|:has-text|:contains\(|:style\(|:matches-css|:xpath\(/.test(selector)) {
       skipped.push({ line, reason: 'extended (non-CSS) cosmetic syntax not supported' });
+      continue;
+    }
+    // A selector carrying `{`/`}`/`@`/`<` can break out of the injected rule and
+    // exfiltrate form values (see cosmetic-safety.ts). Drop it with a reason.
+    if (!isSafeCosmeticSelector(selector)) {
+      skipped.push({ line, reason: 'unsafe selector (would break out of the CSS rule)' });
       continue;
     }
     const hosts = hostPart ? hostPart.split(',').map((h) => h.trim()).filter(Boolean) : [ALL_SITES];

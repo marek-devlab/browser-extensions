@@ -169,9 +169,8 @@ no rule lists.
 |---|---|
 | `storage` | Save your blur settings and per-site preferences locally. |
 | `activeTab` | Act on the tab you are currently looking at when you invoke the extension. |
-| `scripting` | Inject the block-first stylesheet that blurs content on the page. |
 | `contextMenus` | Provide the right-click "Blur this" / "Always blur images here" actions. Adds no host access and no network capability. |
-| Content script on `<all_urls>`, `run_at: document_start` | **Standing access to every site — this is what produces the "read and change all your data on all websites" install warning.** Blurring is only useful if it happens *before* the content is visible. The content script must be present at `document_start` on whatever page you open, so the blur styles are applied before first paint; there is no "ask me when I get there" moment that would not already have leaked the image you did not want to see. |
+| Content script on `<all_urls>`, `run_at: document_start` | **Standing access to every site — this is what produces the "read and change all your data on all websites" install warning.** Blurring is only useful if it happens *before* the content is visible. The content script must be present at `document_start` on whatever page you open, so the blur styles are applied before first paint (the script injects the block-first stylesheet itself, so no `scripting` permission is needed); there is no "ask me when I get there" moment that would not already have leaked the image you did not want to see. |
 
 Content Blur **no longer declares `optional_host_permissions`**. It previously
 declared `<all_urls>` there; that key was removed because nothing in the

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-10T20:25:04.933Z",
+  "generatedAt": "2026-07-15T08:04:33.927Z",
   "buildDate": "2026-07-10",
   "dnrRulesetsVersion": "4.1.20260710130040",
   "guaranteedStaticRules": 30000,
@@ -10,8 +10,10 @@
       "id": "easylist",
       "title": "EasyList (AdGuard Base filter)",
       "ruleCount": 20000,
+      "blockCount": 16907,
+      "droppedByCap": 49745,
       "regexCount": 0,
-      "unsafeCount": 7,
+      "unsafeCount": 0,
       "license": "GPL-3.0 / CC-BY-SA",
       "enabledAt": [
         "standard",
@@ -25,6 +27,8 @@
       "id": "easyprivacy",
       "title": "EasyPrivacy (AdGuard Tracking Protection filter)",
       "ruleCount": 9000,
+      "blockCount": 9000,
+      "droppedByCap": 84583,
       "regexCount": 0,
       "unsafeCount": 0,
       "license": "GPL-3.0 / CC-BY-SA",
@@ -40,8 +44,10 @@
       "id": "annoyances",
       "title": "AdGuard Annoyances (cookie notices, popups, widgets)",
       "ruleCount": 6000,
-      "regexCount": 8,
-      "unsafeCount": 3,
+      "blockCount": 3897,
+      "droppedByCap": 127,
+      "regexCount": 7,
+      "unsafeCount": 0,
       "license": "GPL-3.0",
       "enabledAt": [
         "aggressive"

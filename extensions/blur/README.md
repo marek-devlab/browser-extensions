@@ -29,9 +29,10 @@ npm run dev:blur:firefox   # Firefox
   viewport gating and open-shadow-root traversal.
 - **Text blur** — `utils/text-blur.ts` matches your patterns with the Custom
   Highlight API where available, falling back to span wrapping.
-- **Stats** — the per-tab counts (images / videos / text matches) are measured:
-  the content script tallies exactly what it blurred and reports it to the
-  background, which drives the badge and the popup.
+- **Stats** — the per-tab counts (images / videos / text matches) are measured
+  from the engine's own tally and reported to the background, which drives the
+  badge and the popup. They can run marginally high when the min-image-size gate
+  un-blurs an already-counted small image, so they are honest, not exact.
 - **Reveal all** — the popup button messages the content script, which un-blurs
   every element and text match for the configured reveal window.
 
@@ -43,9 +44,14 @@ Requested permissions (Chrome MV3 and Firefox):
 
 - `storage` — save your blur settings and per-site preferences locally.
 - `activeTab` — act on the tab you are currently viewing when you invoke the extension.
-- `scripting` — inject the stylesheet that blurs matched content on the page.
 - `contextMenus` — right-click "Blur this / Always blur images here" actions (no host or network access).
-- `optional_host_permissions: <all_urls>` — **optional, requested at runtime** only when you enable blurring across sites; not requested at install.
+- **Host access via an `<all_urls>` content script (`document_start`)** — standing,
+  install-time access to every site: this is what produces the "read and change all
+  your data on all websites" install warning. Blurring is only useful if it happens
+  before content is painted, so the script must already be present when a page opens.
+  There is no `optional_host_permissions` and nothing is requested at runtime — the
+  content script itself injects the block-first stylesheet, so no `scripting`
+  permission is needed either.
 
 Keyboard shortcuts use the `commands` key, which grants no extra permission.
 

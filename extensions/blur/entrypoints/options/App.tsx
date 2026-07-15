@@ -991,7 +991,7 @@ function SiteOverridesPanel(): JSX.Element {
     }
     // Seed with the current global values so the toggles start meaningful.
     setError(null);
-    setConfigs(setSiteOverride(configs, host, { blur: { images: settings.blur.images } }));
+    setConfigs((prev) => setSiteOverride(prev, host, { blur: { images: settings.blur.images } }));
     setDraft('');
   }
 
@@ -1192,12 +1192,12 @@ function ImageSourcesPanel(): JSX.Element {
       <DomainList
         title="Never blur images from"
         values={rules.never}
-        onChange={(never) => setValue({ ...rules, never })}
+        onChange={(never) => setValue((prev) => ({ ...prev, never }))}
       />
       <DomainList
         title="Always blur images from"
         values={rules.always}
-        onChange={(always) => setValue({ ...rules, always })}
+        onChange={(always) => setValue((prev) => ({ ...prev, always }))}
       />
       <div className="subpanel">
         <h2>Minimum image size</h2>
@@ -1215,10 +1215,10 @@ function ImageSourcesPanel(): JSX.Element {
             value={prefs.minImagePx}
             aria-label="Minimum image size in pixels"
             onChange={(e) =>
-              setPrefs({
-                ...prefs,
+              setPrefs((prev) => ({
+                ...prev,
                 minImagePx: Math.max(0, Math.min(512, Math.floor(Number(e.target.value) || 0))),
-              })
+              }))
             }
           />
           <span>px</span>
@@ -1247,7 +1247,7 @@ function LinksPanel(): JSX.Element {
       <DomainList
         title="Blur links pointing at"
         values={prefs.linkDomains}
-        onChange={(linkDomains) => setValue({ ...prefs, linkDomains })}
+        onChange={(linkDomains) => setValue((prev) => ({ ...prev, linkDomains }))}
       />
     </section>
   );

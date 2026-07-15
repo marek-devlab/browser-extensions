@@ -36,6 +36,30 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 /**
+ * Reject a cosmetic selector that could break out of the `{ … }` rule it will be
+ * interpolated into (CSS injection / form-value exfiltration). Denylists the
+ * break-out characters `{`, `}`, `@`, `<` and the CSS comment-closer, then — when
+ * a DOM is present (the options page at runtime; skipped in Node import tests) —
+ * runs `querySelector` to drop syntactically invalid selectors too. Mirrors
+ * `isSafeCosmeticSelector` in custom-filters.ts; inlined so this parser keeps its
+ * NO cross-module value-import guarantee (Node-testable — see the module header).
+ */
+const SELECTOR_BREAKOUT = /[{}@<]|\*\//;
+function isSafeCosmeticSelector(selector: string): boolean {
+  const sel = selector.trim();
+  if (!sel) return false;
+  if (SELECTOR_BREAKOUT.test(sel)) return false;
+  if (typeof document !== 'undefined') {
+    try {
+      document.querySelector(sel);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Validate + normalize untrusted JSON into an `AdBlockBackup`. Throws with a
  * human-readable reason on malformed top-level JSON, so the UI never writes
  * garbage into storage. Unknown/missing pieces fall back to safe defaults rather
@@ -110,10 +134,14 @@ export function normalizeSiteConfigs(v: unknown): Record<string, AdBlockSiteConf
  * is dropped rather than failing the whole import.
  */
 function normalizeFilterEntry(v: unknown): StoredFilter | null {
-  if (typeof v === 'string') return v.trim() ? v : null;
+  // A selector from an untrusted backup is interpolated raw into the injected
+  // stylesheet, so drop any that could break out of its `{ … }` rule (CSS
+  // injection / form-value exfiltration — see cosmetic-safety.ts).
+  if (typeof v === 'string') return v.trim() && isSafeCosmeticSelector(v) ? v : null;
   if (!isRecord(v)) return null;
   const selector = v['selector'];
   if (typeof selector !== 'string' || !selector.trim()) return null;
+  if (!isSafeCosmeticSelector(selector)) return null;
   const entry: CustomFilterEntry = { selector };
   if (typeof v['label'] === 'string' && v['label'].trim()) entry.label = v['label'];
   if (typeof v['added'] === 'number' && Number.isFinite(v['added'])) entry.added = v['added'];

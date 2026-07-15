@@ -12,12 +12,58 @@ interface FetchResult {
   body: string;
 }
 
-/** A same-origin GET that resolves to the body text, or null on a network error. */
+// An auditor runs on other people's — possibly hostile or broken — sites, so no
+// probe may hang the scan or exhaust memory. A same-origin server can stream a
+// `/robots.txt` forever or answer `/sitemap.xml` with gigabytes. Every network
+// read is therefore bounded twice: a wall-clock timeout (an `AbortController`
+// aborts a stalled request) and a byte cap on the body. Exceeding either surfaces
+// as the same honest "couldn't check" state as any other failure — never a silent
+// hang and never a false "OK". robots.txt / sitemap.xml are tiny in practice, so
+// the cap is generous but bounded.
+const FETCH_TIMEOUT_MS = 8_000;
+const MAX_BODY_BYTES = 512 * 1024;
+
+/**
+ * Read a response body as text but stop once `maxBytes` have arrived, so a
+ * multi-GB response can't exhaust memory. The truncated prefix is enough for the
+ * directive / marker checks these bodies feed. Cancels the stream on exit.
+ */
+async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  const body = res.body;
+  if (body === null) return (await res.text()).slice(0, maxBytes);
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      text += decoder.decode(value, { stream: true });
+      if (received >= maxBytes) break; // Cap hit — drop the rest of the body.
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return text;
+}
+
+/**
+ * A same-origin GET that resolves to the (size-capped) body text, or null on a
+ * network error, timeout, or oversized/aborted read. A null is surfaced upstream
+ * as an explained "could not fetch" warning, so a hostile/stalled server degrades
+ * honestly instead of hanging the scan.
+ */
 async function fetchText(url: string): Promise<FetchResult | null> {
   try {
-    const res = await fetch(url, { credentials: 'omit', redirect: 'follow' });
+    const res = await fetch(url, {
+      credentials: 'omit',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) return { ok: false, status: res.status, body: '' };
-    return { ok: true, status: res.status, body: await res.text() };
+    return { ok: true, status: res.status, body: await readCapped(res, MAX_BODY_BYTES) };
   } catch {
     return null;
   }
@@ -172,6 +218,7 @@ async function faviconCheck(
     const res = await fetch(`${origin}/favicon.ico`, {
       method: 'HEAD',
       credentials: 'omit',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     status = res.ok ? 'found' : res.status === 404 ? 'missing' : 'unknown';
   } catch {
@@ -256,9 +303,13 @@ function parseXRobots(header: string): XRobotsParse {
 async function xRobotsCheck(pageUrl: string): Promise<SeoCheck | null> {
   let res: Response;
   try {
-    res = await fetch(pageUrl, { method: 'HEAD', credentials: 'omit' });
+    res = await fetch(pageUrl, {
+      method: 'HEAD',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch {
-    return null; // Network/CORS failure — inconclusive, say nothing.
+    return null; // Network/CORS failure or timeout — inconclusive, say nothing.
   }
   if (!res.ok) return null; // 405/redirect/error page — HEAD is unreliable here.
   const header = res.headers.get('x-robots-tag');

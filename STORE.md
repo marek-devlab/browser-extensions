@@ -202,7 +202,6 @@ documentation. The steps below are the release runbook for whoever ships.
 **Per-permission justification (Chrome dashboard):**
 - `storage` — Save your blur settings and per-site preferences locally.
 - `activeTab` — Apply or toggle blurring on the tab you are currently viewing when you invoke the extension.
-- `scripting` — Inject the stylesheet that blurs matched content on the page.
 - `contextMenus` — Provide the right-click "Blur this / Always blur images here" actions. No host or network access.
 - **Host access via `<all_urls>` content script (`document_start`)** — The source
   of the "read and change all your data on all websites" warning. Blurring is only

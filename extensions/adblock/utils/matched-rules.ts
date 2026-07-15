@@ -28,16 +28,25 @@ export interface DnrTabCounts {
  * Trackers vs ads are split by originating ruleset: matches from `easyprivacy`
  * count as trackers, everything else as generic network blocks.
  *
- * ⚠️ DYNAMIC rules are EXCLUDED. `getMatchedRules` reports every matched rule,
- * including our own dynamic strip-params `redirect`, per-site `allowAllRequests`
- * and any `modifyHeaders` rule — none of which are a BLOCK, so bucketing them as
- * tracker/network inflated the "~N Blocked" figure with phantom matches. Only the
- * bundled static rulesets (all block rules) are counted. `MatchedRule` exposes no
- * action type, so we filter by ruleset: static-block vs the reserved dynamic /
- * session rulesets.
+ * ⚠️ NON-BLOCK matches are EXCLUDED — the counter must reflect genuine BLOCKS
+ * only (never lie in the UI). `getMatchedRules` reports EVERY matched rule and
+ * exposes no action type, so two filters are applied:
+ *   - Dynamic/session rulesets are ours (strip-params `redirect`, per-site
+ *     `allowAllRequests`) and never blocks — skipped by ruleset id.
+ *   - Static `allow`/`allowAllRequests` EXCEPTIONS live in the SAME bundled
+ *     ruleset as the blocks (easylist alone has ~3,000), so ruleset id can't tell
+ *     them apart. The build script (build-rulesets.mjs) therefore assigns every
+ *     non-block rule an id >= NON_BLOCK_RULE_ID_BASE and every block a lower id,
+ *     so a matched exception is skipped by its rule id. An `allow` MATCH is a
+ *     request let THROUGH — the opposite of a block — and previously inflated the
+ *     figure. (Requires a rebuilt ruleset; older bundles fall back to counting
+ *     everything, i.e. the prior behaviour, never worse.)
  */
 const DYNAMIC_RULESET_ID = '_dynamic';
 const SESSION_RULESET_ID = '_session';
+
+/** Mirrors `NON_BLOCK_RULE_ID_BASE` in scripts/build-rulesets.mjs. */
+const NON_BLOCK_RULE_ID_BASE = 1_000_000;
 
 export async function getDnrTabCounts(tabId: number): Promise<DnrTabCounts> {
   try {
@@ -49,6 +58,9 @@ export async function getDnrTabCounts(tabId: number): Promise<DnrTabCounts> {
       const rulesetId = info.rule.rulesetId;
       // Dynamic/session rules are our redirect/allow/header rules, never blocks.
       if (rulesetId === DYNAMIC_RULESET_ID || rulesetId === SESSION_RULESET_ID) continue;
+      // Static allow/allowAllRequests exceptions carry a high id (see above) — a
+      // match on one is a PASS, not a block, so it must not count.
+      if (info.rule.ruleId >= NON_BLOCK_RULE_ID_BASE) continue;
       if (rulesetId === RULESET_IDS.easyprivacy) trackers += 1;
       else network += 1;
       byList[rulesetId] = (byList[rulesetId] ?? 0) + 1;

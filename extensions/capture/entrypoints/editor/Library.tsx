@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Callout, EmptyState, Spinner } from '@blur/ui';
+import { Button, Callout, EmptyState, Spinner, useLocale } from '@blur/ui';
 import {
   deleteClip,
   findInterruptedSessions,
@@ -12,6 +12,7 @@ import {
   type SessionManifest,
 } from '../../utils/db';
 import { formatBytes, formatDuration } from '../../utils/format';
+import { useT } from '../../utils/i18n';
 import type { Clip } from '../../utils/types';
 
 // LIBRARY (design capture.md §2.13). Real clips from IndexedDB, the crash-recovery
@@ -25,6 +26,8 @@ const ACCEPT =
   'video/mp4,video/webm,video/quicktime,video/x-matroska,image/png,image/jpeg,image/webp';
 
 export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
+  const t = useT();
+  const locale = useLocale();
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [interrupted, setInterrupted] = useState<SessionManifest[]>([]);
   const [used, setUsed] = useState<number | null>(null);
@@ -104,15 +107,13 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
       // ⚠️ We claim only what we actually read (MP4/MOV/WebM/MKV + PNG/JPEG/WebP).
       // An unknown or DRM-protected file gets an honest refusal, not an eternal
       // spinner (design §4.3).
-      setError(
-        'Не понимаем этот файл. Читаем MP4, MOV, WebM, MKV, PNG, JPEG, WebP. Файлы с DRM не открываются в принципе.',
-      );
+      setError(t('lib_import_fail'));
     } finally {
       setBusy(null);
     }
   }
 
-  if (!clips) return <Spinner label="Читаем библиотеку…" />;
+  if (!clips) return <Spinner label={t('lib_reading')} />;
 
   return (
     <div
@@ -125,41 +126,37 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
       }}
     >
       <header className="lib-head">
-        <h2>Библиотека</h2>
-        <span className="muted">{used != null ? `Занято ${formatBytes(used)}` : ''}</span>
+        <h2>{t('tab_library')}</h2>
+        <span className="muted">
+          {used != null ? t('lib_used', { size: formatBytes(used, locale) }) : ''}
+        </span>
       </header>
 
       {error && (
-        <Callout tone="warn" title="Не получилось">
+        <Callout tone="warn" title={t('lib_fail_title')}>
           {error}
         </Callout>
       )}
 
       {interrupted.map((m) => (
-        <Callout key={m.id} tone="warn" title="⚠ Прерванная запись">
-          {new Date(m.startedAt).toLocaleString('ru')} · {m.host || 'экран'} ·{' '}
-          {formatDuration(m.durationMs)} · {formatBytes(m.bytes)}
+        <Callout key={m.id} tone="warn" title={t('lib_interrupted_title')}>
+          {new Date(m.startedAt).toLocaleString(locale)} · {m.host || t('screen_word')} ·{' '}
+          {formatDuration(m.durationMs)} · {formatBytes(m.bytes, locale)}
           <br />
-          Запись оборвалась (браузер закрылся, документ упал или кончилась память). Данные на
-          диске мы нашли. Последние ~3 секунды могли не сохраниться, а длительность в
-          заголовке файла неверна — поэтому при экспорте запись пересобирается заново (это
-          быстро).
+          {t('lib_interrupted_body')}
           <div className="lib-actions">
             <Button variant="primary" onClick={() => void recover(m)} disabled={busy === m.id}>
-              {busy === m.id ? 'Восстанавливаем…' : 'Восстановить'}
+              {busy === m.id ? t('lib_recovering') : t('lib_recover')}
             </Button>
             <Button variant="ghost" onClick={() => void discard(m)} disabled={busy === m.id}>
-              Удалить
+              {t('delete')}
             </Button>
           </div>
         </Callout>
       ))}
 
       {clips.length === 0 ? (
-        <EmptyState
-          title="Пока ничего не записано"
-          hint="Нажмите на иконку расширения и «Записать» — или перетащите сюда свой файл, чтобы сжать его под нужный размер."
-        />
+        <EmptyState title={t('lib_empty_title')} hint={t('lib_empty_hint')} />
       ) : (
         <ul className="clip-list">
           {clips.map((clip) => (
@@ -170,20 +167,16 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
               <div className="clip-body">
                 <p className="clip-title">{clip.title}</p>
                 <p className="clip-meta muted mono">
-                  {new Date(clip.createdAt).toLocaleString('ru')}
+                  {new Date(clip.createdAt).toLocaleString(locale)}
                   {clip.durationMs > 0 && ` · ${formatDuration(clip.durationMs)}`} ·{' '}
                   {clip.resolution.width}×{clip.resolution.height} ·{' '}
-                  {String(clip.format).toUpperCase()} · {formatBytes(clip.sizeBytes)}
-                  {clip.imported && ' · свой файл'}
+                  {String(clip.format).toUpperCase()} · {formatBytes(clip.sizeBytes, locale)}
+                  {clip.imported && t('lib_own_file')}
                 </p>
-                {clip.needsRemux && (
-                  <p className="warn-text">
-                    Восстановленная запись — при экспорте будет пересобрана.
-                  </p>
-                )}
+                {clip.needsRemux && <p className="warn-text">{t('lib_recovered_note')}</p>}
                 <div className="clip-actions">
                   <Button variant="ghost" onClick={() => onOpen(clip)}>
-                    Открыть
+                    {t('open')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -191,7 +184,7 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
                       void deleteClip(clip.id).then(reload);
                     }}
                   >
-                    Удалить
+                    {t('delete')}
                   </Button>
                 </div>
               </div>
@@ -203,10 +196,7 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
       {/* "Convert your own file" — the same pipeline, and zero extra permissions:
           a file input needs none. Inside the Studio only (design §4.3). */}
       <div className="dropzone">
-        <p>
-          Перетащите сюда видео или картинку, чтобы сжать, изменить размер или наложить
-          watermark.
-        </p>
+        <p>{t('lib_dropzone')}</p>
         <input
           ref={fileRef}
           type="file"
@@ -218,10 +208,10 @@ export function Library({ onOpen }: { onOpen: (clip: Clip) => void }) {
           }}
         />
         <Button onClick={() => fileRef.current?.click()} disabled={busy === 'import'}>
-          {busy === 'import' ? 'Читаем…' : 'Открыть файл…'}
+          {busy === 'import' ? t('lib_reading_short') : t('lib_open_file')}
         </Button>
-        <p className="muted">Понимаем: MP4, MOV, WebM, MKV, PNG, JPEG, WebP.</p>
-        <p className="muted">⚠ Файл никуда не отправляется — он обрабатывается здесь.</p>
+        <p className="muted">{t('lib_understand')}</p>
+        <p className="muted">{t('lib_local_note')}</p>
       </div>
     </div>
   );

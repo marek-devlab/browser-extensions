@@ -2,6 +2,8 @@
 // the Worker (utils/worker/*); this module is orchestration, plus the one thing
 // a Worker cannot do — parse XML, which needs `DOMParser` (design §10.4).
 
+import type { Locale } from '@blur/ui';
+import { nfmt, tAt } from './i18n';
 import { detectFormat, type Detection } from './core/detect';
 import { parseXmlToTree, XmlRefused } from './core/xml';
 import {
@@ -60,7 +62,12 @@ export class ParseFailed extends Error {
 export function parseDocument(
   text: string,
   format: DocFormat,
-  opts: { autodetected: boolean; name?: string | null; prefs: DevdataPrefs },
+  opts: {
+    autodetected: boolean;
+    name?: string | null;
+    prefs: DevdataPrefs;
+    locale: Locale;
+  },
 ): RunningJob<ParsedDoc> {
   if (format === 'xml') {
     return { promise: parseXmlHere(text, opts), cancel: () => undefined };
@@ -111,7 +118,7 @@ export function parseDocument(
 
 async function parseXmlHere(
   text: string,
-  opts: { autodetected: boolean; name?: string | null },
+  opts: { autodetected: boolean; name?: string | null; locale: Locale },
 ): Promise<ParsedDoc> {
   try {
     // `application/xml`, never `text/html` — parsing untrusted markup as HTML
@@ -134,10 +141,7 @@ async function parseXmlHere(
       truncated: built.truncated,
       bigNumbers: built.bigNumbers,
       exact: false,
-      notes: [
-        ...built.warnings,
-        'XML разбирается нативным DOMParser в основном потоке (в Worker его нет) — поэтому здесь действует отдельный предел размера.',
-      ],
+      notes: [...built.warnings, tAt(opts.locale, 'fmt.xmlNote')],
       name: opts.name ?? null,
     };
   } catch (err) {
@@ -285,7 +289,11 @@ const segmenter =
  * The bottom panel (design §2.4) — and the whole differentiator: we show the
  * text that is IN THE DOCUMENT, not what JavaScript turned it into.
  */
-export function inspectValue(doc: ParsedDoc, index: number): InspectedValue | null {
+export function inspectValue(
+  doc: ParsedDoc,
+  index: number,
+  locale: Locale,
+): InspectedValue | null {
   const node = doc.tree[index];
   if (!node) return null;
   const path = pathOf(doc.tree, index);
@@ -298,7 +306,9 @@ export function inspectValue(doc: ParsedDoc, index: number): InspectedValue | nu
       precisionNote: null,
       exactnessNote: null,
       lengthNote:
-        node.count === null ? null : `Элементов: ${node.count.toLocaleString('ru')}.`,
+        node.count === null
+          ? null
+          : tAt(locale, 'fmt.elements', { n: nfmt(locale, node.count) }),
     };
   }
 
@@ -309,13 +319,12 @@ export function inspectValue(doc: ParsedDoc, index: number): InspectedValue | nu
 
   if (node.kind === 'number' && losesPrecision(raw)) {
     const rounded = String(Number(raw));
-    precisionNote = doc.exact
-      ? `Число не помещается в double. Показано исходное написание из документа; JavaScript округлил бы его до ${rounded}.`
-      : `Точность потеряна при разборе: этот формат не даёт доступа к исходному тексту, поэтому показано округлённое ${rounded}. Исходное написание восстановить нельзя.`;
+    precisionNote = tAt(locale, doc.exact ? 'fmt.precisionExact' : 'fmt.precisionLost', {
+      rounded,
+    });
   }
   if (!doc.exact && node.kind === 'number') {
-    exactnessNote =
-      'Формат разбирается через значения, а не через позиции в исходнике — исходное написание чисел недоступно.';
+    exactnessNote = tAt(locale, 'fmt.exactness');
   }
 
   if (node.kind === 'string') {
@@ -329,11 +338,14 @@ export function inspectValue(doc: ParsedDoc, index: number): InspectedValue | nu
     const graphemes = segmenter
       ? [...segmenter.segment(value)].length
       : [...value].length;
-    lengthNote = `Длина: ${graphemes.toLocaleString('ru')} символ(ов)${
+    const extra =
       graphemes !== value.length
-        ? ` (${value.length} кодовых единиц UTF-16 — строка содержит суррогатные пары или составные символы)`
-        : ''
-    }.`;
+        ? tAt(locale, 'fmt.stringLengthExtra', { units: value.length })
+        : '';
+    lengthNote = tAt(locale, 'fmt.stringLength', {
+      graphemes: nfmt(locale, graphemes),
+      extra,
+    });
   }
 
   return { path, raw, kind: node.kind, precisionNote, exactnessNote, lengthNote };

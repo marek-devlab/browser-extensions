@@ -1,6 +1,6 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { browser } from '#imports';
-import { ThemeToggle } from '@blur/ui';
+import { LocaleProvider, ThemeToggle } from '@blur/ui';
 import {
   collectBrowser,
   collectHardware,
@@ -14,7 +14,8 @@ import {
 import { FieldRow } from '../../utils/field';
 import { ConnectionSection } from '../../utils/connection';
 import { serializeReport } from '../../utils/export';
-import { useSettings, useThemeSetter } from '../../utils/settings';
+import { useSettings, useThemeSetter, useWhoamiLocale } from '../../utils/settings';
+import { useT } from '../../utils/i18n';
 import type { CopyFormat } from '../../utils/storage';
 
 // PRIMARY surface (design §1.1): "who am I, in two scrolls". Device-first, 6
@@ -23,44 +24,59 @@ import type { CopyFormat } from '../../utils/storage';
 // reveals the fields it is made of. The full report and options live behind buttons.
 
 export function App() {
+  const { locale } = useWhoamiLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <PopupApp />
+    </LocaleProvider>
+  );
+}
+
+function PopupApp() {
+  const t = useT();
   const { settings, update } = useSettings();
   const { theme, setTheme } = useThemeSetter(settings, update);
 
   // Synchronous device groups — available in the very first paint (design §1.3).
-  const [groups] = useState(() => ({
-    browser: collectBrowser(),
-    hardware: collectHardware(),
-    screen: collectScreen(),
-    locale: collectLocale(),
-    privacy: collectPrivacy(),
-  }));
+  // Re-derived when the locale changes so baked value strings ("yes"/"no", notes,
+  // units) follow the selected language too, not just the labels.
+  const groups = useMemo(
+    () => ({
+      browser: collectBrowser(t),
+      hardware: collectHardware(t),
+      screen: collectScreen(t),
+      locale: collectLocale(t),
+      privacy: collectPrivacy(t),
+    }),
+    [t],
+  );
 
   // Async augmentation (HEV, storage quota, WebGPU): skeleton chips resolve in
   // place, only on the 3 affected fields — no global spinner (design §1.3).
-  const [async, setAsync] = useState<AsyncDevice | null>(null);
+  const [asyncDev, setAsync] = useState<AsyncDevice | null>(null);
   useEffect(() => {
     if (!settings) return;
-    void collectAsync(settings.units).then(setAsync);
-  }, [settings?.units]);
+    void collectAsync(settings.units, t).then(setAsync);
+  }, [settings?.units, t]);
 
   if (!settings) {
     return (
       <div className="popup">
         <p className="loading" role="status" aria-live="polite">
-          <span className="ui-spinner" aria-hidden="true" /> Загрузка…
+          <span className="ui-spinner" aria-hidden="true" /> {t('loading')}
         </p>
       </div>
     );
   }
 
-  const browser2 = mergeAsync(groups.browser, async);
-  const hardware2 = mergeAsyncHw(groups.hardware, async);
-  const privacy2 = mergeAsyncGpu(groups.privacy, async);
+  const browser2 = mergeAsync(groups.browser, asyncDev);
+  const hardware2 = mergeAsyncHw(groups.hardware, asyncDev);
+  const privacy2 = mergeAsyncGpu(groups.privacy, asyncDev);
 
   return (
     <div className="popup">
       <header className="head">
-        <h1>Кто я</h1>
+        <h1>{t('appTitle')}</h1>
         <ThemeToggle theme={theme} onChange={setTheme} />
       </header>
 
@@ -74,7 +90,7 @@ export function App() {
       <section className="tile tile--open">
         <div className="tile__head tile__head--static">
           <span className="tile__icon" aria-hidden="true">📡</span>
-          <span className="tile__title">Соединение</span>
+          <span className="tile__title">{t('connectionTitle')}</span>
         </div>
         <div className="tile__body">
           <ConnectionSection settings={settings} update={update} />
@@ -89,7 +105,7 @@ export function App() {
           className="ui-btn ui-btn--sm"
           onClick={() => void browser.tabs.create({ url: browser.runtime.getURL('/report.html') })}
         >
-          Полный отчёт
+          {t('fullReport')}
         </button>
         {/* Copy-all in the format chosen in Options (design §2.1). 🔴 Device facts
             only — the popup never lifts the network values out of ConnectionSection,
@@ -103,9 +119,9 @@ export function App() {
           type="button"
           className="ui-btn ui-btn--sm"
           onClick={() => void browser.runtime.openOptionsPage()}
-          aria-label="Настройки"
+          aria-label={t('settings')}
         >
-          ⚙ Настройки
+          ⚙ {t('settings')}
         </button>
       </footer>
     </div>
@@ -124,16 +140,17 @@ function CopyAllButton({
   format: CopyFormat;
   includeUnavailable: boolean;
 }) {
+  const t = useT();
   const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle');
   return (
     <button
       type="button"
       className="ui-btn ui-btn--sm"
       aria-live="polite"
-      aria-label="Скопировать все данные об устройстве"
+      aria-label={t('copyAllAria')}
       onClick={async () => {
         try {
-          await navigator.clipboard.writeText(serializeReport(format, groups, { includeUnavailable }));
+          await navigator.clipboard.writeText(serializeReport(format, groups, t, { includeUnavailable }));
           setState('ok');
         } catch {
           setState('fail');
@@ -141,7 +158,7 @@ function CopyAllButton({
         setTimeout(() => setState('idle'), 1500);
       }}
     >
-      {state === 'ok' ? '✓ Скопировано' : state === 'fail' ? '✕ Ошибка' : 'Копировать'}
+      {state === 'ok' ? `✓ ${t('copied')}` : state === 'fail' ? `✕ ${t('copyError')}` : t('copyAll')}
     </button>
   );
 }
@@ -157,6 +174,7 @@ function Tile({
   icon: string;
   defaultOpen?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(defaultOpen);
   const uid = useId().replace(/:/g, '_');
   return (
@@ -169,13 +187,13 @@ function Tile({
         onClick={() => setOpen((o) => !o)}
       >
         <span className="tile__icon" aria-hidden="true">{icon}</span>
-        <span className="tile__title">{group.title}</span>
+        <span className="tile__title">{t(group.titleKey)}</span>
         <span className="tile__caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
       </button>
       {open && (
         <div className="tile__body" id={`${uid}-body`} role="region">
           {group.fields.map((f) => (
-            <FieldRow key={f.label} label={f.label} field={f.field} copyable={f.copyable} />
+            <FieldRow key={f.key} label={t(f.key)} field={f.field} copyable={f.copyable} />
           ))}
         </div>
       )}
@@ -183,28 +201,28 @@ function Tile({
   );
 }
 
-/* Merge the async-resolved fields into their groups by label. */
-function replaceField(group: FieldGroup, label: string, field: FieldGroup['fields'][number]['field']): FieldGroup {
+/* Merge the async-resolved fields into their groups by stable key. */
+function replaceField(group: FieldGroup, key: FieldGroup['fields'][number]['key'], field: FieldGroup['fields'][number]['field']): FieldGroup {
   return {
     ...group,
-    fields: group.fields.map((f) => (f.label === label ? { ...f, field } : f)),
+    fields: group.fields.map((f) => (f.key === key ? { ...f, field } : f)),
   };
 }
 
 function mergeAsync(group: FieldGroup, a: AsyncDevice | null): FieldGroup {
   if (!a) return group;
-  let g = replaceField(group, 'Архитектура', a.architecture);
-  g = replaceField(g, 'Версия ОС', a.osVersion);
-  g = replaceField(g, 'Модель устройства', a.model);
+  let g = replaceField(group, 'lbl_architecture', a.architecture);
+  g = replaceField(g, 'lbl_osVersion', a.osVersion);
+  g = replaceField(g, 'lbl_deviceModel', a.model);
   return g;
 }
 
 function mergeAsyncHw(group: FieldGroup, a: AsyncDevice | null): FieldGroup {
   if (!a) return group;
-  return replaceField(group, 'Хранилище для сайтов', a.storageQuota);
+  return replaceField(group, 'lbl_siteStorage', a.storageQuota);
 }
 
 function mergeAsyncGpu(group: FieldGroup, a: AsyncDevice | null): FieldGroup {
   if (!a) return group;
-  return replaceField(group, 'GPU (WebGPU)', a.webgpu);
+  return replaceField(group, 'lbl_gpuWebgpu', a.webgpu);
 }

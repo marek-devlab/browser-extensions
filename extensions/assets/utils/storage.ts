@@ -1,5 +1,5 @@
 import { storage } from '#imports';
-import type { Theme } from '@blur/ui';
+import type { Theme, Locale } from '@blur/ui';
 
 // Storage layout (design §3, §9.3). TWO hard rules:
 //
@@ -84,3 +84,14 @@ export const cardPositionItem = storage.defineItem<{ x: number; y: number } | nu
     migrations: {},
   },
 );
+
+/**
+ * The user's chosen UI language. Independent of the browser's own UI locale and of
+ * the theme; defaults to English on a fresh install (the switcher lives on the
+ * options page). Read synchronously-seeded by @blur/ui's useLocaleController on the
+ * React surfaces, and read directly (`await localeItem.getValue()`) when the
+ * non-React inspector card and the background context menu are built.
+ */
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+});

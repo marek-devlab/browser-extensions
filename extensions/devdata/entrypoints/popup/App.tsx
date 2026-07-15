@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { Button, Callout, ThemeToggle } from '@blur/ui';
+import {
+  Button,
+  Callout,
+  LocaleProvider,
+  ThemeToggle,
+  useLocale,
+  useLocaleController,
+} from '@blur/ui';
 import { usePrefs } from '../../utils/prefs';
+import { localeItem } from '../../utils/storage';
+import { useT, type MsgKey } from '../../utils/i18n';
 import { usePermissionFact, requestScripting } from '../../utils/permissions';
 import { formatActiveTab, type FormatPageResult } from '../../utils/format-page';
 import { putHandoff } from '../../utils/handoff';
@@ -15,6 +24,7 @@ import { putHandoff } from '../../utils/handoff';
 
 interface ActiveTab {
   id: number | null;
+  /** Empty when unknown (chrome://, error) — the UI shows a "this tab" label. */
   host: string;
   /** URL ends in .json/.geojson — a HINT, never a claim (design §2.2). */
   looksJson: boolean;
@@ -35,11 +45,29 @@ function classifyUrl(url: string): Omit<ActiveTab, 'id'> {
       restricted,
     };
   } catch {
-    return { host: url || 'эта вкладка', looksJson: false, restricted: true };
+    return { host: '', looksJson: false, restricted: true };
   }
 }
 
 export function App() {
+  const { locale, setLocale } = useLocaleController({
+    key: 'blur-devdata:locale',
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+  // setLocale is unused in the popup (the switcher lives in the tool's Settings),
+  // but the controller still seeds + persists so the popup renders in-language.
+  void setLocale;
+  return (
+    <LocaleProvider locale={locale}>
+      <Popup />
+    </LocaleProvider>
+  );
+}
+
+function Popup() {
+  const t = useT();
+  const locale = useLocale();
   const { prefs, update } = usePrefs();
   const scripting = usePermissionFact('scripting');
   const [tab, setTab] = useState<ActiveTab | null>(null);
@@ -51,12 +79,12 @@ export function App() {
       try {
         const [active] = await browser.tabs.query({ active: true, currentWindow: true });
         if (!active) {
-          setTab({ id: null, host: 'эта вкладка', looksJson: false, restricted: true });
+          setTab({ id: null, host: '', looksJson: false, restricted: true });
           return;
         }
         setTab({ id: active.id ?? null, ...classifyUrl(active.url ?? '') });
       } catch {
-        setTab({ id: null, host: 'эта вкладка', looksJson: false, restricted: true });
+        setTab({ id: null, host: '', looksJson: false, restricted: true });
       }
     })();
   }, []);
@@ -75,7 +103,7 @@ export function App() {
     try {
       const text = await navigator.clipboard.readText();
       if (text.trim() === '') {
-        setPasteNote('Буфер обмена пуст. Откройте инструмент и вставьте текст туда (⌘/Ctrl+V).');
+        setPasteNote(t('popup.clipboardEmpty'));
         return;
       }
       // A clipboard JWT is refused by putHandoff (credentials never touch
@@ -83,9 +111,7 @@ export function App() {
       const outcome = await putHandoff(text, 'clipboard');
       openTool(outcome === 'jwt-skipped' ? 'jwt' : 'data');
     } catch {
-      setPasteNote(
-        'Браузер не дал прочитать буфер обмена из попапа. Открываем инструмент — нажмите там ⌘/Ctrl+V.',
-      );
+      setPasteNote(t('popup.clipboardDenied'));
       setTimeout(() => openTool('data'), 900);
     }
   };
@@ -103,7 +129,7 @@ export function App() {
       }
     }
     setPageResult('loading');
-    setPageResult(await formatActiveTab(tab.id));
+    setPageResult(await formatActiveTab(tab.id, locale));
   };
 
   const canFormatHere = tab !== null && tab.id !== null && !tab.restricted;
@@ -116,21 +142,21 @@ export function App() {
           <ThemeToggle theme={prefs?.theme ?? 'auto'} onChange={(theme) => update({ theme })} />
         </div>
         <span className="host mono" title={tab?.host ?? ''}>
-          {tab?.host ?? 'загрузка…'}
+          {tab === null ? t('popup.loading') : tab.host || t('popup.thisTab')}
         </span>
       </header>
 
       {tab?.looksJson && !tab.restricted && (
-        <Callout tone="info" title="ⓘ Похоже на JSON-документ">
-          {/* "Похоже", not "это": without injecting a script we cannot read
+        <Callout tone="info" title={t('popup.looksJsonTitle')}>
+          {/* "Looks like", not "is": without injecting a script we cannot read
               document.contentType, and pretending otherwise would be a lie (§2.2). */}
-          Судим только по адресу — тип документа отсюда не виден.
+          {t('popup.looksJsonBody')}
           <div className="row row--gap">
             <Button variant="primary" onClick={() => openTool('data')}>
-              Открыть
+              {t('common.open')}
             </Button>
             <Button onClick={() => void formatHere()} disabled={!canFormatHere}>
-              Форматировать тут
+              {t('popup.formatHere')}
             </Button>
           </div>
         </Callout>
@@ -138,9 +164,9 @@ export function App() {
 
       <div className="stack">
         <Button variant="primary" onClick={() => void pasteAndOpen()}>
-          Вставить из буфера и открыть
+          {t('popup.pasteAndOpen')}
         </Button>
-        <Button onClick={() => openTool('data')}>Открыть инструмент</Button>
+        <Button onClick={() => openTool('data')}>{t('popup.openTool')}</Button>
       </div>
 
       {pasteNote !== null && (
@@ -150,45 +176,46 @@ export function App() {
       )}
 
       <section>
-        <h2 className="ui-section-heading">Форматирование страниц</h2>
+        <h2 className="ui-section-heading">{t('popup.pageFormatting')}</h2>
         <Button onClick={() => void formatHere()} disabled={!canFormatHere}>
-          Форматировать JSON на этой вкладке
+          {t('popup.formatJsonHere')}
         </Button>
         <p className="fine">
-          {tab?.restricted
-            ? 'Браузер не разрешает расширениям работать на этой странице.'
-            : 'Разовое действие по клику. Доступ к сайту не выдаётся — только к этой вкладке и только сейчас.'}
+          {tab?.restricted ? t('popup.restrictedNote') : t('popup.oneClickNote')}
         </p>
 
         <div aria-live="polite">
-          {pageResult === 'loading' && <p className="fine">Читаем вкладку…</p>}
+          {pageResult === 'loading' && <p className="fine">{t('popup.readingTab')}</p>}
           {pageResult !== null && pageResult !== 'loading' && (
-            <p className="fine">{describeResult(pageResult)}</p>
+            <p className="fine">{describeResult(pageResult, t)}</p>
           )}
         </div>
 
         <button type="button" className="linkish" onClick={() => openTool('settings')}>
-          Авто-формат JSON-страниц — в настройках
-          <span className="fine"> (требует доступа ко всем сайтам)</span>
+          {t('popup.autoFormatLink')}
+          <span className="fine">{t('popup.autoFormatLinkNote')}</span>
         </button>
       </section>
 
-      <footer className="foot">100% офлайн · ноль сети · ноль аналитики</footer>
+      <footer className="foot">{t('popup.footer')}</footer>
     </div>
   );
 }
 
-function describeResult(result: FormatPageResult): string {
+function describeResult(
+  result: FormatPageResult,
+  t: (k: MsgKey, v?: Record<string, string | number>) => string,
+): string {
   switch (result.status) {
     case 'formatted':
-      return 'Готово: вкладка отформатирована. Кнопка ✕ на странице вернёт исходный документ.';
+      return t('popup.resultFormatted');
     case 'not-json':
-      return `На этой странице нет JSON-документа (тип: ${result.contentType}). Скопируйте нужный фрагмент и вставьте в инструмент.`;
+      return t('popup.resultNotJson', { type: result.contentType });
     case 'restricted':
-      return 'Браузер не разрешает расширениям работать на этой странице.';
+      return t('popup.restrictedNote');
     case 'denied':
-      return 'Доступ не выдан — фича не работает. Всё остальное работает как работало.';
+      return t('popup.resultDenied');
     case 'error':
-      return `Не удалось отформатировать: ${result.message}`;
+      return t('popup.resultError', { message: result.message });
   }
 }

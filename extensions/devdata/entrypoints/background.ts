@@ -1,7 +1,8 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
 import { putHandoff } from '../utils/handoff';
-import { prefsItem } from '../utils/storage';
+import { localeItem, prefsItem } from '../utils/storage';
+import { tAt } from '../utils/i18n';
 import { registerAutoFormat, unregisterAutoFormat } from '../utils/format-page';
 
 // The service worker stays almost empty by design (§8). Its whole job:
@@ -34,13 +35,16 @@ async function openTool(route: Route = 'data'): Promise<void> {
   }
 }
 
-function createMenu(): void {
+async function createMenu(): Promise<void> {
+  // Title is localised from the persisted locale (default 'en'). The menu is a
+  // non-React surface, so it reads storage directly rather than via a hook.
+  const locale = await localeItem.getValue().catch(() => 'en' as const);
   // `contexts: ['selection']` — we read `info.selectionText` directly. No script
   // is injected and no host permission is needed for this path (design §1.2).
   browser.contextMenus.create(
     {
       id: MENU_ID,
-      title: 'Открыть выделенное в Data Toolkit',
+      title: tAt(locale, 'bg.menuTitle'),
       contexts: ['selection'],
     },
     () => {
@@ -49,6 +53,15 @@ function createMenu(): void {
       void browser.runtime.lastError;
     },
   );
+}
+
+/** Keep the menu title in the current language when the user switches it. */
+function refreshMenuTitle(): void {
+  void localeItem.getValue().then((locale) => {
+    browser.contextMenus.update(MENU_ID, { title: tAt(locale, 'bg.menuTitle') }, () => {
+      void browser.runtime.lastError;
+    });
+  });
 }
 
 /** Is the auto-formatter both WANTED (pref) and ALLOWED (permission)? */
@@ -77,12 +90,15 @@ async function syncAutoFormat(): Promise<void> {
 
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(() => {
-    createMenu();
+    void createMenu();
     void syncAutoFormat();
   });
   // ...and on every SW startup, so a recycled worker restores both.
-  createMenu();
+  void createMenu();
   void syncAutoFormat();
+
+  // Re-title the menu when the user switches language in the tool's Settings.
+  localeItem.watch(() => refreshMenuTitle());
 
   browser.contextMenus.onClicked.addListener((info) => {
     if (info.menuItemId !== MENU_ID) return;

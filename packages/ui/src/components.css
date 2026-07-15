@@ -187,3 +187,38 @@
   background: var(--accent);
   color: var(--badge-fill-text);
 }
+
+/* Segmented EN/RU/ET control (LanguageSwitcher). `flex-wrap` so a longer label
+   set wraps to a second row instead of overflowing — switching language must
+   never break the row. Slightly larger than .theme-toggle for readability. */
+.lang-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.lang-toggle__btn:first-child {
+  border-left: none;
+}
+
+.lang-toggle__btn--active {
+  background: var(--accent);
+  color: var(--badge-fill-text);
+}

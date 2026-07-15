@@ -392,12 +392,31 @@
 
 /* ---- Footer --------------------------------------------------------------- */
 
+/* RU/ET button labels are longer than EN — allow the footer to wrap rather than
+   overflow the 380px (or 360px Android) popup horizontally. */
 .foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+.foot .ui-btn {
+  min-width: 0;
+}
+
+/* The tile title can be a longer translated string; let it shrink and wrap next to
+   the icon and caret instead of pushing the caret off the row. */
+.tile__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.head h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {

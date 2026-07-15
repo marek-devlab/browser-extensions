@@ -1,5 +1,6 @@
 import type { SrcsetCandidate, SrcsetAnalysis, SrcsetVerdict, PictureSource } from './assets-types';
 import { normalizeUrl } from './resource-timing';
+import type { TFn } from './i18n';
 
 // The srcset winner recomputation — the signature feature (design §6). Knowing WHY
 // the browser picked a file is otherwise near-impossible: DevTools shows you only
@@ -80,6 +81,7 @@ export function analyzeSrcset(
   currentSrc: string,
   sizesAttr: string | null,
   sources: PictureSource[] = [],
+  t?: TFn,
 ): SrcsetAnalysis {
   const modelWinnerUrl = computeModelWinner(candidates, slotWidthCss, dpr);
   const hasWDescriptor = candidates.some((c) => c.descriptorType === 'w');
@@ -87,7 +89,7 @@ export function analyzeSrcset(
     const d = effectiveDensity(candidate, slotWidthCss);
     const chosen = sameResource(candidate.url, currentSrc);
     const modelWinner = candidate.url === modelWinnerUrl;
-    return { candidate, effectiveDensity: d, chosen, modelWinner, reason: reasonFor(d, dpr, modelWinner) };
+    return { candidate, effectiveDensity: d, chosen, modelWinner, reason: reasonFor(d, dpr, modelWinner, t) };
   });
 
   const factWinner = verdicts.find((v) => v.chosen);
@@ -108,11 +110,17 @@ export function analyzeSrcset(
   };
 }
 
-function reasonFor(density: number | null, dpr: number, modelWinner: boolean): string {
-  if (density === null) return 'slot width unknown — density not computable';
-  if (modelWinner) return `first density ≥ DPR ${dpr}`;
-  if (density < dpr) return `× ${density.toFixed(2)} < DPR ${dpr}`;
-  return `× ${density.toFixed(2)} — larger than needed`;
+function reasonFor(density: number | null, dpr: number, modelWinner: boolean, t?: TFn): string {
+  if (density === null) {
+    return t ? t('reasonSlotUnknown') : 'slot width unknown — density not computable';
+  }
+  if (modelWinner) {
+    return t ? t('reasonFirstAboveDpr', { dpr }) : `first density ≥ DPR ${dpr}`;
+  }
+  if (density < dpr) {
+    return t ? t('reasonBelowDpr', { density: density.toFixed(2), dpr }) : `× ${density.toFixed(2)} < DPR ${dpr}`;
+  }
+  return t ? t('reasonLargerThanNeeded', { density: density.toFixed(2) }) : `× ${density.toFixed(2)} — larger than needed`;
 }
 
 /**

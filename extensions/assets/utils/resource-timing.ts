@@ -1,4 +1,5 @@
 import type { RequestGroup, RedirectState, WeightState, BufferState } from './assets-types';
+import type { TFn } from './i18n';
 
 /**
  * Resource Timing correlation. The only request source available to a content
@@ -24,14 +25,17 @@ export function resolveTransferSize(e: PerformanceResourceTiming): number | null
   return null; // cross-origin without Timing-Allow-Origin: unmeasurable
 }
 
-/** `resolveTransferSize` + the not-in-buffer case → the honest `WeightState`. */
-export function weightOf(entry: PerformanceResourceTiming | null): WeightState {
+/** `resolveTransferSize` + the not-in-buffer case → the honest `WeightState`. The
+ *  `unmeasured` reason is user-facing prose, so it is localized via `t` when given. */
+export function weightOf(entry: PerformanceResourceTiming | null, t?: TFn): WeightState {
   if (!entry) return { kind: 'not-in-buffer' };
   const bytes = resolveTransferSize(entry);
   if (bytes === null) {
     return {
       kind: 'unmeasured',
-      reason: 'cross-origin without Timing-Allow-Origin — the browser hides the size of other origins from the page',
+      reason: t
+        ? t('weightUnmeasuredReason')
+        : 'cross-origin without Timing-Allow-Origin — the browser hides the size of other origins from the page',
     };
   }
   if (bytes === 0) return { kind: 'cache', bytes: 0 };

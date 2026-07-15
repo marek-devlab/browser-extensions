@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 import type { Draft, Settings, Snapshot, Template } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import { BUILTIN_TEMPLATES } from './templates';
@@ -27,6 +28,10 @@ export const settingsItem = storage.defineItem<Settings>('local:settings', {
   version: 1,
   migrations: {},
 });
+
+/** Runtime UI language (design §1.4 — `local:`, English default on fresh install,
+ *  independent of the browser locale). Kept next to the drafts it labels. */
+export const localeItem = storage.defineItem<Locale>('local:locale', { fallback: 'en' });
 
 /* ── Drafts, active pointer, history, templates ────────────────────────────*/
 export const draftsItem = storage.defineItem<Draft[]>('local:drafts', {

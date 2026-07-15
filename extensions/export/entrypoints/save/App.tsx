@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { Button, Callout, ErrorState, Spinner } from '@blur/ui';
+import { Button, Callout, ErrorState, LocaleProvider, Spinner, useLocaleController } from '@blur/ui';
+import { localeItem } from '../../utils/storage';
+import { useT } from '../../utils/i18n';
 import { SESSION_PREFIX, type PendingSave } from '../../utils/messages';
 
 // `save.html` — the honest escape hatch of design §5.5.
@@ -27,17 +29,27 @@ type State =
   | { phase: 'error'; message: string };
 
 export function App() {
+  const { locale } = useLocaleController({
+    key: 'blur-export:locale',
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <AppBody />
+    </LocaleProvider>
+  );
+}
+
+function AppBody() {
+  const t = useT();
   const [state, setState] = useState<State>({ phase: 'loading' });
 
   useEffect(() => {
     void (async () => {
       const key = new URLSearchParams(location.search).get('key');
       if (!key || !key.startsWith(SESSION_PREFIX)) {
-        setState({
-          phase: 'error',
-          message:
-            'Эта страница открывается сама, когда сайт запрещает сохранение файлов. Открывать её вручную незачем.',
-        });
+        setState({ phase: 'error', message: t('saveErrorManual') });
         return;
       }
       const area = browser.storage.session ?? browser.storage.local;
@@ -46,15 +58,12 @@ export function App() {
       // 🔴 Read once, then wipe. The user's data does not linger.
       await area.remove(key);
       if (!payload) {
-        setState({
-          phase: 'error',
-          message: 'Данные для сохранения не найдены (или файл уже сохранён).',
-        });
+        setState({ phase: 'error', message: t('saveErrorNoData') });
         return;
       }
       setState({ phase: 'ready', payload });
     })();
-  }, []);
+  }, [t]);
 
   function save(payload: PendingSave): void {
     // The same Blob + <a download> as on the page — but this origin is OURS, so no
@@ -74,28 +83,26 @@ export function App() {
   return (
     <div className="pv-page">
       <div className="pv">
-        <h1 className="pv__title">Сохранение файла</h1>
+        <h1 className="pv__title">{t('saveTitle')}</h1>
 
-        {state.phase === 'loading' && <Spinner label="Готовлю файл…" />}
+        {state.phase === 'loading' && <Spinner label={t('savePreparing')} />}
 
         {state.phase === 'error' && <ErrorState message={state.message} />}
 
         {state.phase === 'ready' && (
           <>
             <p className="pv__sub mono">
-              {state.payload.filename} · {formatBytes(state.payload.text)}
+              {state.payload.filename} · {formatBytes(state.payload.text, t)}
             </p>
-            <Callout tone="info" title="Почему открылась эта вкладка">
-              Сайт, с которого вы экспортируете, запрещает сохранение файлов своей
-              политикой безопасности (CSP sandbox). Здесь эта политика не действует —
-              файл соберётся на странице самого расширения.
+            <Callout tone="info" title={t('saveWhyTitle')}>
+              {t('saveWhyBody')}
             </Callout>
             <div className="pv__actions">
               <Button variant="primary" onClick={() => save(state.payload)}>
-                Сохранить файл
+                {t('saveButton')}
               </Button>
             </div>
-            <pre className="pv__raw mono" aria-label="Первые строки файла">
+            <pre className="pv__raw mono" aria-label={t('firstLines')}>
               {state.payload.text.split(/\r?\n/).slice(0, 20).join('\n')}
             </pre>
           </>
@@ -103,14 +110,11 @@ export function App() {
 
         {state.phase === 'saved' && (
           <>
-            <Callout tone="info" title={`Сохранение запущено: ${state.filename}`}>
-              Файл ушёл в загрузки браузера. Мы не просим разрешение «Управление
-              загрузками», поэтому не знаем, куда именно он лёг и завершилась ли
-              запись, — и не станем это придумывать (design §7.8). Вкладку можно
-              закрыть.
+            <Callout tone="info" title={t('saveStarted', { filename: state.filename })}>
+              {t('saveSavedBody')}
             </Callout>
             <div className="pv__actions">
-              <Button onClick={() => window.close()}>Закрыть вкладку</Button>
+              <Button onClick={() => window.close()}>{t('closeTab')}</Button>
             </div>
           </>
         )}
@@ -119,9 +123,9 @@ export function App() {
   );
 }
 
-function formatBytes(text: string): string {
+function formatBytes(text: string, t: ReturnType<typeof useT>): string {
   const bytes = new TextEncoder().encode(text).length;
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  if (bytes < 1024) return `${bytes} ${t('bytesB')}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t('bytesKb')}`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} ${t('bytesMb')}`;
 }

@@ -29,6 +29,9 @@ body { background: var(--bg); }
   font-size: 13px;
 }
 .opt-row:last-child { border-bottom: none; }
+/* min-width:0 so a longer RU/ET label wraps within its cell instead of pushing
+ * the control off the right edge of the 640px column. */
+.opt-row > span:first-child { min-width: 0; }
 
 .opt-row select,
 .opt-row input[type='number'] {

@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 
 // Storage layout. The sync/local split is a HARD requirement in this repo:
 //   - `sync`  : lightweight UI prefs only. Quotas are HARD failures on exceed
@@ -84,6 +85,11 @@ export const DEFAULT_PREFS: DevdataPrefs = {
   restore: true,
   autoFormat: false,
 };
+
+/** Runtime UI language. English by default, independent of the browser locale.
+ *  Persisted separately from `prefs` so the non-React surfaces (background,
+ *  content script) can read just the locale without loading the whole prefs blob. */
+export const localeItem = storage.defineItem<Locale>('local:locale', { fallback: 'en' });
 
 export const prefsItem = storage.defineItem<DevdataPrefs>('sync:prefs', {
   fallback: DEFAULT_PREFS,

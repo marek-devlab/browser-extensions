@@ -10,7 +10,9 @@
 //     even by accident. The token never leaves the browser.
 //   - Decode is `atob` + `JSON.parse` — no library, no Worker, instant.
 
+import type { Locale } from '@blur/ui';
 import { atobUrl } from './core/detect';
+import { tAt, type MsgKey } from './i18n';
 import type { JwtClaim, JwtDecoded, JwtVerifyResult } from './types';
 
 export class JwtError extends Error {}
@@ -25,18 +27,16 @@ export class JwtError extends Error {}
 export const MAX_JWT_LEN = 8192;
 
 /** Decode header + payload. Partial success is shown partially (design §4.4). */
-export function decodeJwt(token: string): JwtDecoded {
+export function decodeJwt(token: string, locale: Locale): JwtDecoded {
   const t = token.trim();
   if (t.length > MAX_JWT_LEN) {
     throw new JwtError(
-      `Слишком длинно для JWT: ${t.length} символов (предел ${MAX_JWT_LEN}). Настоящий токен — это несколько КБ; такая длина означает, что это не JWT.`,
+      tAt(locale, 'jwt.decodeTooLong', { len: t.length, max: MAX_JWT_LEN }),
     );
   }
   const parts = t.split('.');
   if (parts.length !== 3) {
-    throw new JwtError(
-      `Это не похоже на JWT: ожидались 3 части через точку, найдено ${parts.length}.`,
-    );
+    throw new JwtError(tAt(locale, 'jwt.notThreeParts', { count: parts.length }));
   }
   const [h, p, s] = parts as [string, string, string];
 
@@ -55,13 +55,13 @@ export function decodeJwt(token: string): JwtDecoded {
     const raw = atobUrl(h);
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('header не является JSON-объектом');
+      throw new Error(tAt(locale, 'jwt.headerNotObject'));
     }
     header = parsed as Record<string, unknown>;
     headerText = JSON.stringify(header, null, 2);
   } catch (err) {
     throw new JwtError(
-      `Header повреждён: ${(err as Error).message}. Первый сегмент должен быть base64url-кодированным JSON.`,
+      tAt(locale, 'jwt.headerCorrupt', { message: (err as Error).message }),
     );
   }
 
@@ -81,18 +81,16 @@ export function decodeJwt(token: string): JwtDecoded {
         payloadIsJson = true;
       } else {
         payloadText = raw;
-        problems.push('Payload декодирован, но это не JSON-объект. Показан как есть.');
+        problems.push(tAt(locale, 'jwt.payloadNotObject'));
       }
     } catch {
       payloadText = raw;
-      problems.push(
-        'Payload декодирован, но это не JSON. Такой токен формально допустим — показан сырой текст.',
-      );
+      problems.push(tAt(locale, 'jwt.payloadNotJsonProblem'));
     }
   } catch (err) {
     payloadText = '';
     problems.push(
-      `Payload не декодируется как base64url: ${(err as Error).message}. Header при этом валиден и показан выше.`,
+      tAt(locale, 'jwt.payloadNotBase64', { message: (err as Error).message }),
     );
   }
 
@@ -101,7 +99,7 @@ export function decodeJwt(token: string): JwtDecoded {
   const symmetric = /^HS\d+$/i.test(alg);
 
   if (s === '' && !algNone) {
-    problems.push('Подпись пуста, хотя алгоритм её требует.');
+    problems.push(tAt(locale, 'jwt.emptySignature'));
   }
 
   return {
@@ -113,7 +111,7 @@ export function decodeJwt(token: string): JwtDecoded {
     alg: alg === '' ? '—' : alg,
     algNone,
     symmetric,
-    claims: payload ? readClaims(payload) : [],
+    claims: payload ? readClaims(payload, locale) : [],
     segments: {
       header: [hStart, hEnd],
       payload: [pStart, pEnd],
@@ -123,19 +121,24 @@ export function decodeJwt(token: string): JwtDecoded {
   };
 }
 
-const CLAIM_LABELS: Record<string, string> = {
-  iss: 'Издатель',
-  sub: 'Субъект',
-  aud: 'Аудитория',
-  exp: 'Истекает',
-  nbf: 'Действует с',
-  iat: 'Выпущен',
-  jti: 'ID токена',
+const CLAIM_LABEL_KEYS: Record<string, MsgKey> = {
+  iss: 'jwt.claim.iss',
+  sub: 'jwt.claim.sub',
+  aud: 'jwt.claim.aud',
+  exp: 'jwt.claim.exp',
+  nbf: 'jwt.claim.nbf',
+  iat: 'jwt.claim.iat',
+  jti: 'jwt.claim.jti',
 };
+
+function claimLabel(name: string, locale: Locale): string {
+  const key = CLAIM_LABEL_KEYS[name];
+  return key ? tAt(locale, key) : name;
+}
 
 const TIME_CLAIMS = new Set(['exp', 'nbf', 'iat']);
 
-function readClaims(payload: Record<string, unknown>): JwtClaim[] {
+function readClaims(payload: Record<string, unknown>, locale: Locale): JwtClaim[] {
   const now = Date.now();
   const out: JwtClaim[] = [];
 
@@ -144,7 +147,7 @@ function readClaims(payload: Record<string, unknown>): JwtClaim[] {
     if (value === undefined) {
       out.push({
         name,
-        label: CLAIM_LABELS[name] ?? name,
+        label: claimLabel(name, locale),
         value: '—',
         note: null,
         status: 'info',
@@ -156,9 +159,9 @@ function readClaims(payload: Record<string, unknown>): JwtClaim[] {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         out.push({
           name,
-          label: CLAIM_LABELS[name] ?? name,
+          label: claimLabel(name, locale),
           value: String(value),
-          note: 'Не число — по RFC 7519 это должно быть время в секундах Unix.',
+          note: tAt(locale, 'jwt.claimNotNumber'),
           status: 'warn',
         });
         continue;
@@ -169,34 +172,36 @@ function readClaims(payload: Record<string, unknown>): JwtClaim[] {
       let status: JwtClaim['status'] = 'info';
       if (name === 'exp') {
         if (ms < now) {
-          note = `⛔ ПРОСРОЧЕН на ${humanSpan(now - ms)}`;
+          note = tAt(locale, 'jwt.expired', { span: humanSpan(now - ms, locale) });
           status = 'poor';
         } else {
-          note = `Действителен ещё ${humanSpan(ms - now)}`;
+          note = tAt(locale, 'jwt.validFor', { span: humanSpan(ms - now, locale) });
           status = 'ok';
         }
       } else if (name === 'nbf') {
         if (ms > now) {
-          note = `⛔ ЕЩЁ НЕ ДЕЙСТВУЕТ — вступит в силу через ${humanSpan(ms - now)}`;
+          note = tAt(locale, 'jwt.notYetValid', { span: humanSpan(ms - now, locale) });
           status = 'poor';
         } else {
-          note = `Действует с ${humanSpan(now - ms)} назад`;
+          note = tAt(locale, 'jwt.activeSince', { span: humanSpan(now - ms, locale) });
           status = 'ok';
         }
       } else {
-        note = `${humanSpan(Math.abs(now - ms))} ${ms <= now ? 'назад' : 'вперёд'}`;
+        note = tAt(locale, ms <= now ? 'jwt.spanAgo' : 'jwt.spanAhead', {
+          span: humanSpan(Math.abs(now - ms), locale),
+        });
         if (ms > now + 60_000) {
-          note = `⚠ Выпущен в будущем (${humanSpan(ms - now)} вперёд)`;
+          note = tAt(locale, 'jwt.issuedFuture', { span: humanSpan(ms - now, locale) });
           status = 'warn';
         }
       }
-      out.push({ name, label: CLAIM_LABELS[name] ?? name, value: iso, note, status });
+      out.push({ name, label: claimLabel(name, locale), value: iso, note, status });
       continue;
     }
 
     out.push({
       name,
-      label: CLAIM_LABELS[name] ?? name,
+      label: claimLabel(name, locale),
       value: Array.isArray(value) ? value.join(', ') : String(value),
       note: null,
       status: 'ok',
@@ -205,10 +210,10 @@ function readClaims(payload: Record<string, unknown>): JwtClaim[] {
 
   // Everything else the token carries, verbatim.
   for (const [key, value] of Object.entries(payload)) {
-    if (CLAIM_LABELS[key] !== undefined) continue;
+    if (CLAIM_LABEL_KEYS[key] !== undefined) continue;
     out.push({
       name: key,
-      label: '(своя претензия)',
+      label: tAt(locale, 'jwt.claim.custom'),
       value:
         typeof value === 'object' && value !== null
           ? JSON.stringify(value)
@@ -221,15 +226,15 @@ function readClaims(payload: Record<string, unknown>): JwtClaim[] {
   return out;
 }
 
-function humanSpan(ms: number): string {
+function humanSpan(ms: number, locale: Locale): string {
   const s = Math.floor(ms / 1000);
   const d = Math.floor(s / 86_400);
   const h = Math.floor((s % 86_400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (d > 0) return `${d} д ${h} ч`;
-  if (h > 0) return `${h} ч ${m} мин`;
-  if (m > 0) return `${m} мин`;
-  return `${s} с`;
+  if (d > 0) return tAt(locale, 'jwt.spanDH', { d, h });
+  if (h > 0) return tAt(locale, 'jwt.spanHM', { h, m });
+  if (m > 0) return tAt(locale, 'jwt.spanM', { m });
+  return tAt(locale, 'jwt.spanS', { s });
 }
 
 /* ------------------------------ verification ------------------------------ */
@@ -241,6 +246,8 @@ export interface VerifyInput {
   keyMaterial: string;
   /** HS* only: the secret is base64-encoded rather than raw bytes. */
   secretIsBase64: boolean;
+  /** UI language for the human-readable result detail. */
+  locale: Locale;
 }
 
 /**
@@ -253,28 +260,18 @@ export interface VerifyInput {
  * (design §2.7).
  */
 export async function verifyJwt(input: VerifyInput): Promise<JwtVerifyResult> {
-  const { token, alg, keyMaterial, secretIsBase64 } = input;
+  const { token, alg, keyMaterial, secretIsBase64, locale } = input;
 
   if (typeof crypto === 'undefined' || !crypto.subtle) {
-    return {
-      status: 'error',
-      detail:
-        'WebCrypto недоступен в этом контексте, проверить подпись нечем. На странице расширения он должен быть — сообщите об этом как об ошибке.',
-    };
+    return { status: 'error', detail: tAt(locale, 'jwt.verifyNoWebCrypto') };
   }
   if (alg.toLowerCase() === 'none') {
-    return {
-      status: 'error',
-      detail:
-        'Токен заявляет alg: none — подписи нет, проверять нечего. Такой токен может подделать кто угодно.',
-    };
+    return { status: 'error', detail: tAt(locale, 'jwt.verifyAlgNone') };
   }
   if (keyMaterial.trim() === '') {
     return {
       status: 'error',
-      detail: /^HS/i.test(alg)
-        ? 'Вставьте общий секрет.'
-        : 'Вставьте публичный ключ (JWK или PEM).',
+      detail: tAt(locale, /^HS/i.test(alg) ? 'jwt.verifyPasteSecret' : 'jwt.verifyPasteKey'),
     };
   }
 
@@ -282,11 +279,11 @@ export async function verifyJwt(input: VerifyInput): Promise<JwtVerifyResult> {
 
   let key: CryptoKey | Uint8Array;
   try {
-    key = await importKey(jose, alg, keyMaterial, secretIsBase64);
+    key = await importKey(jose, alg, keyMaterial, secretIsBase64, locale);
   } catch (err) {
     return {
       status: 'error',
-      detail: `Ключ не распознан: ${(err as Error).message}. Ожидается JWK (JSON) или PEM (-----BEGIN PUBLIC KEY-----). Приватный ключ вставлять не нужно и не следует.`,
+      detail: tAt(locale, 'jwt.keyNotRecognized', { message: (err as Error).message }),
     };
   }
 
@@ -294,11 +291,7 @@ export async function verifyJwt(input: VerifyInput): Promise<JwtVerifyResult> {
     await jose.compactVerify(token.trim(), key as CryptoKey, {
       algorithms: [alg],
     });
-    return {
-      status: 'valid',
-      detail:
-        'Проверено локально через WebCrypto. Ключ не сохранён, токен никуда не отправлялся.',
-    };
+    return { status: 'valid', detail: tAt(locale, 'jwt.verifyValidDetail') };
   } catch (err) {
     const message = (err as Error).message ?? '';
     // A key of the wrong TYPE for the algorithm is a different problem from a
@@ -306,13 +299,10 @@ export async function verifyJwt(input: VerifyInput): Promise<JwtVerifyResult> {
     if (/alg|algorithm|key.*(type|usage)|unsupported/i.test(message)) {
       return {
         status: 'error',
-        detail: `Алгоритм ${alg} из header не совпадает с типом вставленного ключа: ${message}`,
+        detail: tAt(locale, 'jwt.algMismatch', { alg, message }),
       };
     }
-    return {
-      status: 'invalid',
-      detail: 'Проверено локально через WebCrypto.',
-    };
+    return { status: 'invalid', detail: tAt(locale, 'jwt.verifyInvalidDetail') };
   }
 }
 
@@ -323,6 +313,7 @@ async function importKey(
   alg: string,
   material: string,
   secretIsBase64: boolean,
+  locale: Locale,
 ): Promise<CryptoKey | Uint8Array> {
   const text = material.trim();
 
@@ -341,17 +332,13 @@ async function importKey(
       jwk !== null &&
       typeof (jwk as { d?: unknown }).d === 'string'
     ) {
-      throw new Error(
-        'это ПРИВАТНЫЙ ключ (в JWK есть параметр «d»). Для проверки подписи нужен только публичный',
-      );
+      throw new Error(tAt(locale, 'jwt.privateJwk'));
     }
     return (await jose.importJWK(jwk as import('jose').JWK, alg)) as CryptoKey;
   }
 
   if (text.includes('BEGIN PRIVATE KEY') || text.includes('BEGIN RSA PRIVATE KEY')) {
-    throw new Error(
-      'это ПРИВАТНЫЙ ключ. Для проверки подписи нужен публичный — приватный вставлять не следует никуда',
-    );
+    throw new Error(tAt(locale, 'jwt.privatePem'));
   }
   if (text.includes('BEGIN CERTIFICATE')) {
     return (await jose.importX509(text, alg)) as CryptoKey;
@@ -360,5 +347,5 @@ async function importKey(
     return (await jose.importSPKI(text, alg)) as CryptoKey;
   }
 
-  throw new Error('это не похоже ни на JWK, ни на PEM');
+  throw new Error(tAt(locale, 'jwt.notJwkOrPem'));
 }

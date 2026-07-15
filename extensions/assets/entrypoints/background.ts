@@ -1,4 +1,6 @@
 import { defineBackground, browser } from '#imports';
+import { localeItem } from '../utils/storage';
+import { tAt } from '../utils/i18n';
 
 // Background (SW / event page). 🔴 HOLDS NO STATE AT ALL (design §1.4, §10.1): its
 // only jobs are (a) register the context-menu items and (b) inject the inspector
@@ -50,21 +52,26 @@ export default defineBackground({
   main() {
     // Context menu (design §4.9): "What is this element?" on media + page contexts.
     // 🔴 No `download`/`save` wording anywhere. removeAll-before-create keeps it
-    // idempotent across SW restarts. contextMenus is not a host permission.
-    function setupContextMenus(): void {
+    // idempotent across SW restarts. contextMenus is not a host permission. The title
+    // is localized: read the persisted locale (English default on a fresh install)
+    // and rebuild the item whenever the user switches language.
+    async function setupContextMenus(): Promise<void> {
       if (!browser.contextMenus) return;
+      const locale = await localeItem.getValue().catch(() => 'en' as const);
       type Contexts = NonNullable<Parameters<typeof browser.contextMenus.create>[0]['contexts']>;
       const contexts = ['image', 'video', 'audio', 'page'] as unknown as Contexts;
       browser.contextMenus.removeAll(() => {
         browser.contextMenus.create({
           id: 'inspect-element',
-          title: 'What is this element?',
+          title: tAt(locale, 'whatIsThis'),
           contexts,
         });
       });
     }
-    setupContextMenus();
-    browser.runtime.onInstalled.addListener(setupContextMenus);
+    void setupContextMenus();
+    browser.runtime.onInstalled.addListener(() => void setupContextMenus());
+    // Re-title live when the language changes on the options page.
+    localeItem.watch(() => void setupContextMenus());
 
     browser.contextMenus?.onClicked.addListener((info, tab) => {
       if (info.menuItemId !== 'inspect-element' || !tab?.id) return;

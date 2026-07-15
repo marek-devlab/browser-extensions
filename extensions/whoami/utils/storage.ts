@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 
 // Storage layout — 🔴 PREFERENCES ONLY (design §0, §3, §6.2).
 //
@@ -95,6 +96,11 @@ export const DEFAULT_SETTINGS: WhoamiSettings = {
   ispConsent: 'unset',
   showUnavailable: true,
 };
+
+/** Runtime UI language. 🔴 Preference only, never data about the user. Kept in its
+ *  OWN item (not in WhoamiSettings) so it stays outside the closed-schema identifier
+ *  guard and can be seeded/read independently of the rest. Default is English. */
+export const localeItem = storage.defineItem<Locale>('local:locale', { fallback: 'en' });
 
 export const settingsItem = storage.defineItem<WhoamiSettings>('local:settings', {
   fallback: DEFAULT_SETTINGS,

@@ -10,6 +10,9 @@ import {
   type UsageInfo,
 } from '../utils/storage';
 import type { Draft, Target } from '../utils/types';
+import type { MsgKey } from '../utils/i18n';
+
+type T = (key: MsgKey, vars?: Record<string, string | number>) => string;
 
 // Draft state + persistence (design §1.4, §8.2, §8.3).
 //
@@ -38,7 +41,7 @@ export interface Recovery {
   current: string;
 }
 
-export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit: number) {
+export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit: number, t: T) {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -66,7 +69,7 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
           activeDraftIdItem.getValue(),
           unsavedBufferItem.getValue(),
         ]);
-        const list = stored.length > 0 ? stored : [emptyDraft()];
+        const list = stored.length > 0 ? stored : [emptyDraft(t('draft_new'))];
         const activeIdNow = id && list.some((d) => d.id === id) ? id : (list[0]?.id ?? null);
         setDrafts(list);
         setActiveId(activeIdNow);
@@ -86,9 +89,9 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
       } catch (e) {
         // Storage unreadable — start on an empty draft rather than a dead
         // spinner, and say the save failed rather than pretending it worked.
-        setDrafts([emptyDraft()]);
+        setDrafts([emptyDraft(t('draft_new'))]);
         setSaveState('error');
-        setSaveError(`Не удалось прочитать черновики: ${e instanceof Error ? e.message : String(e)}`);
+        setSaveError(t('err_read_drafts', { error: e instanceof Error ? e.message : String(e) }));
       }
     })();
   }, []);
@@ -148,12 +151,12 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
           setSaveState('error');
           setSaveError(
             isQuotaError(e)
-              ? 'Хранилище переполнено (QuotaExceeded). Текст в редакторе цел — освободите место или экспортируйте черновик.'
-              : `Не удалось сохранить: ${e instanceof Error ? e.message : String(e)}`,
+              ? t('err_quota')
+              : t('err_save', { error: e instanceof Error ? e.message : String(e) }),
           );
         });
     },
-    [],
+    [t],
   );
 
   const maybeSnapshot = useCallback(
@@ -286,7 +289,7 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
 
   const newDraft = useCallback(
     (seed?: Partial<Draft>) => {
-      const draft = { ...emptyDraft(), ...seed };
+      const draft = { ...emptyDraft(t('draft_new')), ...seed };
       setDrafts((prev) => {
         const next = [draft, ...(prev ?? [])];
         persist(next, draft.id);
@@ -301,7 +304,7 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
       ).catch(() => {});
       return draft;
     },
-    [historyLimit, persist],
+    [historyLimit, persist, t],
   );
 
   const deleteDraft = useCallback(
@@ -310,7 +313,7 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
       setDrafts((prev) => {
         if (!prev) return prev;
         const next = prev.filter((d) => d.id !== id);
-        const list = next.length > 0 ? next : [emptyDraft()];
+        const list = next.length > 0 ? next : [emptyDraft(t('draft_new'))];
         const nextActive = id === activeId ? (list[0]?.id ?? null) : activeId;
         persist(list, nextActive);
         if (id === activeId) {
@@ -322,7 +325,7 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
         return list;
       });
     },
-    [activeId, persist],
+    [activeId, persist, t],
   );
 
   /**
@@ -360,9 +363,9 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
 
   const acceptRecovery = useCallback(() => {
     if (!recovery) return;
-    void applyDestructive(recovery.body, 'до восстановления несохранённого');
+    void applyDestructive(recovery.body, t('snap_before_recovery'));
     setRecovery(null);
-  }, [applyDestructive, recovery]);
+  }, [applyDestructive, recovery, t]);
 
   const dismissRecovery = useCallback(() => {
     setRecovery(null);
@@ -392,11 +395,11 @@ export function useDraft(autosaveDelay: number, autosave: boolean, historyLimit:
   };
 }
 
-function emptyDraft(): Draft {
+function emptyDraft(title: string): Draft {
   const now = Date.now();
   return {
     id: `d-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    title: 'Новый черновик',
+    title,
     body: '',
     target: 'github',
     createdAt: now,

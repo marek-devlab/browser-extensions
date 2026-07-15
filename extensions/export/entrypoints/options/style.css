@@ -17,6 +17,8 @@
 .opt__head h1 {
   font-size: 18px;
   margin: 0;
+  /* Longer RU/ET titles must wrap, not overflow past the theme toggle. */
+  min-width: 0;
 }
 
 .opt__tabs {
@@ -94,7 +96,10 @@
 }
 
 .opt__field > span {
-  flex: 0 0 150px;
+  /* Was a hard 150px basis sized for short English labels; RU/ET run longer, so
+     allow the label to grow a little and wrap while the control keeps a floor. */
+  flex: 0 1 150px;
+  min-width: 0;
   color: var(--text-dim);
 }
 
@@ -110,6 +115,7 @@
 .opt__field input[type='text'],
 .opt__field select {
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   font: inherit;
   border: 1px solid var(--border);

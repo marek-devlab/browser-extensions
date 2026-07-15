@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { browser } from '#imports';
-import { ThemeToggle } from '@blur/ui';
-import { usePrefs, useAssetsTheme } from '../../utils/use-prefs';
+import { ThemeToggle, LanguageSwitcher, LocaleProvider } from '@blur/ui';
+import { usePrefs, useAssetsTheme, useAssetsLocale } from '../../utils/use-prefs';
+import { useT } from '../../utils/i18n';
 import type { OverweightThreshold, Units, RequestScope, BufferSize } from '../../utils/storage';
 
 // Options (design §2.8). Every control is a REAL persisted pref (storage.local,
@@ -9,94 +10,116 @@ import type { OverweightThreshold, Units, RequestScope, BufferSize } from '../..
 // an "export quality", a "recently inspected" list — each of those would be a claim
 // that we store or download something (design §13 №10).
 
+const BUFFER_OPTIONS: BufferSize[] = [250, 500, 1500, 5000];
+
+// The numeric labels are symbols (1.5× / 2×), not prose — only the `off` label is
+// translated, at render time (below).
 const OVERWEIGHT_OPTIONS: { value: OverweightThreshold; label: string }[] = [
   { value: 1.5, label: '1.5×' },
   { value: 2, label: '2×' },
   { value: 3, label: '3×' },
   { value: 4, label: '4×' },
-  { value: 'off', label: 'don’t show' },
+  { value: 'off', label: '' },
 ];
-const BUFFER_OPTIONS: BufferSize[] = [250, 500, 1500, 5000];
 
 export function App() {
+  // Owns the locale (with setLocale for the switcher) and provides it to the tree.
+  const { locale, setLocale } = useAssetsLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <OptionsBody locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function OptionsBody({
+  locale,
+  setLocale,
+}: {
+  locale: ReturnType<typeof useAssetsLocale>['locale'];
+  setLocale: ReturnType<typeof useAssetsLocale>['setLocale'];
+}) {
+  const t = useT();
   const { prefs, update, loaded } = usePrefs();
   const { theme, setTheme } = useAssetsTheme();
 
-  if (!loaded) return <main className="options"><p>Loading…</p></main>;
+  if (!loaded) return <main className="options"><p>{t('loading')}</p></main>;
 
   return (
     <main className="options">
-      <h1>Asset Inspector — Settings</h1>
+      <h1>{t('optTitle')}</h1>
 
       <section>
-        <h2>Appearance</h2>
-        <Field label="Theme">
+        <h2>{t('secAppearance')}</h2>
+        <Field label={t('language')}>
+          <LanguageSwitcher locale={locale} onChange={setLocale} label={t('interfaceLanguage')} />
+        </Field>
+        <Field label={t('fldTheme')}>
           <ThemeToggle theme={theme ?? prefs.theme} onChange={setTheme} />
         </Field>
-        <Field label="Size units">
+        <Field label={t('fldSizeUnits')}>
           <Radios<Units>
             name="units"
             value={prefs.units}
-            options={[{ value: 1024, label: 'KB/MB (1024)' }, { value: 1000, label: 'kB/MB (1000)' }]}
+            options={[{ value: 1024, label: t('unit1024') }, { value: 1000, label: t('unit1000') }]}
             onChange={(units) => update({ units })}
           />
         </Field>
       </section>
 
       <section>
-        <h2>Picker</h2>
-        <Field label="Shortcut">
+        <h2>{t('secPicker')}</h2>
+        <Field label={t('fldShortcut')}>
           <span className="mono">Alt+Shift+A</span>{' '}
-          <a href="#" onClick={(e) => { e.preventDefault(); openShortcuts(); }}>Change in the browser ↗</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); openShortcuts(); }}>{t('changeInBrowser')}</a>
         </Field>
-        <Toggle label="Show ancestor breadcrumbs" checked={prefs.showBreadcrumbs} onChange={(v) => update({ showBreadcrumbs: v })} />
-        <Toggle label="Auto-select nearest resource (R automatically)" checked={prefs.autoJumpToResource} onChange={(v) => update({ autoJumpToResource: v })} />
-        <Toggle label="Canvas preview" checked={prefs.preview} onChange={(v) => update({ preview: v })}
-          hint="The preview is drawn from the already-loaded element. We never request the shown URL again." />
+        <Toggle label={t('tglBreadcrumbs')} checked={prefs.showBreadcrumbs} onChange={(v) => update({ showBreadcrumbs: v })} />
+        <Toggle label={t('tglAutoResource')} checked={prefs.autoJumpToResource} onChange={(v) => update({ autoJumpToResource: v })} />
+        <Toggle label={t('tglPreview')} checked={prefs.preview} onChange={(v) => update({ preview: v })}
+          hint={t('tglPreviewHint')} />
       </section>
 
       <section>
-        <h2>Card</h2>
-        <Field label="Overweight threshold">
+        <h2>{t('secCard')}</h2>
+        <Field label={t('fldOverweight')}>
           <select value={String(prefs.overweightThreshold)} onChange={(e) => update({ overweightThreshold: parseThreshold(e.target.value) })}>
-            {OVERWEIGHT_OPTIONS.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
+            {OVERWEIGHT_OPTIONS.map((o) => (
+              <option key={String(o.value)} value={String(o.value)}>
+                {o.value === 'off' ? t('optDontShow') : o.label}
+              </option>
+            ))}
           </select>
         </Field>
-        <Toggle label="Expand the srcset table by default" checked={prefs.srcsetExpanded} onChange={(v) => update({ srcsetExpanded: v })} />
-        <Field label="Show requests">
+        <Toggle label={t('tglSrcsetExpanded')} checked={prefs.srcsetExpanded} onChange={(v) => update({ srcsetExpanded: v })} />
+        <Field label={t('fldShowRequests')}>
           <Radios<RequestScope>
             name="scope"
             value={prefs.requestScope}
-            options={[{ value: 'related', label: 'related to the element' }, { value: 'all', label: 'all page requests' }]}
+            options={[{ value: 'related', label: t('scopeRelated') }, { value: 'all', label: t('scopeAll') }]}
             onChange={(requestScope) => update({ requestScope })}
           />
         </Field>
       </section>
 
       <section>
-        <h2>Hints</h2>
-        <Toggle label="“How to get the missing data” hints" checked={prefs.hints} onChange={(v) => update({ hints: v })} />
+        <h2>{t('secHints')}</h2>
+        <Toggle label={t('tglHints')} checked={prefs.hints} onChange={(v) => update({ hints: v })} />
         <button type="button" className="ghost" onClick={() => update({ hintsDismissed: [] })}>
-          Show all hints again
+          {t('btnShowHints')}
         </button>
       </section>
 
       <section>
-        <h2>Data</h2>
-        <Field label="Request buffer size">
+        <h2>{t('secData')}</h2>
+        <Field label={t('fldBufferSize')}>
           <select value={String(prefs.bufferSize)} onChange={(e) => update({ bufferSize: Number(e.target.value) as BufferSize })}>
             {BUFFER_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </Field>
-        <p className="hint">
-          ⚠️ Applied on the next page load. Requests the browser already dropped cannot be recovered.
-        </p>
+        <p className="hint">{t('dataWarning')}</p>
       </section>
 
-      <footer>
-        The extension stores nothing about the pages you visit and sends no data anywhere.
-        The URLs it shows, it does not request.
-      </footer>
+      <footer>{t('optFooter')}</footer>
     </main>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Callout, Spinner } from '@blur/ui';
+import { Badge, Button, Callout, Spinner, useLocale } from '@blur/ui';
 import { decodeJwt, JwtError, MAX_JWT_LEN, verifyJwt } from '../../../utils/jwt';
 import { applyJwtSegments, clearJwtSegments } from '../../../utils/highlight';
 import { EXAMPLE_JWT } from '../../../utils/examples';
+import { useT } from '../../../utils/i18n';
 import type { JwtVerifyResult } from '../../../utils/types';
 
 // The JWT tab (design §2.6, §2.7, §7.1). A separate TAB — never a separate entry
@@ -19,6 +20,8 @@ import type { JwtVerifyResult } from '../../../utils/types';
 //     at all, so the token cannot leave even by accident.
 
 export function JwtTab({ initialToken }: { initialToken?: string | null }) {
+  const t = useT();
+  const locale = useLocale();
   const [token, setToken] = useState<string>(initialToken ?? '');
   const [key, setKey] = useState('');
   const [secret, setSecret] = useState('');
@@ -39,21 +42,21 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
     if (trimmed.length > MAX_JWT_LEN) {
       return {
         ok: false as const,
-        message: `Слишком длинно для JWT: ${trimmed.length} символов (предел ${MAX_JWT_LEN}). Настоящий токен — несколько КБ.`,
+        message: t('jwt.tooLong', { len: trimmed.length, max: MAX_JWT_LEN }),
       };
     }
     try {
-      return { ok: true as const, value: decodeJwt(trimmed) };
+      return { ok: true as const, value: decodeJwt(trimmed, locale) };
     } catch (err) {
       return {
         ok: false as const,
         message:
           err instanceof JwtError
             ? err.message
-            : `Не удалось разобрать токен: ${err instanceof Error ? err.message : String(err)}`,
+            : `${err instanceof Error ? err.message : String(err)}`,
       };
     }
-  }, [token]);
+  }, [token, locale, t]);
 
   // Segment colouring (header / payload / signature) via the Highlight API over
   // the mirrored <pre> — same mechanism as the document text pane, zero markup.
@@ -79,12 +82,13 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
         alg,
         keyMaterial: symmetric ? secret : key,
         secretIsBase64: secretB64,
+        locale,
       });
       setVerify(result);
     } catch (err) {
       setVerify({
         status: 'error',
-        detail: `Проверка не выполнена: ${err instanceof Error ? err.message : String(err)}`,
+        detail: t('jwt.verifyErrorTitle') + ': ' + (err instanceof Error ? err.message : String(err)),
       });
     }
   };
@@ -92,18 +96,12 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
   return (
     <div className="jwt">
       {/* Final copy, not a draft (design §7.1). */}
-      <Callout
-        tone="poor"
-        title="🔒 JWT — это учётные данные. Токен даёт доступ к вашему аккаунту."
-      >
-        Расширение работает на 100% офлайн: токен не покидает браузер, не сохраняется на диск и
-        никуда не отправляется. Сети у расширения нет вообще — ни аналитики, ни телеметрии, ни
-        отчётов об ошибках. И всё же: относитесь к токенам как к паролям. Прежде чем вставить
-        чужой токен в любой онлайн-инструмент — подумайте, куда он уедет.
+      <Callout tone="poor" title={t('jwt.credentialTitle')}>
+        {t('jwt.credentialBody')}
       </Callout>
 
       <div className="jwt__tokenhead">
-        <h2 className="ui-section-heading">Токен</h2>
+        <h2 className="ui-section-heading">{t('jwt.token')}</h2>
         <span className="grow" />
         <Button
           onClick={() => {
@@ -113,9 +111,9 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
             setVerify(null);
           }}
         >
-          Очистить
+          {t('jwt.clear')}
         </Button>
-        <Button onClick={() => setToken(EXAMPLE_JWT)}>Вставить пример</Button>
+        <Button onClick={() => setToken(EXAMPLE_JWT)}>{t('jwt.pasteExample')}</Button>
       </div>
 
       <textarea
@@ -123,12 +121,12 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
         value={token}
         spellCheck={false}
         autoComplete="off"
-        aria-label="JWT токен"
+        aria-label={t('jwt.tokenAria')}
         onChange={(e) => {
           setToken(e.target.value);
           setVerify(null);
         }}
-        placeholder="eyJhbGciOi… (вставьте JWT — декод произойдёт сразу)"
+        placeholder={t('jwt.tokenPlaceholder')}
       />
 
       {decoded?.ok && (
@@ -139,15 +137,14 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
 
       {decoded === null && (
         <Callout tone="info">
-          Вставьте токен — декод мгновенный и локальный (atob + JSON.parse, без библиотек и без
-          сети). Кнопка «Вставить пример» подставляет <strong>фейковый</strong> токен: его подпись
-          не настоящая, поэтому проверка на нём честно провалится. Так можно попробовать
-          инструмент, не вставляя в него настоящий токен.
+          {t('jwt.decodeHint1')}
+          <strong>{t('jwt.decodeHintFake')}</strong>
+          {t('jwt.decodeHint2')}
         </Callout>
       )}
 
       {decoded !== null && !decoded.ok && (
-        <Callout tone="poor" title="✗ Это не разбирается как JWT">
+        <Callout tone="poor" title={t('jwt.notJwtTitle')}>
           {decoded.message}
         </Callout>
       )}
@@ -155,9 +152,8 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
       {decoded?.ok && (
         <>
           {decoded.value.algNone && (
-            <Callout tone="poor" title="⛔ Токен заявляет alg: none — подписи нет">
-              Такой токен может подделать кто угодно: подпись не проверяется по определению. Если
-              ваш сервер его принимает — это уязвимость, а не особенность.
+            <Callout tone="poor" title={t('jwt.algNoneTitle')}>
+              {t('jwt.algNoneBody')}
             </Callout>
           )}
 
@@ -169,29 +165,30 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
 
           <div className="jwt__grid">
             <section className="jwt__cell">
-              <h3 className="ui-section-heading">Header</h3>
+              <h3 className="ui-section-heading">{t('jwt.header')}</h3>
               <pre className="code mono">{decoded.value.headerText}</pre>
               <h3 className="ui-section-heading">
-                Payload {!decoded.value.payloadIsJson && '(не JSON — показан как есть)'}
+                {t('jwt.payload')}
+                {!decoded.value.payloadIsJson && t('jwt.payloadNotJson')}
               </h3>
               <pre className="code mono">{decoded.value.payloadText}</pre>
             </section>
 
             <section className="jwt__cell">
-              <h3 className="ui-section-heading">Подпись</h3>
+              <h3 className="ui-section-heading">{t('jwt.signature')}</h3>
               <p className="fine">
-                Алгоритм: <strong>{alg}</strong> (из header)
-                {symmetric ? ' — симметричный' : ''}
+                {t('jwt.algorithmLabel')}
+                <strong>{alg}</strong>
+                {t('jwt.fromHeader')}
+                {symmetric ? t('jwt.symmetricSuffix') : ''}
               </p>
 
               {symmetric ? (
                 <>
-                  <Callout tone="warn" title="⚠ HS256 проверяется общим секретом.">
-                    Секрет — это ключ, которым подписываются все ваши токены; кто его знает, тот
-                    выпускает токены от вашего имени. Мы держим его <strong>только в оперативной
-                    памяти</strong>: он не пишется в хранилище расширения, не попадает в
-                    автосохранение документа и исчезает, когда вы закрываете вкладку. Поле не
-                    автозаполняется и не проверяется орфографией.
+                  <Callout tone="warn" title={t('jwt.hs256Title')}>
+                    {t('jwt.hs256Body1')}
+                    <strong>{t('jwt.hs256BodyStrong')}</strong>
+                    {t('jwt.hs256Body2')}
                   </Callout>
                   <div className="jwt__secretrow">
                     <input
@@ -201,18 +198,18 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
                       autoComplete="off"
                       spellCheck={false}
                       data-1p-ignore=""
-                      aria-label="Секрет HS256"
+                      aria-label={t('jwt.secretAria')}
                       onChange={(e) => {
                         setSecret(e.target.value);
                         setVerify(null);
                       }}
-                      placeholder="общий секрет"
+                      placeholder={t('jwt.secretPlaceholder')}
                     />
                     {/* Non-sticky reveal: held, not toggled. */}
                     <button
                       type="button"
                       className="ui-btn ui-btn--sm"
-                      aria-label="Показать секрет, пока кнопка нажата"
+                      aria-label={t('jwt.revealSecretAria')}
                       onPointerDown={() => setShowSecret(true)}
                       onPointerUp={() => setShowSecret(false)}
                       onPointerLeave={() => setShowSecret(false)}
@@ -227,17 +224,18 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
                       checked={secretB64}
                       onChange={(e) => setSecretB64(e.target.checked)}
                     />
-                    Секрет в base64
+                    {t('jwt.secretBase64')}
                   </label>
                 </>
               ) : (
                 <>
                   <label className="ui-section-heading" htmlFor="jwt-key">
-                    Публичный ключ (JWK или PEM)
+                    {t('jwt.publicKeyLabel')}
                   </label>
                   <p className="fine">
-                    Вставьте <strong>публичный</strong> ключ. Приватный здесь не нужен — и вставлять
-                    его не следует ни сюда, ни куда-либо ещё.
+                    {t('jwt.publicKeyNote1')}
+                    <strong>{t('jwt.publicKeyNoteStrong')}</strong>
+                    {t('jwt.publicKeyNote2')}
                   </p>
                   <textarea
                     id="jwt-key"
@@ -249,7 +247,7 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
                       setKey(e.target.value);
                       setVerify(null);
                     }}
-                    placeholder={'-----BEGIN PUBLIC KEY-----\n… или {"kty":"RSA", …}'}
+                    placeholder={t('jwt.keyPlaceholder')}
                   />
                 </>
               )}
@@ -259,19 +257,19 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
                 onClick={() => void runVerify()}
                 disabled={verify === 'loading' || decoded.value.algNone}
               >
-                Проверить подпись
+                {t('jwt.verifySignature')}
               </Button>
 
               <div aria-live="polite" className="jwt__verify">
-                {verify === 'loading' && <Spinner label="Проверяем локально через WebCrypto…" />}
+                {verify === 'loading' && <Spinner label={t('jwt.verifyingSpinner')} />}
                 {verify !== null && verify !== 'loading' && <VerifyResult result={verify} />}
               </div>
             </section>
           </div>
 
           {decoded.value.claims.length > 0 && (
-            <section className="claims" aria-label="Претензии">
-              <h3 className="ui-section-heading">Претензии (расшифровка)</h3>
+            <section className="claims" aria-label={t('jwt.claimsAria')}>
+              <h3 className="ui-section-heading">{t('jwt.claimsHeading')}</h3>
               <table className="claims__table">
                 <tbody>
                   {decoded.value.claims.map((c) => (
@@ -292,10 +290,7 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
                   ))}
                 </tbody>
               </table>
-              <Callout tone="warn">
-                ⚠ Срок действия проверен по часам ВАШЕГО компьютера. Если они врут — врёт и этот
-                вывод.
-              </Callout>
+              <Callout tone="warn">{t('jwt.clockNote')}</Callout>
             </section>
           )}
         </>
@@ -305,23 +300,26 @@ export function JwtTab({ initialToken }: { initialToken?: string | null }) {
 }
 
 function VerifyResult({ result }: { result: JwtVerifyResult }) {
+  const t = useT();
   if (result.status === 'valid') {
     return (
-      <Callout tone="ok" title="✓ ПОДПИСЬ ВЕРНА">
-        <Badge severity="ok">Проверено</Badge> {result.detail}
+      <Callout tone="ok" title={t('jwt.verifyValidTitle')}>
+        <Badge severity="ok">{t('jwt.verified')}</Badge> {result.detail}
       </Callout>
     );
   }
   if (result.status === 'invalid') {
     return (
-      <Callout tone="poor" title="✗ ПОДПИСЬ НЕ СОВПАДАЕТ">
-        Токен подделан, повреждён или ключ не тот. <strong>Отличить эти случаи нельзя</strong> —
-        криптографически они неразличимы. {result.detail}
+      <Callout tone="poor" title={t('jwt.verifyInvalidTitle')}>
+        {t('jwt.verifyInvalidBody1')}
+        <strong>{t('jwt.verifyInvalidStrong')}</strong>
+        {t('jwt.verifyInvalidBody2')}
+        {result.detail}
       </Callout>
     );
   }
   return (
-    <Callout tone="warn" title="Не удалось проверить">
+    <Callout tone="warn" title={t('jwt.verifyErrorTitle')}>
       {result.detail}
     </Callout>
   );

@@ -1,19 +1,31 @@
+import type { Locale } from '@blur/ui';
+
 // Formatting + safety helpers. Filename sanitisation (§9.4) is a genuine security
 // surface — the template is user-controlled and the result is handed to
 // downloads.download — so it is implemented properly, not defensively hand-waved.
 
-/** Human byte size. Uses base-1024 with a single decimal, localise-friendly. */
-export function formatBytes(bytes: number): string {
+// Byte-unit abbreviations per language. Latin abbreviations (B/KB/MB…) for English
+// and Estonian; Cyrillic (Б/КБ/МБ…) for Russian. Only the unit words are
+// localised — the number stays base-1024 arithmetic.
+const BYTE_UNITS: Record<Locale, { base: string; scaled: string[] }> = {
+  en: { base: 'B', scaled: ['KB', 'MB', 'GB', 'TB'] },
+  et: { base: 'B', scaled: ['KB', 'MB', 'GB', 'TB'] },
+  ru: { base: 'Б', scaled: ['КБ', 'МБ', 'ГБ', 'ТБ'] },
+};
+
+/** Human byte size. Uses base-1024 with a single decimal. Unit words follow the
+ *  UI language (defaults to English). */
+export function formatBytes(bytes: number, locale: Locale = 'en'): string {
+  const units = BYTE_UNITS[locale] ?? BYTE_UNITS.en;
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  if (bytes < 1024) return `${bytes} Б`;
-  const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
+  if (bytes < 1024) return `${bytes} ${units.base}`;
   let value = bytes / 1024;
   let i = 0;
-  while (value >= 1024 && i < units.length - 1) {
+  while (value >= 1024 && i < units.scaled.length - 1) {
     value /= 1024;
     i += 1;
   }
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[i]}`;
+  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units.scaled[i]}`;
 }
 
 /** `mm:ss` or `h:mm:ss` from milliseconds. The recorder window's live timer. */

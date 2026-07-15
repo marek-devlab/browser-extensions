@@ -115,6 +115,14 @@ export interface ExtractOptions {
   linksInCells: 'text' | 'text-url' | 'url';
   /** Abort a long chunked extraction (design §9.3). */
   signal?: AbortSignal;
+  // Localized labels the extractor writes INTO the exported file/preview, so an
+  // English-default install never emits Russian words. Populated from the UI locale
+  // by the engine; `defaultExtractOptions` supplies the English fallbacks.
+  /** A checked/unchecked form control rendered as a cell value. */
+  checkboxYes?: string;
+  checkboxNo?: string;
+  /** Header for a column with no heading text; `{n}` is the 1-based index. */
+  columnFallback?: string;
 }
 
 /* -------- Size limits (design §9.1). Named, not magic numbers. ---------- */

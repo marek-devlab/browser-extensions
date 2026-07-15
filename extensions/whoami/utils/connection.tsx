@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { browser } from '#imports';
-import { Callout } from '@blur/ui';
+import { Callout, useLocale } from '@blur/ui';
 import { FieldRow, val, na, type Field } from './field';
+import { useT, type MsgKey, type TT } from './i18n';
 import {
   fetchTrace,
   fetchIsp,
@@ -52,6 +53,7 @@ export function ConnectionSection({
   update: (patch: Partial<WhoamiSettings>) => void;
   onSnapshot?: (snap: ConnectionSnapshot) => void;
 }) {
+  const t = useT();
   const [trace, setTrace] = useState<Load<TraceResult>>({ status: 'idle' });
   const [isp, setIsp] = useState<Load<IspResult>>({ status: 'idle' });
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -95,10 +97,10 @@ export function ConnectionSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function publish(t: Load<TraceResult>, i: Load<IspResult>) {
+  function publish(tl: Load<TraceResult>, il: Load<IspResult>) {
     onSnapshot?.({
-      trace: t.status === 'done' && t.outcome.ok ? t.outcome.value : null,
-      isp: i.status === 'done' && i.outcome.ok ? i.outcome.value : null,
+      trace: tl.status === 'done' && tl.outcome.ok ? tl.outcome.value : null,
+      isp: il.status === 'done' && il.outcome.ok ? il.outcome.value : null,
     });
   }
 
@@ -109,16 +111,16 @@ export function ConnectionSection({
     // A consent flag — a boolean about the USER'S CHOICE. Not data about the user.
     if (settings.cfConsent !== 'granted') update({ cfConsent: 'granted' });
     setTrace({ status: 'loading' });
-    setAnnounce('Запрашиваем IP у Cloudflare…');
+    setAnnounce(t('conn_fetchingCf'));
 
-    const outcome = await fetchTrace(abortRef.current?.signal);
+    const outcome = await fetchTrace(t, abortRef.current?.signal);
     const next: Load<TraceResult> = { status: 'done', outcome };
     setTrace(next);
     publish(next, isp);
     setAnnounce(
       outcome.ok
-        ? `IP получен: ${outcome.value.ip}${outcome.value.countryCode ? `, ${outcome.value.countryCode}` : ''}`
-        : `Не удалось узнать IP. ${outcome.message}`,
+        ? `${t('conn_annIpGot', { ip: outcome.value.ip })}${outcome.value.countryCode ? `, ${outcome.value.countryCode}` : ''}`
+        : t('conn_annIpFail', { message: outcome.message }),
     );
   }
 
@@ -137,27 +139,26 @@ export function ConnectionSection({
       // The refusal is a real outcome, not an error: nothing was sent.
       setIspDenied(true);
       update({ ispConsent: 'unset' });
-      setAnnounce('Доступ к ipinfo.io не выдан. IP никуда не ушёл.');
+      setAnnounce(t('conn_annIspDenied'));
       return;
     }
     update({ ispConsent: 'granted' });
     setIsp({ status: 'loading' });
-    setAnnounce('Запрашиваем провайдера у ipinfo.io…');
+    setAnnounce(t('conn_fetchingIsp'));
 
-    const outcome = await fetchIsp(settings.ipinfoToken, abortRef.current?.signal);
+    const outcome = await fetchIsp(settings.ipinfoToken, t, abortRef.current?.signal);
     const next: Load<IspResult> = { status: 'done', outcome };
     setIsp(next);
     publish(trace, next);
-    setAnnounce(outcome.ok ? 'Данные о провайдере получены.' : outcome.message);
+    setAnnounce(outcome.ok ? t('conn_annIspGot') : outcome.message);
   }
 
   // Setting #4: the user can hide the whole IP feature. Then there is not even a
   // button that could start a request.
   if (!settings.allowCloudflare) {
     return (
-      <Callout tone="info" title="Соединение">
-        Кнопка «Показать мой IP» отключена в настройках. Данные об устройстве выше не
-        зависят от сети и показаны полностью.
+      <Callout tone="info" title={t('connectionTitle')}>
+        {t('conn_disabledBody')}
       </Callout>
     );
   }
@@ -169,28 +170,23 @@ export function ConnectionSection({
   return (
     <div className="conn">
       {/* Local, no-network connection facts — present with or without any request. */}
-      {localConnRows().map((r) => (
-        <FieldRow key={r.label} label={r.label} field={r.field} copyable={r.copyable} />
+      {localConnRows(t).map((r) => (
+        <FieldRow key={r.key} label={t(r.key)} field={r.field} copyable={r.copyable} />
       ))}
 
       {/* PLACE A — the prominent in-UI disclosure (design §6.1). It is rendered
           UNCONDITIONALLY and physically above the button, so the first request is
           impossible without it having been on screen. It also STAYS after consent
           (the fix over `perf`, where the disclosure disappeared once accepted). */}
-      <Callout tone="info" title="Прежде чем узнать IP">
-        Свой публичный IP браузер не знает — его можно узнать только у внешнего
-        сервера. По кнопке ниже расширение отправит <strong>один HTTPS-запрос</strong>{' '}
-        в <strong>Cloudflare</strong> (<span dir="ltr">one.one.one.one/cdn-cgi/trace</span>).
-        Cloudflare увидит ваш IP-адрес — так работает любой сетевой запрос. Ответ
-        показывается здесь и <strong>нигде не сохраняется</strong>: ни в файле, ни в
-        хранилище браузера, ни на нашем сервере — у нас его нет. Аналитики нет.
-        {ipValue ? ' Закройте это окно — значение исчезнет.' : ''}
+      <Callout tone="info" title={t('conn_beforeIpTitle')}>
+        {t('conn_beforeIpBody')}
+        {ipValue ? t('conn_beforeIpClose') : ''}
       </Callout>
 
       {!ipValue && trace.status !== 'loading' && (
         <>
-          <FieldRow label="Мой IP-адрес" field={na('not-requested')} copyable={false} />
-          <FieldRow label="Страна (по IP)" field={na('not-requested')} copyable={false} />
+          <FieldRow label={t('lbl_myIpAddress')} field={na('not-requested')} copyable={false} />
+          <FieldRow label={t('lbl_countryByIp')} field={na('not-requested')} copyable={false} />
           {traceOutcome && !traceOutcome.ok && (
             <TraceError outcome={traceOutcome} onRetry={() => void runTrace()} />
           )}
@@ -200,20 +196,15 @@ export function ConnectionSection({
             onClick={() => void runTrace()}
             disabled={offline}
           >
-            {traceOutcome ? 'Попробовать снова' : 'Показать мой IP и страну'}
+            {traceOutcome ? t('conn_retry') : t('conn_showIp')}
           </button>
-          {offline && (
-            <p className="conn__note">
-              Нет подключения к сети. IP можно узнать только у внешнего сервера — поэтому
-              кнопка недоступна. Всё остальное на этом экране работает.
-            </p>
-          )}
+          {offline && <p className="conn__note">{t('conn_offlineNote')}</p>}
         </>
       )}
 
       {trace.status === 'loading' && (
         <p className="conn__status" aria-busy="true">
-          <span className="ui-spinner" aria-hidden="true" /> Запрашиваем IP у Cloudflare…
+          <span className="ui-spinner" aria-hidden="true" /> {t('conn_fetchingCf')}
         </p>
       )}
 
@@ -225,7 +216,7 @@ export function ConnectionSection({
           {/* T2 · ISP / ASN — only ever offered once an IP exists (otherwise the
               disclosure could not name the address that the recipient will see). */}
           <div className="conn__isp">
-            <p className="conn__divider">ISP и ASN</p>
+            <p className="conn__divider">{t('conn_ispDivider')}</p>
             <IspArea
               settings={settings}
               isp={isp}
@@ -283,14 +274,13 @@ function IspArea({
   onRun: () => void;
   onNever: () => void;
 }) {
+  const t = useT();
   // The feature is switched off entirely — no button, no host permission, nothing.
   if (settings.ispProvider === 'off') {
     return (
       <>
-        <FieldRow label="Провайдер (ISP)" field={na('not-requested')} copyable={false} />
-        <p className="conn__note">
-          Поиск провайдера выключен в настройках. Расширение не обращается к ipinfo.io.
-        </p>
+        <FieldRow label={t('lbl_isp')} field={na('not-requested')} copyable={false} />
+        <p className="conn__note">{t('conn_ispOffNote')}</p>
       </>
     );
   }
@@ -298,7 +288,7 @@ function IspArea({
   if (isp.status === 'loading') {
     return (
       <p className="conn__status" aria-busy="true">
-        <span className="ui-spinner" aria-hidden="true" /> Запрашиваем провайдера у ipinfo.io…
+        <span className="ui-spinner" aria-hidden="true" /> {t('conn_fetchingIsp')}
       </p>
     );
   }
@@ -308,23 +298,20 @@ function IspArea({
   }
 
   // The user (or the browser) declined the host permission. 🔴 The most important
-  // sentence on the screen is "IP никуда не ушёл" — it confirms the refusal WORKED.
+  // sentence on the screen is "your IP went nowhere" — it confirms the refusal WORKED.
   if (denied) {
     return (
-      <Callout tone="info" title="Доступ к ipinfo.io не выдан">
-        <p>IP никуда не ушёл. Всё остальное работает как работало.</p>
+      <Callout tone="info" title={t('conn_ispDeniedTitle')}>
+        <p>{t('conn_ispDeniedBody')}</p>
         <div className="conn__row">
           <button type="button" className="ui-btn ui-btn--sm" onClick={onRun}>
-            Попробовать снова
+            {t('conn_retry')}
           </button>
           <button type="button" className="ui-btn ui-btn--sm" onClick={onNever}>
-            Больше не предлагать
+            {t('conn_never')}
           </button>
         </div>
-        <p className="conn__note">
-          ⚠ Браузер может не показать запрос повторно в этом же окне — тогда откройте
-          страницу расширений браузера и выдайте доступ к ipinfo.io там.
-        </p>
+        <p className="conn__note">{t('conn_ispDeniedNote')}</p>
       </Callout>
     );
   }
@@ -338,11 +325,8 @@ function IspArea({
   if (settings.ispConsent === 'never') {
     return (
       <>
-        <FieldRow label="Провайдер (ISP)" field={na('not-requested')} copyable={false} />
-        <p className="conn__note">
-          Вы попросили больше не предлагать поиск провайдера. Вернуть предложение можно в
-          Настройках.
-        </p>
+        <FieldRow label={t('lbl_isp')} field={na('not-requested')} copyable={false} />
+        <p className="conn__note">{t('conn_ispNeverNote')}</p>
       </>
     );
   }
@@ -351,18 +335,14 @@ function IspArea({
   if (settings.ipinfoToken.trim() === '') {
     return (
       <>
-        <FieldRow label="Провайдер (ISP)" field={na('not-requested')} copyable={false} />
-        <Callout tone="info">
-          Cloudflare не отдаёт название провайдера и номер сети (ASN) — это принципиально
-          другой источник. Их знает ipinfo.io, и для запроса к нему нужен ваш собственный
-          бесплатный токен: свой мы вшить не можем — в расширении он был бы публичным.
-        </Callout>
+        <FieldRow label={t('lbl_isp')} field={na('not-requested')} copyable={false} />
+        <Callout tone="info">{t('conn_ispTokenMissing')}</Callout>
         <button
           type="button"
           className="ui-btn conn__cta"
           onClick={() => void browser.runtime.openOptionsPage()}
         >
-          Добавить токен ipinfo.io в Настройках…
+          {t('conn_ispAddToken')}
         </button>
       </>
     );
@@ -372,19 +352,14 @@ function IspArea({
   // convention, design §2.3b).
   return (
     <>
-      <FieldRow label="Провайдер (ISP)" field={na('not-requested')} copyable={false} />
-      <Callout tone="info">
-        Cloudflare не отдаёт ISP и ASN. Чтобы их узнать, нужен второй сервис —{' '}
-        <strong>ipinfo.io</strong>. Он увидит ваш IP-адрес. Ничего не будет сохранено.
-      </Callout>
+      <FieldRow label={t('lbl_isp')} field={na('not-requested')} copyable={false} />
+      <Callout tone="info">{t('conn_ispOffer')}</Callout>
       <button
         type="button"
         className="ui-btn conn__cta"
         onClick={settings.ispConsent === 'granted' ? onRun : onOpenDialog}
       >
-        {settings.ispConsent === 'granted'
-          ? 'Узнать провайдера (ISP / ASN)'
-          : 'Узнать провайдера (ISP / ASN)…'}
+        {settings.ispConsent === 'granted' ? t('conn_ispLookup') : `${t('conn_ispLookup')}…`}
       </button>
     </>
   );
@@ -408,48 +383,44 @@ function connection(): Conn | undefined {
     : undefined;
 }
 
-function localConnRows(): { label: string; field: Field; copyable?: boolean }[] {
+function localConnRows(t: TT): { key: MsgKey; field: Field; copyable?: boolean }[] {
   const c = connection();
   return [
     {
-      label: 'Тип соединения',
+      key: 'lbl_connType',
       // ⚠️ NOT a speed. The browser classifies recent RTTs; "4g" on Wi-Fi is normal.
       // 🔴 We never draw a speedometer and never print Mbit/s as a fact (design §7).
       field: c?.effectiveType
-        ? val(`${c.effectiveType} (оценка браузера)`, {
+        ? val(t('val_browserEstimate', { type: c.effectiveType }), {
             approx: true,
-            note: 'Браузер не измеряет скорость. Он классифицирует недавние запросы по задержке. «4g» на Wi-Fi — это норма, а не ошибка.',
+            note: t('note_effectiveType'),
           })
         : na('chromium-only'),
     },
     {
-      label: 'Оценка канала',
+      key: 'lbl_downlink',
       field:
         typeof c?.downlink === 'number'
-          ? val(`${c.downlink} Мбит/с`, {
+          ? val(`${c.downlink} ${t('unit_mbps')}`, {
               approx: true,
-              note: 'Грубая оценка браузера, округлённая и ограниченная сверху ~25 Мбит/с. Это не результат замера скорости.',
+              note: t('note_downlink'),
             })
           : na('chromium-only'),
     },
     {
-      label: 'Экономия трафика',
-      field: typeof c?.saveData === 'boolean' ? val(c.saveData ? 'включена' : 'выключена') : na('chromium-only'),
+      key: 'lbl_saveData',
+      field: typeof c?.saveData === 'boolean' ? val(c.saveData ? t('val_saveOn') : t('val_saveOff')) : na('chromium-only'),
     },
     {
       // ⚠️ `connection.type` (wifi/cellular) exists on Android only.
-      label: 'Тип сети',
+      key: 'lbl_netType',
       field: c?.type ? val(c.type) : na('mobile-only'),
     },
     {
-      label: 'Онлайн',
+      key: 'lbl_online',
       // ⚠️ `onLine === true` only means "a network interface exists" — it does NOT
       // mean the internet is reachable. We say precisely that (design §7).
-      field: val(
-        navigator.onLine
-          ? 'да (есть подключение к сети — не проверено, что интернет доступен)'
-          : 'нет (сеть недоступна)',
-      ),
+      field: val(navigator.onLine ? t('val_onlineYes') : t('val_onlineNo')),
       copyable: false,
     },
   ];
@@ -468,42 +439,39 @@ function IpBlock({
   onRefresh: () => void;
   busy: boolean;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [at] = useState(() => new Date().toLocaleTimeString());
-  const name = trace.countryCode ? countryName(trace.countryCode) : null;
+  const name = trace.countryCode ? countryName(trace.countryCode, locale) : null;
 
   return (
     <div className="ipblock">
-      <FieldRow label="Мой IP" field={val(trace.ip, { ltr: true })} />
-      <FieldRow label="Версия" field={val(trace.ipVersion)} />
+      <FieldRow label={t('lbl_myIp')} field={val(trace.ip, { ltr: true })} />
+      <FieldRow label={t('lbl_ipVersion')} field={val(trace.ipVersion)} />
       <FieldRow
-        label="Страна (по IP)"
+        label={t('lbl_countryByIp')}
         field={
           trace.countryCode
             ? val(
                 `${flag(trace.countryCode)} ${name ?? ''} (${trace.countryCode})`.replace(/\s+/g, ' ').trim(),
-                {
-                  note: 'Геолокация по IP приблизительна и часто указывает на город провайдера, а не на ваш. Это страна, а не адрес — карты здесь не будет, потому что такой точности у этих данных нет.',
-                },
+                { note: t('note_countryByIp') },
               )
             : na('provider-omitted')
         }
       />
       <FieldRow
-        label="Ближайший узел Cloudflare"
+        label={t('lbl_cfNode')}
         field={
           trace.colo
-            ? val(trace.colo, {
-                note: '⚠️ Это дата-центр Cloudflare (PoP), а НЕ ваш город.',
-                ltr: true,
-              })
+            ? val(trace.colo, { note: t('note_cfNode'), ltr: true })
             : na('provider-omitted')
         }
       />
-      <FieldRow label="TLS" field={trace.tls ? val(trace.tls, { ltr: true }) : na('provider-omitted')} />
-      <FieldRow label="Протокол" field={trace.http ? val(trace.http, { ltr: true }) : na('provider-omitted')} />
-      <FieldRow label="Cloudflare WARP" field={trace.warp ? val(trace.warp) : na('provider-omitted')} />
+      <FieldRow label={t('lbl_tls')} field={trace.tls ? val(trace.tls, { ltr: true }) : na('provider-omitted')} />
+      <FieldRow label={t('lbl_protocol')} field={trace.http ? val(trace.http, { ltr: true }) : na('provider-omitted')} />
+      <FieldRow label={t('lbl_warp')} field={trace.warp ? val(trace.warp) : na('provider-omitted')} />
       <FieldRow
-        label="UA глазами сервера"
+        label={t('lbl_uaServer')}
         field={
           trace.uag === null
             ? na('provider-omitted')
@@ -511,17 +479,18 @@ function IpBlock({
               // truncated to 256 chars on the wire, so a legit UA longer than that
               // must not be flagged as a spoof (design §2.3).
               trace.uag === clampField(navigator.userAgent)
-              ? val('совпадает с локальным')
-              : val('⚠ отличается от локального — возможна подмена User-Agent прокси или расширением')
+              ? val(t('val_uaMatches'))
+              : val(t('val_uaDiffers'))
         }
         copyable={false}
       />
 
       {/* PLACE C — source + time + "not saved", right next to the value (§6.1). */}
       <p className="ipblock__source">
-        Получено {at} · источник: Cloudflare · <strong>не сохранено</strong>.{' '}
+        {t('conn_receivedFrom', { at, source: 'Cloudflare' })}
+        <strong>{t('conn_notSaved')}</strong>.{' '}
         <button type="button" className="linkbtn" onClick={onRefresh} disabled={busy}>
-          Обновить ⟳
+          {t('conn_refresh')}
         </button>
       </p>
     </div>
@@ -529,36 +498,35 @@ function IpBlock({
 }
 
 function IspBlock({ isp }: { isp: IspResult }) {
+  const t = useT();
   const [at] = useState(() => new Date().toLocaleTimeString());
   const place = [isp.city, isp.region].filter(Boolean).join(', ');
   return (
     <div className="ipblock">
       <FieldRow
-        label="Провайдер (ISP)"
+        label={t('lbl_isp')}
         field={isp.isp ? val(isp.isp, { ltr: true }) : na('provider-omitted')}
       />
-      <FieldRow label="ASN" field={isp.asn ? val(isp.asn, { ltr: true }) : na('provider-omitted')} />
+      <FieldRow label={t('lbl_asn')} field={isp.asn ? val(isp.asn, { ltr: true }) : na('provider-omitted')} />
       <FieldRow
-        label="Обратное DNS-имя"
+        label={t('lbl_reverseDns')}
         field={isp.hostname ? val(isp.hostname, { ltr: true }) : na('provider-omitted')}
       />
       <FieldRow
-        label="Страна (ipinfo)"
+        label={t('lbl_countryIpinfo')}
         field={isp.countryCode ? val(isp.countryCode, { ltr: true }) : na('provider-omitted')}
       />
       <FieldRow
-        label="Город / регион (по IP)"
+        label={t('lbl_cityRegion')}
         field={
           place
-            ? val(place, {
-                approx: true,
-                note: '⚠️ Геолокация по IP приблизительна: очень часто это город узла провайдера, а не ваш. Не используйте это как адрес.',
-              })
+            ? val(place, { approx: true, note: t('note_cityRegion') })
             : na('provider-omitted')
         }
       />
       <p className="ipblock__source">
-        Получено {at} · источник: ipinfo.io · <strong>не сохранено</strong>.
+        {t('conn_receivedFrom', { at, source: 'ipinfo.io' })}
+        <strong>{t('conn_notSaved')}</strong>.
       </p>
     </div>
   );
@@ -568,6 +536,7 @@ function IspBlock({ isp }: { isp: IspResult }) {
  *  not have the data for that. We compare three numbers the user can see for
  *  themselves and list the ordinary explanations. Zero extra network, zero storage. */
 function VpnSignals({ trace }: { trace: TraceResult }) {
+  const t = useT();
   if (!trace.countryCode) return null;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   let tzRegion: string | null = null;
@@ -582,19 +551,12 @@ function VpnSignals({ trace }: { trace: TraceResult }) {
   if (!warp && !tzRegion) return null;
 
   return (
-    <Callout tone="info" title="Сигналы VPN / прокси">
+    <Callout tone="info" title={t('conn_vpnTitle')}>
       <p>
-        Таймзона вашего браузера — <strong>{tz}</strong>, а IP-адрес относится к стране{' '}
-        <strong>{trace.countryCode}</strong>
-        {warp ? '. Cloudflare сообщает, что вы за WARP.' : '.'}
+        {t('conn_vpnP1', { tz: tz ?? '?', cc: trace.countryCode })}
+        {warp ? ` ${t('conn_vpnWarp')}` : ''}
       </p>
-      <p>
-        ⓘ Это <strong>эвристика, а не проверка</strong>. Расширение не знает, есть ли у вас
-        VPN, — оно лишь сравнивает значения, которые вы видите выше. Расхождение обычно
-        значит: вы за VPN/прокси; или вы в поездке и не меняли часы; или провайдер
-        маршрутизирует трафик через соседнюю страну (обычное дело у мобильных операторов).
-        Ничего никуда не отправлено и нигде не сохранено.
-      </p>
+      <p>{t('conn_vpnP2')}</p>
     </Callout>
   );
 }
@@ -604,44 +566,46 @@ function VpnSignals({ trace }: { trace: TraceResult }) {
 /* --------------------------------------------------------------------------- */
 
 function TraceError({ outcome, onRetry }: { outcome: NetFailure; onRetry: () => void }) {
+  const t = useT();
   return (
-    <Callout tone="warn" title="Не удалось узнать IP">
+    <Callout tone="warn" title={t('conn_traceErrTitle')}>
       {/* aria-live=assertive: a failed network request is worth interrupting for. */}
       <p role="alert">{outcome.message}</p>
       {outcome.kind !== 'offline' && (
         <ul className="conn__causes">
-          <li>нет интернета;</li>
-          <li>запрос режет корпоративный файрвол или другое расширение;</li>
-          <li>1.1.1.1 заблокирован провайдером или изменил формат ответа.</li>
+          <li>{t('conn_cause_noInternet')}</li>
+          <li>{t('conn_cause_firewall')}</li>
+          <li>{t('conn_cause_blocked')}</li>
         </ul>
       )}
       {/* ⚠️ Without this sentence a network error reads as "the extension is broken",
           when in fact 90% of the product — everything above — is untouched. */}
       <p>
-        <strong>Данные об устройстве выше — на месте:</strong> они не зависят от сети.
+        <strong>{t('conn_traceDeviceIntact')}</strong>
       </p>
       <button type="button" className="ui-btn ui-btn--sm" onClick={onRetry}>
-        Попробовать снова
+        {t('conn_retry')}
       </button>
     </Callout>
   );
 }
 
 function IspError({ outcome, onRetry }: { outcome: NetFailure; onRetry: () => void }) {
+  const t = useT();
   const title =
     outcome.kind === 'rate-limited'
-      ? 'Лимит запросов исчерпан'
+      ? t('conn_ispErrRateLimited')
       : outcome.kind === 'unauthorized'
-        ? 'Токен не принят'
+        ? t('conn_ispErrTokenRejected')
         : outcome.kind === 'timeout'
-          ? 'ipinfo.io не ответил'
-          : 'Не удалось узнать провайдера';
+          ? t('conn_ispErrNoAnswer')
+          : t('conn_ispErrGeneric');
 
   return (
     <Callout tone="warn" title={title}>
       <p role="alert">{outcome.message}</p>
       {outcome.kind === 'rate-limited' && outcome.retryAfterSec ? (
-        <p>Попробуйте через ~{Math.ceil(outcome.retryAfterSec / 60)} мин.</p>
+        <p>{t('conn_ispRetryAfter', { min: Math.ceil(outcome.retryAfterSec / 60) })}</p>
       ) : null}
       {outcome.kind === 'unauthorized' ? (
         <button
@@ -649,17 +613,14 @@ function IspError({ outcome, onRetry }: { outcome: NetFailure; onRetry: () => vo
           className="ui-btn ui-btn--sm"
           onClick={() => void browser.runtime.openOptionsPage()}
         >
-          Открыть Настройки
+          {t('conn_openSettings')}
         </button>
       ) : (
         <button type="button" className="ui-btn ui-btn--sm" onClick={onRetry}>
-          Попробовать снова
+          {t('conn_retry')}
         </button>
       )}
-      <p className="conn__note">
-        Ваш IP и страна выше уже получены и остаются на экране. 🔴 Мы не переключаемся
-        молча на другой сервис — это был бы запрос, на который вы не соглашались.
-      </p>
+      <p className="conn__note">{t('conn_ispErrNote')}</p>
     </Callout>
   );
 }
@@ -685,6 +646,8 @@ function IpConsentDialog({
   onCancel: (neverAgain: boolean) => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const ref = useRef<HTMLDialogElement>(null);
   const [neverAgain, setNeverAgain] = useState(false);
   // The checkbox is read inside the native `close` handler, which can fire from Esc
@@ -720,61 +683,56 @@ function IpConsentDialog({
         }}
       >
         <h2 className="consent__title" id="consent-title">
-          Отправить ваш IP-адрес на ipinfo.io?
+          {t('dlg_title')}
         </h2>
-        <p>
-          Название провайдера (ISP) и номер сети (ASN) нельзя вычислить в браузере — их
-          знает только внешняя база. Чтобы её спросить, расширение отправит{' '}
-          <strong>ОДИН HTTPS-запрос на ipinfo.io</strong>.
-        </p>
+        <p>{t('dlg_p1')}</p>
         <p className="consent__what">
-          <strong>Что уйдёт:</strong> ваш публичный IP-адрес (<span dir="ltr">{ip}</span>) —
-          ipinfo.io увидит его как источник запроса, и по нему же ответит. Ничего больше: ни
-          адресов страниц, ни истории, ни данных об устройстве. Ваш токен уходит только в
-          ipinfo.io и только для авторизации запроса.
+          <strong>{t('dlg_whatLabel')}</strong>
+          {t('dlg_whatBody', { ip })}
         </p>
         <p>
-          <strong>Кто получит:</strong> ipinfo.io (США). <strong>Зачем:</strong> только чтобы
-          показать ответ вам. <strong>Хранение:</strong> ответ живёт в этом окне. Мы не пишем
-          его ни в файл, ни в хранилище браузера, ни на наш сервер — у нас его нет. Аналитики
-          нет.
+          <strong>{t('dlg_whoLabel')}</strong>
+          {t('dlg_whoBody')}
+          <strong>{t('dlg_whyLabel')}</strong>
+          {t('dlg_whyBody')}
+          <strong>{t('dlg_retentionLabel')}</strong>
+          {t('dlg_retentionBody')}
         </p>
-        <p>
-          Дальше браузер спросит разрешение на доступ к ipinfo.io. Это второе, независимое от
-          нас подтверждение — и вы сможете отозвать его в любой момент: в настройках браузера
-          или кнопкой «Отозвать» в настройках расширения.
-        </p>
+        <p>{t('dlg_p4')}</p>
         <p className="consent__links">
           <a href="https://ipinfo.io/privacy-policy" target="_blank" rel="noreferrer noopener">
-            Политика приватности ipinfo.io ↗
+            {t('dlg_privacyIpinfo')}
           </a>
           {' · '}
           <a href="https://blockaly.com/privacy" target="_blank" rel="noreferrer noopener">
-            Наша политика ↗
+            {t('dlg_privacyOurs')}
           </a>
         </p>
 
-        {/* The EN mirror is the copy store reviewers read (design §2.4). */}
-        <details className="consent__en">
-          <summary>English</summary>
-          <p>
-            <strong>Send your IP address to ipinfo.io?</strong> Your ISP name and network
-            number (ASN) cannot be worked out inside the browser — only an external database
-            knows them. To ask it, this extension will make{' '}
-            <strong>one HTTPS request to ipinfo.io</strong>.
-          </p>
-          <p>
-            <strong>What leaves your browser:</strong> your public IP address (
-            <span dir="ltr">{ip}</span>) — ipinfo.io sees it as the source of the request.
-            Nothing else: no page URLs, no browsing history, no device data.{' '}
-            <strong>Who receives it:</strong> ipinfo.io (USA). <strong>Why:</strong> solely to
-            show you the answer. <strong>Retention:</strong> the answer lives in this window
-            only. It is not written to a file, to browser storage, or to any server of ours —
-            we do not operate one. There is no analytics. Next, your browser will ask you to
-            grant access to ipinfo.io: a second, independent confirmation you can revoke at any
-            time.
-          </p>
-        </details>
+        {/* The EN mirror is the copy store reviewers read (design §2.4). Shown only
+            when the UI is NOT already English, to avoid duplicating the copy. */}
+        {locale !== 'en' && (
+          <details className="consent__en">
+            <summary>English</summary>
+            <p>
+              <strong>Send your IP address to ipinfo.io?</strong> Your ISP name and network
+              number (ASN) cannot be worked out inside the browser — only an external database
+              knows them. To ask it, this extension will make{' '}
+              <strong>one HTTPS request to ipinfo.io</strong>.
+            </p>
+            <p>
+              <strong>What leaves your browser:</strong> your public IP address (
+              <span dir="ltr">{ip}</span>) — ipinfo.io sees it as the source of the request.
+              Nothing else: no page URLs, no browsing history, no device data.{' '}
+              <strong>Who receives it:</strong> ipinfo.io (USA). <strong>Why:</strong> solely to
+              show you the answer. <strong>Retention:</strong> the answer lives in this window
+              only. It is not written to a file, to browser storage, or to any server of ours —
+              we do not operate one. There is no analytics. Next, your browser will ask you to
+              grant access to ipinfo.io: a second, independent confirmation you can revoke at any
+              time.
+            </p>
+          </details>
+        )}
 
         <label className="consent__never">
           <input
@@ -782,7 +740,7 @@ function IpConsentDialog({
             checked={neverAgain}
             onChange={(e) => setNeverAgain(e.target.checked)}
           />
-          Больше не спрашивать — просто не предлагать это (кнопка исчезнет)
+          {t('dlg_never')}
         </label>
 
         <div className="consent__actions">
@@ -795,10 +753,10 @@ function IpConsentDialog({
               onCancel(neverAgain);
             }}
           >
-            Отмена
+            {t('dlg_cancel')}
           </button>
           <button type="submit" className="ui-btn ui-btn--primary">
-            Отправить IP
+            {t('dlg_send')}
           </button>
         </div>
       </form>

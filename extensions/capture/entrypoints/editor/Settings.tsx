@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { browser } from '#imports';
-import { Button, Callout, ThemeToggle, type Theme } from '@blur/ui';
+import { Button, Callout, LanguageSwitcher, ThemeToggle, useLocale, type Theme } from '@blur/ui';
 import { deleteClip, listClips, putBlob, pruneOlderThan, storageEstimate } from '../../utils/db';
 import { formatBytes } from '../../utils/format';
+import { useT } from '../../utils/i18n';
 import { capabilities } from '../../utils/platform';
 import { DEFAULT_SIZE_PRESETS, LOGO_BLOB_KEY } from '../../utils/storage';
 import { usePrefs } from '../../utils/use-prefs';
+import { useSetLocale } from '../../utils/use-locale';
 import { useCaptureTheme } from '../../utils/use-theme';
 
 // SETTINGS (design capture.md §2.12). Shared by the Studio tab AND the standalone
@@ -19,6 +21,9 @@ import { useCaptureTheme } from '../../utils/use-theme';
 const caps = capabilities();
 
 export function Settings() {
+  const t = useT();
+  const locale = useLocale();
+  const setLocale = useSetLocale();
   const { prefs, update, error } = usePrefs();
   const { theme, setTheme } = useCaptureTheme();
   const [used, setUsed] = useState<number | null>(null);
@@ -39,16 +44,16 @@ export function Settings() {
   return (
     <div className="settings">
       {error && (
-        <Callout tone="poor" title="Настройки не сохранены">
-          {error}
+        <Callout tone="poor" title={t('set_not_saved')}>
+          {t('prefs_save_fail')}
         </Callout>
       )}
       {note && <Callout tone="info">{note}</Callout>}
 
       <section className="set-group">
-        <h3>Запись</h3>
+        <h3>{t('set_rec')}</h3>
 
-        <Row label="Разрешение по умолчанию">
+        <Row label={t('set_default_res')}>
           <select
             value={prefs.defaultResolution?.height ?? 0}
             onChange={(e) => {
@@ -58,29 +63,29 @@ export function Settings() {
               });
             }}
           >
-            <option value={0}>Как есть</option>
+            <option value={0}>{t('res_as_is_cap')}</option>
             <option value={1080}>1080p</option>
             <option value={720}>720p</option>
             <option value={480}>480p</option>
           </select>
         </Row>
 
-        <Row label="Частота кадров">
+        <Row label={t('set_fps')}>
           <select
             value={prefs.defaultFps}
             onChange={(e) => update({ defaultFps: Number(e.target.value) })}
           >
-            <option value={60}>60 к/с</option>
-            <option value={30}>30 к/с</option>
-            <option value={25}>25 к/с</option>
-            <option value={15}>15 к/с</option>
+            <option value={60}>{t('fps_value', { n: 60 })}</option>
+            <option value={30}>{t('fps_value', { n: 30 })}</option>
+            <option value={25}>{t('fps_value', { n: 25 })}</option>
+            <option value={15}>{t('fps_value', { n: 15 })}</option>
           </select>
           {prefs.defaultFps === 60 && (
-            <span className="warn-text"> 60 к/с — это ×2 к размеру при том же качестве.</span>
+            <span className="warn-text">{t('set_fps_60_warn')}</span>
           )}
         </Row>
 
-        <Row label="Формат записи">
+        <Row label={t('set_rec_format')}>
           {caps.canRecordMp4 ? (
             <select
               value={prefs.defaultVideoFormat}
@@ -92,31 +97,25 @@ export function Settings() {
               <option value="webm">WebM (VP9)</option>
             </select>
           ) : (
-            <span className="warn-text">
-              Этот браузер пишет только WebM — MediaRecorder не отдаёт MP4. MP4 получится на
-              экспорте (перекодирование).
-            </span>
+            <span className="warn-text">{t('set_webm_only')}</span>
           )}
         </Row>
 
-        <Row label="Качество записи">
+        <Row label={t('set_rec_quality')}>
           <select
             value={prefs.defaultQuality}
             onChange={(e) =>
               update({ defaultQuality: e.target.value as 'high' | 'medium' | 'low' })
             }
           >
-            <option value="high">Высокое</option>
-            <option value="medium">Среднее</option>
-            <option value="low">Низкое</option>
+            <option value="high">{t('quality_high')}</option>
+            <option value="medium">{t('quality_medium')}</option>
+            <option value="low">{t('quality_low')}</option>
           </select>
-          <span className="muted">
-            {' '}
-            Браузер может не послушаться — точный размер задаётся на экспорте.
-          </span>
+          <span className="muted">{t('set_quality_note')}</span>
         </Row>
 
-        <Row label="Звук вкладки">
+        <Row label={t('set_tab_audio')}>
           {caps.canRecordTabAudio ? (
             <input
               type="checkbox"
@@ -125,27 +124,23 @@ export function Settings() {
             />
           ) : (
             <span className="warn-text">
-              В Firefox невозможно: <code>getDisplayMedia</code> не отдаёт аудиодорожку. Это
-              отсутствующая возможность браузера, а не наша настройка. Доступен только
-              микрофон.
+              {t('set_tab_audio_ff_1')}
+              <code>getDisplayMedia</code>
+              {t('set_tab_audio_ff_2')}
             </span>
           )}
         </Row>
 
-        <Row label="Микрофон">
+        <Row label={t('set_mic')}>
           <input
             type="checkbox"
             checked={prefs.mic}
             onChange={(e) => update({ mic: e.target.checked })}
           />
-          <span className="muted">
-            {' '}
-            Разрешение спрашивается с видимой страницы — невидимый offscreen-документ этого не
-            умеет.
-          </span>
+          <span className="muted">{t('set_mic_note')}</span>
         </Row>
 
-        <Row label="Открывать окно записи">
+        <Row label={t('set_open_rec_window')}>
           <input
             type="checkbox"
             checked={caps.pipeline === 'firefox-window' ? true : prefs.openRecorderWindow}
@@ -153,15 +148,15 @@ export function Settings() {
             onChange={(e) => update({ openRecorderWindow: e.target.checked })}
           />
           {caps.pipeline === 'firefox-window' && (
-            <span className="muted"> В Firefox окно обязательно: запись живёт в нём.</span>
+            <span className="muted">{t('set_ff_window_required')}</span>
           )}
         </Row>
       </section>
 
       <section className="set-group">
-        <h3>Экспорт</h3>
+        <h3>{t('set_export')}</h3>
 
-        <Row label="Максимум проходов подгонки">
+        <Row label={t('set_max_passes')}>
           <select
             value={prefs.maxPasses}
             onChange={(e) => update({ maxPasses: Number(e.target.value) })}
@@ -172,39 +167,33 @@ export function Settings() {
               </option>
             ))}
           </select>
-          <span className="muted">
-            {' '}
-            Больше проходов — точнее попадание, но дольше. Один проход — это просто «задать
-            битрейт», попадание случайно.
-          </span>
+          <span className="muted">{t('set_max_passes_note')}</span>
         </Row>
 
-        <Row label="Куда сохранять">
+        <Row label={t('set_where_save')}>
           <label className="check-inline">
             <input
               type="checkbox"
               checked={prefs.askWhereToSave}
               onChange={(e) => update({ askWhereToSave: e.target.checked })}
             />
-            Спрашивать
+            {t('set_ask')}
           </label>
         </Row>
 
-        <Row label="Шаблон имени">
+        <Row label={t('set_name_template')}>
           <input
             type="text"
             value={prefs.filenameTemplate}
             onChange={(e) => update({ filenameTemplate: e.target.value })}
           />
-          <span className="muted"> {'{host}'} · {'{date}'} · {'{time}'} — имя санитизируется.</span>
+          <span className="muted">{t('set_name_template_note')}</span>
         </Row>
 
-        <div className="set-row">
-          <h4>Лимиты площадок</h4>
-          <p className="muted">
-            Зашиты локально и могут устареть — в сеть за ними мы не ходим (её у расширения нет
-            вовсе). Поэтому их можно поправить.
-          </p>
+        <div className="set-section">
+          <h4>{t('set_platform_limits')}</h4>
+          <p className="muted">{t('set_platform_limits_note')}</p>
+          <div className="preset-grid">
           {prefs.sizePresets.map((p) => (
             <div key={p.id} className="preset-row">
               <span>{p.label}</span>
@@ -212,7 +201,7 @@ export function Settings() {
                 type="number"
                 min={1}
                 value={Math.round(p.bytes / 1024 / 1024)}
-                aria-label={`${p.label}, МБ`}
+                aria-label={t('set_mb_aria', { label: p.label })}
                 onChange={(e) =>
                   update({
                     sizePresets: prefs.sizePresets.map((x) =>
@@ -223,25 +212,26 @@ export function Settings() {
                   })
                 }
               />
-              <span className="muted">МБ</span>
+              <span className="muted">{t('mb')}</span>
             </div>
           ))}
+          </div>
           <Button variant="ghost" onClick={() => update({ sizePresets: DEFAULT_SIZE_PRESETS })}>
-            Вернуть значения по умолчанию
+            {t('set_reset_defaults')}
           </Button>
         </div>
       </section>
 
       <section className="set-group">
         <h3>Watermark</h3>
-        <Row label="Текст">
+        <Row label={t('set_text')}>
           <input
             type="text"
             value={prefs.watermarkText}
             onChange={(e) => update({ watermarkText: e.target.value })}
           />
         </Row>
-        <Row label="Логотип">
+        <Row label={t('set_logo')}>
           <input
             ref={logoRef}
             type="file"
@@ -254,26 +244,26 @@ export function Settings() {
           />
           {logoName && <span className="muted"> {logoName}</span>}
           <p className="muted">
-            🔴 Только локальный файл. Поля «ссылка на логотип» нет намеренно: внешняя картинка
-            без CORS делает канвас tainted, и <code>convertToBlob()</code> падает в САМОМ КОНЦЕ
-            экспорта — после минут кодирования.
+            {t('set_logo_note_1')}
+            <code>convertToBlob()</code>
+            {t('set_logo_note_2')}
           </p>
         </Row>
-        <Row label="Положение">
+        <Row label={t('set_position')}>
           <select
             value={prefs.watermarkPosition}
             onChange={(e) =>
               update({ watermarkPosition: e.target.value as typeof prefs.watermarkPosition })
             }
           >
-            <option value="bottom-right">Справа снизу</option>
-            <option value="bottom-left">Слева снизу</option>
-            <option value="top-right">Справа сверху</option>
-            <option value="top-left">Слева сверху</option>
-            <option value="center">По центру</option>
+            <option value="bottom-right">{t('pos_br')}</option>
+            <option value="bottom-left">{t('pos_bl')}</option>
+            <option value="top-right">{t('pos_tr')}</option>
+            <option value="top-left">{t('pos_tl')}</option>
+            <option value="center">{t('pos_center')}</option>
           </select>
         </Row>
-        <Row label="Прозрачность">
+        <Row label={t('set_opacity')}>
           <input
             type="range"
             min={10}
@@ -283,7 +273,7 @@ export function Settings() {
           />
           <span className="mono"> {prefs.watermarkOpacity}%</span>
         </Row>
-        <Row label="Размер (% высоты кадра)">
+        <Row label={t('set_size_pct')}>
           <input
             type="range"
             min={2}
@@ -296,32 +286,31 @@ export function Settings() {
       </section>
 
       <section className="set-group">
-        <h3>Хранилище</h3>
+        <h3>{t('set_storage')}</h3>
         <p className="mono">
-          Занято: {used != null ? formatBytes(used) : '—'} · {count} записей
+          {t('set_used_line', {
+            used: used != null ? formatBytes(used, locale) : '—',
+            count,
+          })}
         </p>
-        <p className="muted">
-          Записи лежат только на этом компьютере, в профиле браузера (IndexedDB). Никуда не
-          отправляются — у расширения нет ни одного сетевого запроса. Удаление расширения
-          удалит и их.
-        </p>
-        <Row label="Автоудаление записей старше">
+        <p className="muted">{t('set_storage_note')}</p>
+        <Row label={t('set_autodelete')}>
           <select
             value={prefs.autoDeleteDays ?? 0}
             onChange={(e) => {
               const d = Number(e.target.value);
               update({ autoDeleteDays: d || null });
               if (d) void pruneOlderThan(d).then((n) => {
-                setNote(n ? `Удалено записей: ${n}.` : 'Нечего удалять.');
+                setNote(n ? t('set_deleted_n', { n }) : t('set_nothing_delete'));
                 refresh();
               });
             }}
           >
             {/* Default is NEVER, deliberately: silently erasing someone's screencast
                 is worse than using disk (design §3.4). */}
-            <option value={0}>Никогда</option>
-            <option value={7}>7 дней</option>
-            <option value={30}>30 дней</option>
+            <option value={0}>{t('never')}</option>
+            <option value={7}>{t('days_7')}</option>
+            <option value={30}>{t('days_30')}</option>
           </select>
         </Row>
         {/* Two-step, and it disarms on blur: deleting every recording the user has
@@ -338,25 +327,20 @@ export function Settings() {
               .then((cs) => Promise.all(cs.map((c) => deleteClip(c.id))))
               .then(() => {
                 setWipeArmed(false);
-                setNote('Все записи удалены.');
+                setNote(t('set_all_deleted'));
                 refresh();
               });
           }}
           onBlur={() => setWipeArmed(false)}
         >
-          {wipeArmed ? `Точно удалить все ${count} записей?` : 'Удалить все записи'}
+          {wipeArmed ? t('set_wipe_confirm', { count }) : t('set_wipe')}
         </button>
       </section>
 
       <section className="set-group">
-        <h3>Горячие клавиши</h3>
-        <p className="mono">
-          Запись Alt+Shift+R · Стоп Alt+Shift+S · Пауза Alt+Shift+P · Скриншот Alt+Shift+A
-        </p>
-        <p className="muted">
-          Работают из любого окна и любой вкладки — включая полноэкранное видео и другое
-          приложение. Изменить можно в самом браузере (страница управления расширениями).
-        </p>
+        <h3>{t('set_shortcuts')}</h3>
+        <p className="mono">{t('set_shortcuts_line')}</p>
+        <p className="muted">{t('set_shortcuts_note')}</p>
         <Button
           variant="ghost"
           onClick={() =>
@@ -366,16 +350,21 @@ export function Settings() {
                   ? 'about:addons'
                   : 'chrome://extensions/shortcuts',
               })
-              .catch(() => setNote('Откройте страницу расширений браузера вручную.'))
+              .catch(() => setNote(t('set_open_ext_manual')))
           }
         >
-          Изменить в браузере
+          {t('set_change_in_browser')}
         </Button>
       </section>
 
       <section className="set-group">
-        <h3>Тема</h3>
-        {theme && <ThemeToggle theme={theme} onChange={(t: Theme) => setTheme(t)} />}
+        <h3>{t('set_theme')}</h3>
+        {theme && <ThemeToggle theme={theme} onChange={(th: Theme) => setTheme(th)} />}
+      </section>
+
+      <section className="set-group">
+        <h3>{t('language')}</h3>
+        <LanguageSwitcher locale={locale} onChange={setLocale} label={t('language')} />
       </section>
     </div>
   );

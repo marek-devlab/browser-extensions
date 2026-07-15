@@ -1,5 +1,10 @@
 import { parseTokens, renderHtmlString, type Token } from './markdown';
+import { tAt, type MsgKey } from './i18n';
 import type { Target } from './types';
+
+/** A locale-bound translator; the copy path passes the active-locale one so the
+ *  compatibility notes match the rest of the UI. Defaults to English. */
+type Translate = (key: MsgKey, vars?: Record<string, string | number>) => string;
 
 // Platform CONVERSION on copy (design §6.2, §6.3).
 //
@@ -33,6 +38,8 @@ export interface ConvertOptions {
    * main bundle just to convert (design §10.2).
    */
   shortcodeToEmoji?: (shortcode: string) => string | null;
+  /** Locale-bound translator for the degradation notes (defaults to English). */
+  t?: Translate;
 }
 
 /* ── degradation bookkeeping ───────────────────────────────────────────────*/
@@ -102,6 +109,7 @@ interface Ctx {
   target: Target;
   deg: Degradations;
   emoji?: (shortcode: string) => string | null;
+  t: Translate;
 }
 
 const SHORTCODE_RE = /:([a-z0-9_+-]+):/gi;
@@ -113,7 +121,7 @@ function resolveShortcodes(ctx: Ctx, text: string): string {
   return text.replace(SHORTCODE_RE, (whole, name: string) => {
     const char = ctx.emoji?.(name);
     if (char) {
-      ctx.deg.add('Шорткоды эмодзи (:tada:) → символ — площадка их не понимает');
+      ctx.deg.add(ctx.t('deg_emoji_shortcode'));
       return char;
     }
     return whole;
@@ -238,9 +246,9 @@ function image(ctx: Ctx, src: string, alt: string): string {
     case 'jira':
       return `!${src}!`;
     case 'slack':
-      return `<${src}|${alt || 'изображение'}>`;
+      return `<${src}|${alt || ctx.t('content_image')}>`;
     case 'telegram':
-      return `[${escapeFor('telegram', alt || 'изображение')}](${src})`;
+      return `[${escapeFor('telegram', alt || ctx.t('content_image'))}](${src})`;
     default:
       return alt ? `${alt} (${src})` : src;
   }
@@ -267,13 +275,13 @@ function renderBlock(n: Node, ctx: Ctx): string | null {
         case 'jira':
           return `h${level}. ${inline}`;
         case 'slack':
-          ctx.deg.add('Заголовки → *жирный* (в Slack заголовков нет)');
+          ctx.deg.add(ctx.t('deg_headings_slack'));
           return `*${inline}*`;
         case 'telegram':
-          ctx.deg.add('Заголовки → *жирный* (в Telegram заголовков нет)');
+          ctx.deg.add(ctx.t('deg_headings_telegram'));
           return `*${inline}*`;
         default:
-          ctx.deg.add('Заголовки → ВЕРХНИЙ РЕГИСТР');
+          ctx.deg.add(ctx.t('deg_headings_upper'));
           return inline.toUpperCase();
       }
     }
@@ -298,7 +306,7 @@ function renderBlock(n: Node, ctx: Ctx): string | null {
         case 'jira':
           return lang ? `{code:${lang}}\n${code}\n{code}` : `{code}\n${code}\n{code}`;
         case 'slack':
-          if (lang) ctx.deg.add('Блок кода → ``` без указания языка (Slack его не понимает)');
+          if (lang) ctx.deg.add(ctx.t('deg_code_slack_nolang'));
           return '```\n' + code + '\n```';
         case 'telegram':
           return '```' + lang + '\n' + code.replace(/[`\\]/g, (c) => '\\' + c) + '\n```';
@@ -369,11 +377,11 @@ function listMarker(
   if (o.isTask) {
     switch (ctx.target) {
       case 'jira':
-        ctx.deg.add('Чекбоксы → (x)/( ) (кликабельных чекбоксов в Jira нет)');
+        ctx.deg.add(ctx.t('deg_task_jira'));
         return o.checked ? '* (x) ' : '* ( ) ';
       case 'slack':
       case 'telegram':
-        ctx.deg.add('Чекбоксы → • ☐ / • ☑ (кликабельных чекбоксов нет)');
+        ctx.deg.add(ctx.t('deg_task_generic'));
         return o.checked ? '• ☑ ' : '• ☐ ';
       default:
         return o.checked ? '[x] ' : '[ ] ';
@@ -421,10 +429,10 @@ function renderTable(n: Node, ctx: Ctx): string {
     .join('\n');
 
   if (ctx.target === 'plain') {
-    ctx.deg.add(`Таблица (строк: ${rows.length}) → выровненный текст`);
+    ctx.deg.add(ctx.t('deg_table_plain', { rows: rows.length }));
     return ascii;
   }
-  ctx.deg.add(`Таблица (строк: ${rows.length}) → блок кода с выравниванием`);
+  ctx.deg.add(ctx.t('deg_table_code', { rows: rows.length }));
   return '```\n' + ascii + '\n```';
 }
 
@@ -446,19 +454,18 @@ function renderHtmlBlock(content: string, ctx: Ctx): string | null {
 
   if (hasOpen) {
     const summaryRaw = SUMMARY_RE.exec(content)?.[1] ?? '';
-    const summary = escapeFor(ctx.target, stripTags(summaryRaw).trim() || 'Подробности');
+    const summaryText = stripTags(summaryRaw).trim();
+    const summary = escapeFor(ctx.target, summaryText || ctx.t('content_details'));
     switch (ctx.target) {
       case 'jira':
-        ctx.deg.add(`<details> «${stripTags(summaryRaw).trim()}» → {expand}`);
-        return `{expand:${stripTags(summaryRaw).trim()}}`;
+        ctx.deg.add(ctx.t('deg_details_jira', { summary: summaryText }));
+        return `{expand:${summaryText}}`;
       case 'slack':
       case 'telegram':
-        ctx.deg.add(
-          `<details> «${stripTags(summaryRaw).trim()}» → раскрывающегося блока нет, тело развёрнуто под жирным заголовком`,
-        );
+        ctx.deg.add(ctx.t('deg_details_slack', { summary: summaryText }));
         return `*${summary}*`;
       default:
-        ctx.deg.add(`<details> «${stripTags(summaryRaw).trim()}» → развёрнуто`);
+        ctx.deg.add(ctx.t('deg_details_plain', { summary: summaryText }));
         return `${summary}:`;
     }
   }
@@ -480,6 +487,8 @@ function renderHtmlBlock(content: string, ctx: Ctx): string | null {
  * body and returns a NEW string. The draft is never touched (design §4.5).
  */
 export function convert(body: string, target: Target, opts: ConvertOptions = {}): ConversionResult {
+  const t: Translate = opts.t ?? ((key, vars) => tAt('en', key, vars));
+
   // GitHub: we ARE GFM. Identity — no parse, no risk, no degradation.
   if (target === 'github') {
     return { text: body, degradations: [] };
@@ -492,25 +501,23 @@ export function convert(body: string, target: Target, opts: ConvertOptions = {})
   if (target === 'gitlab') {
     return {
       text: body,
-      degradations: ['GitLab (GLFM) отображает часть конструкций иначе, чем этот предпросмотр'],
+      degradations: [t('deg_glfm')],
     };
   }
 
   // HTML: sanitized DOM → serialized string. `text/plain` stays clean Markdown
   // so a plain <textarea> receives the source (design §6.2).
   if (target === 'html') {
-    const { html, removed } = renderHtmlString(body);
+    const { html, removed } = renderHtmlString(body, t);
     return {
       text: body,
       html,
-      degradations: removed.length
-        ? [`Санитайзер вырезал из HTML: ${removed.join(', ')}`]
-        : [],
+      degradations: removed.length ? [t('deg_html_sanitized', { items: removed.join(', ') })] : [],
     };
   }
 
   const deg = new Degradations();
-  const ctx: Ctx = { target, deg, emoji: opts.shortcodeToEmoji };
+  const ctx: Ctx = { target, deg, emoji: opts.shortcodeToEmoji, t };
   const tree = toTree(parseTokens(body));
   const text = renderBlocks(tree, ctx)
     .filter((s) => s.trim() !== '')

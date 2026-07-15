@@ -1,6 +1,9 @@
 import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import { sanitizeToFragment, serializeFragment, type SanitizeResult } from './sanitize';
+import type { MsgKey } from './i18n';
+
+type Translate = (key: MsgKey, vars?: Record<string, string | number>) => string;
 
 // Markdown → preview render pipeline (design §7.1). The ONLY allowed pipeline:
 //
@@ -74,8 +77,8 @@ md.core.ruler.after('inline', 'cw_task_lists', (state) => {
 });
 
 /** Render a draft body to a sanitized preview fragment — the only preview path. */
-export function renderPreview(body: string): SanitizeResult {
-  return sanitizeToFragment(md.render(body));
+export function renderPreview(body: string, t?: Translate): SanitizeResult {
+  return sanitizeToFragment(md.render(body), t);
 }
 
 /**
@@ -83,8 +86,11 @@ export function renderPreview(body: string): SanitizeResult {
  * (design §6.2). Goes through the exact same sanitizer, then serializes the DOM
  * back out — the string never re-enters the DOM.
  */
-export function renderHtmlString(body: string): { html: string; removed: string[] } {
-  const { fragment, removed } = sanitizeToFragment(md.render(body));
+export function renderHtmlString(
+  body: string,
+  t?: Translate,
+): { html: string; removed: string[] } {
+  const { fragment, removed } = sanitizeToFragment(md.render(body), t);
   return { html: serializeFragment(fragment), removed };
 }
 

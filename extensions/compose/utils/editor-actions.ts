@@ -1,3 +1,5 @@
+import type { MsgKey } from './i18n';
+
 // Toolbar / keyboard markdown insertion (design §2.3, §9.1). ✅ REAL.
 //
 // This is pure string manipulation over the draft body + a selection range, so
@@ -5,12 +7,32 @@
 // Each function takes the current body and [start,end] selection and returns the
 // next body plus the next selection, so the caller (EditorPane) can restore the
 // caret. No DOM, no browser APIs — trivially unit-testable.
+//
+// The starter placeholders inserted when there is NO selection ("bold", the
+// <details> summary/body) follow the UI language, so `createActions(t)` binds
+// the action map to the active-locale translator.
 
 export interface EditState {
   body: string;
   start: number;
   end: number;
 }
+
+type T = (key: MsgKey, vars?: Record<string, string | number>) => string;
+
+export type ActionId =
+  | 'bold'
+  | 'italic'
+  | 'strike'
+  | 'code'
+  | 'codeBlock'
+  | 'quote'
+  | 'bullet'
+  | 'ordered'
+  | 'task'
+  | 'link'
+  | 'details'
+  | 'table';
 
 function wrap(s: EditState, before: string, after = before, placeholder = ''): EditState {
   const sel = s.body.slice(s.start, s.end) || placeholder;
@@ -46,32 +68,33 @@ export function insertText(s: EditState, value: string): EditState {
 // Every entry here is a uniform (EditState) => EditState transform, so indexing
 // the map by a union key stays callable with a single argument. Actions that
 // need extra parameters (table dims, emoji value) are the standalone functions
-// above.
-export const actions = {
-  bold: (s: EditState) => wrap(s, '**', '**', 'жирный'),
-  italic: (s: EditState) => wrap(s, '*', '*', 'курсив'),
-  strike: (s: EditState) => wrap(s, '~~', '~~', 'зачёркнутый'),
-  code: (s: EditState) => wrap(s, '`', '`', 'код'),
-  codeBlock: (s: EditState) => wrap(s, '```\n', '\n```', 'код'),
-  quote: (s: EditState) => prefixLines(s, () => '> '),
-  bullet: (s: EditState) => prefixLines(s, () => '- '),
-  ordered: (s: EditState) => prefixLines(s, (i) => `${i + 1}. `),
-  task: (s: EditState) => prefixLines(s, () => '- [ ] '),
-  link: (s: EditState) => {
-    const sel = s.body.slice(s.start, s.end) || 'текст';
-    const insert = `[${sel}](url)`;
-    const body = s.body.slice(0, s.start) + insert + s.body.slice(s.end);
-    return { body, start: s.start + 1, end: s.start + 1 + sel.length };
-  },
-  // ⚠️ Blank lines around the body are MANDATORY or GitHub won't parse Markdown
-  // inside <details> (design §2.3).
-  details: (s: EditState) => {
-    const insert = '<details>\n<summary>КАРЕТКА</summary>\n\nтело\n\n</details>\n';
-    const body = s.body.slice(0, s.start) + insert + s.body.slice(s.end);
-    const cursor = s.start + '<details>\n<summary>'.length;
-    return { body, start: cursor, end: cursor + 'КАРЕТКА'.length };
-  },
-  table: (s: EditState) => insertTable(s),
-} satisfies Record<string, (s: EditState) => EditState>;
-
-export type ActionId = keyof typeof actions;
+// above. `t` supplies the localized starter placeholders.
+export function createActions(t: T): Record<ActionId, (s: EditState) => EditState> {
+  return {
+    bold: (s) => wrap(s, '**', '**', t('ph_bold')),
+    italic: (s) => wrap(s, '*', '*', t('ph_italic')),
+    strike: (s) => wrap(s, '~~', '~~', t('ph_strike')),
+    code: (s) => wrap(s, '`', '`', t('ph_code')),
+    codeBlock: (s) => wrap(s, '```\n', '\n```', t('ph_code')),
+    quote: (s) => prefixLines(s, () => '> '),
+    bullet: (s) => prefixLines(s, () => '- '),
+    ordered: (s) => prefixLines(s, (i) => `${i + 1}. `),
+    task: (s) => prefixLines(s, () => '- [ ] '),
+    link: (s) => {
+      const sel = s.body.slice(s.start, s.end) || t('ph_link');
+      const insert = `[${sel}](url)`;
+      const body = s.body.slice(0, s.start) + insert + s.body.slice(s.end);
+      return { body, start: s.start + 1, end: s.start + 1 + sel.length };
+    },
+    // ⚠️ Blank lines around the body are MANDATORY or GitHub won't parse Markdown
+    // inside <details> (design §2.3).
+    details: (s) => {
+      const summary = t('ph_summary');
+      const insert = `<details>\n<summary>${summary}</summary>\n\n${t('ph_body')}\n\n</details>\n`;
+      const body = s.body.slice(0, s.start) + insert + s.body.slice(s.end);
+      const cursor = s.start + '<details>\n<summary>'.length;
+      return { body, start: cursor, end: cursor + summary.length };
+    },
+    table: (s) => insertTable(s),
+  };
+}

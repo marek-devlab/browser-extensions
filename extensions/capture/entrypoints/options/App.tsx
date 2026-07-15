@@ -1,3 +1,5 @@
+import { useT } from '../../utils/i18n';
+import { CaptureLocaleProvider } from '../../utils/use-locale';
 import { Settings } from '../editor/Settings';
 
 // Options page (options.html). WXT wires the browser's "Extension options" menu
@@ -12,10 +14,19 @@ import { Settings } from '../editor/Settings';
 // to the deep-link is a one-line manifest change (options_ui.page).
 export function App() {
   return (
+    <CaptureLocaleProvider>
+      <OptionsPage />
+    </CaptureLocaleProvider>
+  );
+}
+
+function OptionsPage() {
+  const t = useT();
+  return (
     <div className="studio">
       <header className="studio-head">
         <h1>
-          <span className="rec-dot" aria-hidden="true" /> Capture Studio — настройки
+          <span className="rec-dot" aria-hidden="true" /> {t('opt_title')}
         </h1>
       </header>
       <main className="studio-body">

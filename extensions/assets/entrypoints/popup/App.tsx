@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { browser } from '#imports';
-import { Button, Callout } from '@blur/ui';
+import { Button, Callout, LocaleProvider } from '@blur/ui';
 import type { PageCounters } from '../../utils/assets-types';
+import { useAssetsLocale } from '../../utils/use-prefs';
+import { useT } from '../../utils/i18n';
 
 // Popup — 🥈 secondary surface (design §2.6). It is NOT where the card lives: the
 // popup dies on the first click on the page, so "open popup → click element → read
@@ -76,6 +78,18 @@ async function readCounters(tabId: number): Promise<PageCounters | null> {
 }
 
 export function App() {
+  // Provide the locale context so every string below resolves through the catalog;
+  // the initial value is the synchronous seed, so there is no English flash.
+  const { locale } = useAssetsLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <PopupBody />
+    </LocaleProvider>
+  );
+}
+
+function PopupBody() {
+  const t = useT();
   const { tabId, hostname, ready } = useActiveTab();
   const [counters, setCounters] = useState<PageCounters | null>(null);
   const [countersState, setCountersState] = useState<'loading' | 'done' | 'unavailable'>('loading');
@@ -115,7 +129,7 @@ export function App() {
   return (
     <main className="popup">
       <header className="head">
-        <h1>Asset Inspector</h1>
+        <h1>{t('pupTitle')}</h1>
       </header>
 
       <button
@@ -123,41 +137,37 @@ export function App() {
         className="pick"
         onClick={pick}
         disabled={!onWebPage}
-        aria-label="Point to an element on this page and inspect where it came from"
+        aria-label={t('pupPickAria')}
       >
         <span className="pick__icon" aria-hidden="true">🎯</span>
-        <span className="pick__label">Point to an element</span>
+        <span className="pick__label">{t('pupPick')}</span>
         <span className="pick__hint">Alt+Shift+A</span>
       </button>
 
       {ready && !onWebPage && (
-        <p className="muted" role="status">The inspector can’t run on this page.</p>
+        <p className="muted" role="status">{t('pupCantRun')}</p>
       )}
 
       <p className="muted">
-        Or right-click an image / video / audio → <b>“What is this element?”</b>
-        {' '}(where the browser offers a context menu).
+        {t('pupRightClickPre')}<b>“{t('whatIsThis')}”</b>{t('pupRightClickPost')}
       </p>
 
       <section className="counters">
-        <h2>What is on this page</h2>
-        {countersState === 'loading' && <p className="muted">Counting…</p>}
+        <h2>{t('pupOnPage')}</h2>
+        {countersState === 'loading' && <p className="muted">{t('pupCounting')}</p>}
         {countersState === 'unavailable' && <p className="muted">—</p>}
         {countersState === 'done' && counters && (
           <>
             <dl className="counter-grid">
-              <div><dt>Requests recorded</dt><dd>{counters.requestsRecorded}</dd></div>
-              <div><dt>Images</dt><dd>{counters.images}</dd></div>
-              <div><dt>Media elements</dt><dd>{counters.media}</dd></div>
+              <div><dt>{t('pupReqRecorded')}</dt><dd>{counters.requestsRecorded}</dd></div>
+              <div><dt>{t('pupImages')}</dt><dd>{counters.images}</dd></div>
+              <div><dt>{t('pupMediaElements')}</dt><dd>{counters.media}</dd></div>
             </dl>
             {nearFull && (
-              <Callout tone="warn" title={overflowed ? 'The request buffer overflowed' : 'The request buffer is nearly full'}>
-                Recorded {counters.requestsRecorded} of {counters.bufferLimit}. Past the cap the browser
-                stops recording new requests — it drops the new ones, it does not evict the old ones, so
-                the late requests on this page go missing. Reload the page and the inspector raises the
-                cap; what was already dropped cannot come back.
+              <Callout tone="warn" title={overflowed ? t('pupBufOverflowTitle') : t('pupBufNearTitle')}>
+                {t('pupBufBody', { recorded: counters.requestsRecorded, limit: counters.bufferLimit })}
                 <Button variant="ghost" onClick={() => { if (tabId !== null) void browser.tabs.reload(tabId); }}>
-                  Reload the page
+                  {t('reloadPage')}
                 </Button>
               </Callout>
             )}
@@ -167,7 +177,7 @@ export function App() {
 
       <nav className="links">
         <button type="button" className="linkish" onClick={() => void browser.runtime.openOptionsPage()}>
-          Settings →
+          {t('settingsArrow')}
         </button>
       </nav>
     </main>

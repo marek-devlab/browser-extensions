@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { browser } from '#imports';
-import { Button, Callout, EmptyState, Spinner } from '@blur/ui';
+import { Button, Callout, EmptyState, Spinner, LocaleProvider } from '@blur/ui';
 import {
   findHarEntry,
   harMime,
@@ -10,9 +10,10 @@ import {
   type HarEntry,
   type HarLog,
 } from '../../utils/har';
-import { PICKER_SOURCE, POLL_SOURCE, STOP_SOURCE, type PanelPick } from '../../utils/panel-picker';
+import { pickerSource, POLL_SOURCE, STOP_SOURCE, type PanelPick } from '../../utils/panel-picker';
 import { formatWeight } from '../../utils/format';
-import { usePrefs } from '../../utils/use-prefs';
+import { usePrefs, useAssetsLocale } from '../../utils/use-prefs';
+import { useT, type TFn } from '../../utils/i18n';
 
 // DevTools panel — 🥉 the UPGRADE surface (design §2.5). It shows ONLY what a page
 // can never see: the request INITIATOR (which script, which line), the REDIRECT
@@ -35,6 +36,16 @@ import { usePrefs } from '../../utils/use-prefs';
 // so nothing the card shows may depend on this file existing.
 
 export function App() {
+  const { locale } = useAssetsLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <PanelBody />
+    </LocaleProvider>
+  );
+}
+
+function PanelBody() {
+  const t = useT();
   const { prefs } = usePrefs();
   const [hostname, setHostname] = useState('');
   const [stale, setStale] = useState(false);
@@ -89,13 +100,13 @@ export function App() {
     setError(null);
     setPick(null);
     setPicking(true);
-    browser.devtools.inspectedWindow.eval(PICKER_SOURCE, (_r: unknown, ex?: { isError?: boolean; value?: unknown }) => {
+    browser.devtools.inspectedWindow.eval(pickerSource(t('pnlPickerTip')), (_r: unknown, ex?: { isError?: boolean; value?: unknown }) => {
       if (ex?.isError) {
         setPicking(false);
-        setError('This page cannot be scripted from the panel (a browser-internal page, or its CSP blocks eval).');
+        setError(t('pnlCantPickErr'));
       }
     });
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!picking) return;
@@ -132,47 +143,48 @@ export function App() {
     <div className="panel">
       <div className="toolbar">
         <Button variant="primary" onClick={startPick} disabled={picking}>
-          🎯 {picking ? 'Click an element on the page…' : 'Point to an element on the page'}
+          🎯 {picking ? t('pnlPicking') : t('pnlPick')}
         </Button>
         <input
           type="search"
-          placeholder="Find a captured request…"
+          placeholder={t('pnlFindReq')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          aria-label="Find a captured request"
+          aria-label={t('pnlFindReq')}
         />
-        {picking && <Spinner label="Waiting for a pick" />}
+        {picking && <Spinner label={t('pnlWaitingPick')} />}
       </div>
 
       {hostname && (
         <p className="host">
-          Inspecting <code>{hostname}</code> · {harCount} request{harCount === 1 ? '' : 's'} captured
+          {t('pnlInspecting')} <code>{hostname}</code> ·{' '}
+          {t(harCount === 1 ? 'pnlReqCapturedOne' : 'pnlReqCapturedOther', { count: harCount })}
         </p>
       )}
 
-      <Callout tone="warn" title="The panel only sees requests made AFTER DevTools opened">
-        Reload the page to capture everything — the initiator and the redirect chain exist nowhere else.
+      <Callout tone="warn" title={t('pnlCapAfterTitle')}>
+        {t('pnlCapAfterBody')}
         <Button variant="ghost" onClick={() => { browser.devtools.inspectedWindow.reload({}); setStale(false); }}>
-          Reload the page
+          {t('reloadPage')}
         </Button>
       </Callout>
 
       {stale && (
-        <Callout tone="poor" title="The page navigated">
-          The captured request list was cleared — it described the previous document. Pick an element
-          again once the new page has settled.
+        <Callout tone="poor" title={t('pnlNavTitle')}>
+          {t('pnlNavBody')}
         </Callout>
       )}
 
-      {error && <Callout tone="poor" title="Cannot run the picker here">{error}</Callout>}
+      {error && <Callout tone="poor" title={t('pnlCantPickTitle')}>{error}</Callout>}
 
       {pick === null ? (
         <EmptyState
-          title="Pick an element"
-          hint="The panel shows what a page can never see about a resource: which script requested it, the redirect chain it travelled, its exact MIME type and HTTP status."
+          title={t('pnlEmptyTitle')}
+          hint={t('pnlEmptyHint')}
         />
       ) : (
         <ResourceDetail
+          t={t}
           pick={pick}
           entry={entry}
           redirects={redirects}
@@ -184,7 +196,7 @@ export function App() {
       {filtered.length > 0 && (
         <section className="detail">
           <div className="card">
-            <div className="card__head"><strong>Captured requests matching “{filter}”</strong></div>
+            <div className="card__head"><strong>{t('pnlMatching', { filter })}</strong></div>
             <ol className="chain">
               {filtered.map((e, i) => (
                 <li key={`${e.request.url}-${i}`}>
@@ -205,12 +217,14 @@ export function App() {
 }
 
 function ResourceDetail({
+  t,
   pick,
   entry,
   redirects,
   initiators,
   units,
 }: {
+  t: TFn;
   pick: PanelPick;
   entry: HarEntry | null;
   redirects: ReturnType<typeof redirectChainFor>;
@@ -220,7 +234,7 @@ function ResourceDetail({
   // Everything below is page-controlled text. React escapes it; no dangerouslySet…
   // anywhere in this extension, and no href is built from it (design §9.1).
   const url = typeof pick.url === 'string' ? pick.url : '';
-  const label = typeof pick.label === 'string' ? pick.label : 'element';
+  const label = typeof pick.label === 'string' ? pick.label : t('element');
   const mime = harMime(entry);
   const weight = harWeight(entry);
 
@@ -230,25 +244,25 @@ function ResourceDetail({
         <div className="card__head">
           <strong>{label}</strong>
         </div>
-        <div className="url">{url || '(this element has no resource URL)'}</div>
+        <div className="url">{url || t('noResourceUrlParen')}</div>
         <dl className="props">
-          <dt>MIME</dt>
+          <dt>{t('mimeLabel')}</dt>
           <dd>
             {mime.value}{' '}
             <span className="hint">
-              {mime.certainty === 'exact' ? 'ⓘ from the response — exact' : 'ⓘ DevTools has no record of this request'}
+              {mime.certainty === 'exact' ? t('mimeExact') : t('mimeNoRecord')}
             </span>
           </dd>
-          <dt>Status</dt>
-          <dd>{entry ? entry.response.status : 'no record — reload the page with DevTools open'}</dd>
-          <dt>Weight</dt>
+          <dt>{t('statusLabel')}</dt>
+          <dd>{entry ? entry.response.status : t('statusNoRecord')}</dd>
+          <dt>{t('weightLabel')}</dt>
           <dd>
-            {formatWeight(weight, units)}{' '}
-            {weight.kind === 'measured' && <span className="hint">ⓘ bytes on the wire (_transferSize)</span>}
+            {formatWeight(weight, units, t)}{' '}
+            {weight.kind === 'measured' && <span className="hint">{t('weightWire')}</span>}
           </dd>
           {pick.natural && (
             <>
-              <dt>Natural size</dt>
+              <dt>{t('naturalSizeLabel')}</dt>
               <dd>{pick.natural[0]} × {pick.natural[1]}</dd>
             </>
           )}
@@ -257,15 +271,17 @@ function ResourceDetail({
 
       <div className="card">
         <div className="card__head">
-          <strong>Redirect chain{redirects.length > 0 ? ` — ${redirects.length} step${redirects.length === 1 ? '' : 's'}` : ''}</strong>
+          <strong>
+            {t('redirectChain')}
+            {redirects.length > 0
+              ? ` — ${t(redirects.length === 1 ? 'redirectStepOne' : 'redirectStepOther', { n: redirects.length })}`
+              : ''}
+          </strong>
         </div>
         {redirects.length === 0 ? (
-          <p className="hint">
-            No record for this URL yet. DevTools only captures requests made after it opened — reload
-            the page.
-          </p>
+          <p className="hint">{t('redirectNoRecordPanel')}</p>
         ) : redirects.length === 1 ? (
-          <p className="hint">No redirect: the browser fetched this URL directly.</p>
+          <p className="hint">{t('redirectNonePanel')}</p>
         ) : (
           <ol className="chain">
             {redirects.map((r, i) => (
@@ -277,19 +293,13 @@ function ResourceDetail({
             ))}
           </ol>
         )}
-        <p className="hint">
-          ⓘ The intermediate hops are not in Resource Timing at all — it reports only the final URL.
-          This chain exists nowhere but here.
-        </p>
+        <p className="hint">{t('redirectFinalOnly')}</p>
       </div>
 
       <div className="card">
-        <div className="card__head"><strong>Who requested it</strong></div>
+        <div className="card__head"><strong>{t('whoRequested')}</strong></div>
         {initiators.length === 0 ? (
-          <p className="hint">
-            No initiator recorded for this URL. Reload the page with DevTools open — the initiator is
-            captured at request time, not afterwards.
-          </p>
+          <p className="hint">{t('noInitiatorPanel')}</p>
         ) : (
           <ol className="chain">
             {initiators.map((s, i) => (
@@ -300,10 +310,7 @@ function ResourceDetail({
             ))}
           </ol>
         )}
-        <p className="hint">
-          ⓘ This is <code>_initiator</code> from the HAR. Outside DevTools these lines do not exist —
-          no extension API returns them, which is why the card says “type only”.
-        </p>
+        <p className="hint">{t('initiatorHarNote')}</p>
       </div>
     </section>
   );

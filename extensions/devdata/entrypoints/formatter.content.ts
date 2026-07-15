@@ -1,5 +1,8 @@
 import { defineContentScript } from '#imports';
 import { browser } from 'wxt/browser';
+import type { Locale } from '@blur/ui';
+import { localeItem } from '../utils/storage';
+import { tAt } from '../utils/i18n';
 
 // The in-page JSON viewer (design §2.12, §4.3).
 //
@@ -48,6 +51,13 @@ export default defineContentScript({
 
     let original: string | null = null;
     let host: HTMLElement | null = null;
+    // The viewer is a non-React surface: read the persisted UI language directly
+    // (default English). Rendering is triggered asynchronously (a message or the
+    // background's auto reply), so by the time we build the UI this has resolved.
+    let locale: Locale = 'en';
+    void localeItem.getValue().then((l) => {
+      locale = l;
+    });
 
     const contentType = (document.contentType || '').toLowerCase();
 
@@ -76,7 +86,7 @@ export default defineContentScript({
     ): { status: 'formatted' | 'not-json'; contentType: string } => {
       if (host) return { status: 'formatted', contentType };
       if (!isJsonPage(maxSniffBytes))
-        return { status: 'not-json', contentType: contentType || 'неизвестен' };
+        return { status: 'not-json', contentType: contentType || tAt(locale, 'page.unknownType') };
 
       const body = document.body;
       if (!body) return { status: 'not-json', contentType };
@@ -90,7 +100,7 @@ export default defineContentScript({
         return { status: 'not-json', contentType };
       }
 
-      host = buildViewer(text, value, () => restore());
+      host = buildViewer(text, value, () => restore(), locale);
       // Replace, don't append: the raw JSON dump underneath would just be noise.
       body.replaceChildren(host);
       return { status: 'formatted', contentType };
@@ -111,7 +121,13 @@ export default defineContentScript({
       if (type === 'devdata:ping') return Promise.resolve({ ok: true });
       // Explicit action (activeTab): the user asked, so a main-thread parse of a
       // large text/plain body is acceptable — use the full budget, not the sniff cap.
-      if (type === 'devdata:format') return Promise.resolve(render(20_000_000));
+      // Resolve the locale first so the injected viewer is in the right language.
+      if (type === 'devdata:format') {
+        return localeItem.getValue().then((l) => {
+          locale = l;
+          return render(20_000_000);
+        });
+      }
       return undefined;
     });
 
@@ -145,7 +161,12 @@ export default defineContentScript({
 
 /* ------------------------------ the viewer -------------------------------- */
 
-function buildViewer(raw: string, value: unknown, onClose: () => void): HTMLElement {
+function buildViewer(
+  raw: string,
+  value: unknown,
+  onClose: () => void,
+  locale: Locale,
+): HTMLElement {
   const root = document.createElement('div');
   root.setAttribute('data-devdata-viewer', '');
   root.style.cssText = [
@@ -177,7 +198,7 @@ function buildViewer(raw: string, value: unknown, onClose: () => void): HTMLElem
   ].join(';');
 
   const label = document.createElement('strong');
-  label.textContent = '▣ Отформатировано расширением';
+  label.textContent = tAt(locale, 'page.formattedLabel');
   bar.appendChild(label);
 
   const spacer = document.createElement('span');
@@ -190,26 +211,28 @@ function buildViewer(raw: string, value: unknown, onClose: () => void): HTMLElem
   rawPane.style.cssText = 'margin:0;padding:12px;white-space:pre-wrap;word-break:break-word';
   rawPane.hidden = true;
 
-  const treeBtn = button('Дерево', () => {
+  const treeBtn = button(tAt(locale, 'page.tree'), () => {
     treePane.hidden = false;
     rawPane.hidden = true;
   });
-  const rawBtn = button('Сырой текст', () => {
+  const rawBtn = button(tAt(locale, 'page.raw'), () => {
     treePane.hidden = true;
     rawPane.hidden = false;
   });
-  const openBtn = button('Открыть в инструменте', () => {
+  const openBtn = button(tAt(locale, 'page.openInTool'), () => {
     browser.runtime
       .sendMessage({ type: 'openTool', route: 'data' })
       .catch(() => undefined);
   });
-  const closeBtn = button('✕ Вернуть документ', onClose);
+  const closeBtn = button(tAt(locale, 'page.restore'), onClose);
   for (const b of [treeBtn, rawBtn, openBtn, closeBtn]) bar.appendChild(b);
 
   treePane.style.cssText = 'padding: 8px 12px';
   if (raw.length > MAX_TREE_BYTES) {
     const note = document.createElement('p');
-    note.textContent = `Документ ${Math.round(raw.length / 1_000_000)} МБ — дерево на самой странице не строится (это подвесило бы вкладку). Показан сырой текст; полноценное дерево — в инструменте.`;
+    note.textContent = tAt(locale, 'page.bigDocNote', {
+      mb: Math.round(raw.length / 1_000_000),
+    });
     note.style.cssText = 'font-family: system-ui, sans-serif; font-size: 12px';
     treePane.appendChild(note);
     treePane.hidden = true;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@blur/ui';
 import { snapshotsFor, type UsageInfo } from '../utils/storage';
 import { countText } from '../utils/counter';
+import { useT, type MsgKey } from '../utils/i18n';
 import type { Draft, Snapshot } from '../utils/types';
 
 // Drafts + snapshots (design §2.10). This is the safety net that makes every
@@ -14,6 +15,15 @@ import type { Draft, Snapshot } from '../utils/types';
 // back out of.
 //
 // Export is `<a download>` on a Blob — no `downloads` permission (design §11).
+
+type T = (key: MsgKey, vars?: Record<string, string | number>) => string;
+
+const REASON_KEY: Record<Snapshot['reason'], MsgKey> = {
+  autosave: 'reason_autosave',
+  manual: 'reason_manual',
+  'pre-destructive': 'reason_predestructive',
+  created: 'reason_created',
+};
 
 export function HistoryDialog({
   dialogRef,
@@ -36,6 +46,7 @@ export function HistoryDialog({
   onRestore: (body: string) => void;
   onRefreshUsage: () => void;
 }) {
+  const t = useT();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -63,11 +74,11 @@ export function HistoryDialog({
   return (
     <dialog ref={dialogRef} className="cw-dialog cw-dialog--wide" aria-labelledby="cw-hist-title">
       <header className="cw-dialog__head">
-        <h2 id="cw-hist-title">История</h2>
+        <h2 id="cw-hist-title">{t('history_title')}</h2>
         <button
           type="button"
           className="cw-tool cw-tool--inline"
-          aria-label="Закрыть"
+          aria-label={t('close')}
           onClick={() => dialogRef.current?.close()}
         >
           ✕
@@ -76,14 +87,14 @@ export function HistoryDialog({
 
       <div className="cw-hist">
         <section className="cw-hist__col">
-          <h3>Черновики ({drafts.length})</h3>
+          <h3>{t('history_drafts', { n: drafts.length })}</h3>
           <ul className="cw-hist__list">
             {drafts.map((d) => (
               <li key={d.id} className={d.id === activeId ? 'cw-hist__item cw-hist__item--active' : 'cw-hist__item'}>
                 <button type="button" className="cw-menu-item" onClick={() => onSelect(d.id)}>
                   {d.id === activeId ? '● ' : ''}
-                  {d.title || '(без имени)'}
-                  <span className="cw-hint"> · {ago(d.updatedAt)} · {countText(d.body).graphemes} симв</span>
+                  {d.title || t('draft_untitled')}
+                  <span className="cw-hint"> · {ago(d.updatedAt, t)} · {t('history_chars', { n: countText(d.body).graphemes })}</span>
                 </button>
                 {confirmDelete === d.id ? (
                   <span className="cw-hist__confirm">
@@ -95,18 +106,18 @@ export function HistoryDialog({
                         setConfirmDelete(null);
                       }}
                     >
-                      Удалить навсегда
+                      {t('delete_forever')}
                     </button>
                     <button type="button" className="cw-linklike" onClick={() => setConfirmDelete(null)}>
-                      Отмена
+                      {t('cancel')}
                     </button>
                   </span>
                 ) : (
                   <button
                     type="button"
                     className="cw-tool cw-tool--inline"
-                    title={`Удалить «${d.title}»`}
-                    aria-label={`Удалить черновик ${d.title}`}
+                    title={t('delete_draft_title', { title: d.title })}
+                    aria-label={t('delete_draft_aria', { title: d.title })}
                     onClick={() => setConfirmDelete(d.id)}
                   >
                     🗑
@@ -116,25 +127,25 @@ export function HistoryDialog({
             ))}
           </ul>
           <div className="cw-actions">
-            <Button onClick={onNew}>＋ Новый</Button>
+            <Button onClick={onNew}>{t('btn_new')}</Button>
             {active && (
-              <Button onClick={() => downloadMarkdown(active)}>Экспорт .md</Button>
+              <Button onClick={() => downloadMarkdown(active)}>{t('btn_export_md')}</Button>
             )}
           </div>
         </section>
 
         <section className="cw-hist__col">
-          <h3>Снимки: «{active?.title ?? '—'}»</h3>
-          {snapshots.length === 0 && <p className="cw-hint">Снимков пока нет.</p>}
+          <h3>{t('history_snapshots', { title: active?.title ?? '—' })}</h3>
+          {snapshots.length === 0 && <p className="cw-hint">{t('history_no_snapshots')}</p>}
           <ul className="cw-hist__list">
             {snapshots.map((s) => (
               <li key={s.id} className="cw-hist__item">
                 <span>
                   {s.reason === 'pre-destructive' ? '⚑ ' : '○ '}
                   {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                  {REASON[s.reason]}
+                  {t(REASON_KEY[s.reason])}
                   {s.label ? ` — ${s.label}` : ''}
-                  <span className="cw-hint"> · {countText(s.body).graphemes} симв</span>
+                  <span className="cw-hint"> · {t('history_chars', { n: countText(s.body).graphemes })}</span>
                 </span>
                 <button
                   type="button"
@@ -144,41 +155,35 @@ export function HistoryDialog({
                     dialogRef.current?.close();
                   }}
                 >
-                  Восстановить
+                  {t('btn_restore')}
                 </button>
               </li>
             ))}
           </ul>
-          <p className="cw-hint">
-            ⚠️ Восстановление перезапишет текущий текст. Текущий сохранится снимком — откатить можно.
-          </p>
+          <p className="cw-hint">{t('history_restore_warn')}</p>
         </section>
       </div>
 
       {usage && (
         <p className="cw-hint">
-          Занято {(usage.bytes / 1024 / 1024).toFixed(2)} МБ из {(usage.quota / 1024 / 1024).toFixed(0)} МБ
-          (storage.local){usage.estimated ? ', оценка' : ''}.
+          {t('history_usage', {
+            used: (usage.bytes / 1024 / 1024).toFixed(2),
+            quota: (usage.quota / 1024 / 1024).toFixed(0),
+            estimated: usage.estimated ? t('history_usage_estimate') : '',
+          })}
         </p>
       )}
     </dialog>
   );
 }
 
-const REASON: Record<Snapshot['reason'], string> = {
-  autosave: 'автосейв',
-  manual: 'вручную',
-  'pre-destructive': 'перед изменением',
-  created: 'создан',
-};
-
-function ago(at: number): string {
+function ago(at: number, t: T): string {
   const min = Math.round((Date.now() - at) / 60000);
-  if (min < 1) return 'только что';
-  if (min < 60) return `${min} мин`;
+  if (min < 1) return t('ago_now');
+  if (min < 60) return t('ago_min', { n: min });
   const h = Math.round(min / 60);
-  if (h < 24) return `${h} ч`;
-  return `${Math.round(h / 24)} дн`;
+  if (h < 24) return t('ago_hour', { n: h });
+  return t('ago_day', { n: Math.round(h / 24) });
 }
 
 /** Export without the `downloads` permission: a Blob URL on an <a download>. */

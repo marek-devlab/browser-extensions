@@ -4,5 +4,6 @@
 // separately: `import '@blur/ui/tokens.css'` (+ optionally `/components.css`).
 
 export * from './theme';
+export * from './i18n';
 export * from './components';
 export * from './mock';

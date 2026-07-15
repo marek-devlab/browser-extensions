@@ -1,4 +1,5 @@
 import type { RegexMatch, RegexRequest, RegexResponse } from './regex.worker';
+import type { MsgKey } from './i18n';
 
 // Main-thread side of the regex worker (design §2.5, §5.3, §8.1).
 //
@@ -59,7 +60,9 @@ function spawn(): Worker | null {
       inflight = null;
       if (pending) {
         clearTimeout(pending.timer);
-        pending.settle({ status: 'error', message: ev.message || 'Ошибка воркера' });
+        // A raw browser message passes through the UI translator unchanged; our
+        // own fallback is an i18n key.
+        pending.settle({ status: 'error', message: ev.message || 'regex_err_worker' });
       }
       recycle();
     });
@@ -93,7 +96,7 @@ export function runRegex(
 
     worker ??= spawn();
     if (!worker) {
-      resolve({ status: 'error', message: 'Web Worker недоступен — поиск отключён.' });
+      resolve({ status: 'error', message: 'regex_err_no_worker' });
       return;
     }
 
@@ -129,25 +132,22 @@ export function disposeRegex(): void {
 }
 
 /**
- * Turn the engine's `SyntaxError.message` into something a human can act on —
+ * Map the engine's `SyntaxError.message` to an i18n KEY the UI translates —
  * while the ORIGINAL is always shown in a <details> next to it, because a
  * translated-but-wrong message would be lying (design §5.4).
  */
-function humanize(message: string): string {
+function humanize(message: string): MsgKey {
   const m = message.toLowerCase();
-  if (m.includes('unterminated group') || m.includes('unmatched'))
-    return 'Неверный шаблон: не закрыта скобка «(».';
-  if (m.includes('unterminated character class'))
-    return 'Неверный шаблон: не закрыта квадратная скобка «[».';
-  if (m.includes('nothing to repeat'))
-    return 'Неверный шаблон: квантификатор (*, +, ?) стоит не после символа.';
-  if (m.includes('invalid group')) return 'Неверный шаблон: некорректная группа.';
+  if (m.includes('unterminated group') || m.includes('unmatched')) return 'regex_err_group';
+  if (m.includes('unterminated character class')) return 'regex_err_class';
+  if (m.includes('nothing to repeat')) return 'regex_err_repeat';
+  if (m.includes('invalid group')) return 'regex_err_invalid_group';
   if (m.includes('invalid escape') || m.includes('invalid identity escape'))
-    return 'Неверный шаблон: недопустимая escape-последовательность.';
+    return 'regex_err_escape';
   if (m.includes('invalid flags') || m.includes('invalid regular expression flags'))
-    return 'Неверные флаги регулярного выражения.';
-  if (m.includes('range out of order')) return 'Неверный шаблон: диапазон в […] задом наперёд.';
-  return 'Неверный шаблон регулярного выражения.';
+    return 'regex_err_flags';
+  if (m.includes('range out of order')) return 'regex_err_range';
+  return 'regex_err_generic';
 }
 
 /**

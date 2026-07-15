@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocale, type Locale } from '@blur/ui';
+import { tAt } from './i18n';
 import {
   HARD_MAX_BYTES,
   parseDocument,
@@ -59,6 +61,11 @@ export function useDocument(prefs: DevdataPrefs | null): DocApi {
   const job = useRef<RunningJob<ParsedDoc> | null>(null);
   const prefsRef = useRef<DevdataPrefs | null>(prefs);
   prefsRef.current = prefs;
+  // Keep the current locale in a ref so the stable `run`/`load`/`persist`
+  // callbacks read the live value without being re-created on every switch.
+  const locale = useLocale();
+  const localeRef = useRef<Locale>(locale);
+  localeRef.current = locale;
 
   // Cancel any in-flight parse when the tool page goes away: an orphaned worker
   // chewing on 50 MB would keep the tab hot for nothing.
@@ -74,13 +81,16 @@ export function useDocument(prefs: DevdataPrefs | null): DocApi {
         autodetected,
         name,
         prefs: current,
+        locale: localeRef.current,
       });
       job.current = running;
 
       const bytes = text.length;
       setState({
         phase: 'loading',
-        label: `Разбираем ${formatBytes(bytes)}…`,
+        label: tAt(localeRef.current, 'doc.parsing', {
+          size: formatBytes(bytes, localeRef.current),
+        }),
         cancel: () => {
           running.cancel();
           setState({ phase: 'empty' });
@@ -92,7 +102,7 @@ export function useDocument(prefs: DevdataPrefs | null): DocApi {
           if (job.current !== running) return;
           job.current = null;
           setState({ phase: 'ready', doc });
-          void persist(doc, current, setSaveNote);
+          void persist(doc, current, setSaveNote, localeRef.current);
         },
         (err: unknown) => {
           if (job.current !== running) return;
@@ -141,7 +151,10 @@ export function useDocument(prefs: DevdataPrefs | null): DocApi {
           phase: 'fatal',
           reason: 'unknown',
           text: '',
-          message: `Документ ${formatBytes(bytes)}. Это больше, чем расширение может разобрать в браузере (предел — ${formatBytes(HARD_MAX_BYTES)}).`,
+          message: tAt(localeRef.current, 'doc.tooBig', {
+            size: formatBytes(bytes, localeRef.current),
+            limit: formatBytes(HARD_MAX_BYTES, localeRef.current),
+          }),
         });
         return;
       }
@@ -248,6 +261,7 @@ async function persist(
   doc: ParsedDoc,
   prefs: DevdataPrefs,
   setNote: (note: string | null) => void,
+  locale: Locale,
 ): Promise<void> {
   const outcome = await saveDocument(
     {
@@ -266,18 +280,19 @@ async function persist(
       return;
     case 'skipped-too-big':
       setNote(
-        `Документ ${formatBytes(outcome.bytes)} — больше ${formatBytes(MAX_PERSIST_BYTES)} мы не сохраняем. После перезагрузки его придётся открыть заново.`,
+        tAt(locale, 'doc.saveTooBig', {
+          size: formatBytes(outcome.bytes, locale),
+          max: formatBytes(MAX_PERSIST_BYTES, locale),
+        }),
       );
       return;
     case 'failed':
-      setNote(
-        `Не удалось сохранить документ: хранилище браузера заполнено (${outcome.message}). Работа продолжается, но документ не восстановится после перезагрузки.`,
-      );
+      setNote(tAt(locale, 'doc.saveFailed', { message: outcome.message }));
   }
 }
 
-export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} Б`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
-  return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+export function formatBytes(n: number, locale: Locale): string {
+  if (n < 1024) return tAt(locale, 'unit.bytes', { n });
+  if (n < 1024 * 1024) return tAt(locale, 'unit.kb', { n: (n / 1024).toFixed(1) });
+  return tAt(locale, 'unit.mb', { n: (n / 1024 / 1024).toFixed(1) });
 }

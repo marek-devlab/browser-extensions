@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Callout, Spinner } from '@blur/ui';
+import { Button, Callout, Spinner, useLocale } from '@blur/ui';
 import { clipBlob, deleteClip, getBlob } from '../../utils/db';
 import { newRegionId } from '../../utils/edit-store';
 import {
@@ -9,6 +9,7 @@ import {
   type Composite,
 } from '../../utils/encode';
 import { expandTemplate, formatBytes } from '../../utils/format';
+import { useT } from '../../utils/i18n';
 import { saveBlob } from '../../utils/save';
 import { LOGO_BLOB_KEY } from '../../utils/storage';
 import { usePrefs } from '../../utils/use-prefs';
@@ -32,6 +33,8 @@ import type { Clip, RedactionMode, RedactionRegion, ScreenshotFormat } from '../
 // cannot occur here at all.
 
 export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void }) {
+  const t = useT();
+  const locale = useLocale();
   const { prefs, update } = usePrefs();
   const [bitmap, setBitmap] = useState<ImageBitmap | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -141,11 +144,7 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
         quality: 'quality' in out ? (out as { quality: number }).quality : undefined,
       });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Не удалось сохранить. Исходный снимок остался в библиотеке.',
-      );
+      setError(err instanceof Error ? err.message : t('shot_save_fail'));
     } finally {
       setBusy(false);
     }
@@ -153,18 +152,18 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
 
   if (error && !bitmap) {
     return (
-      <Callout tone="warn" title="Не удалось открыть снимок">
+      <Callout tone="warn" title={t('shot_open_fail')}>
         {error}
       </Callout>
     );
   }
-  if (!bitmap || !url) return <Spinner label="Открываем снимок…" />;
+  if (!bitmap || !url) return <Spinner label={t('shot_opening')} />;
 
   return (
     <div className="shot">
       <header className="ed-head">
         <h2>{clip.title}</h2>
-        <button type="button" className="icon-btn" aria-label="Закрыть" onClick={onClose}>
+        <button type="button" className="icon-btn" aria-label={t('shot_close_aria')} onClick={onClose}>
           ✕
         </button>
       </header>
@@ -174,30 +173,30 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
           {/* GROUP 1 — protection. Fill is preselected, so someone looking for
               "how do I cover this password" cannot physically miss it (§7.2). */}
           <div className="tool-group">
-            <h4>🔒 Скрыть данные</h4>
+            <h4>{t('ed_hide_group')}</h4>
             <label className="radio-inline">
               <input type="radio" checked={mode === 'fill'} onChange={() => setMode('fill')} />
-              Заливка
+              {t('label_fill')}
             </label>
             <p className="muted">
-              Непрозрачный прямоугольник. Пиксели под ним <strong>удаляются</strong> и
-              заменяются цветом — восстановить их из файла невозможно. В файл не пишется ни
-              слоя, ни метаданных о заливке: только результат.
+              {t('shot_fill_desc_1')}
+              <strong>{t('ed_fill_desc_strong')}</strong>
+              {t('shot_fill_desc_2')}
             </p>
             <input
               type="color"
               value={fillColor}
-              aria-label="Цвет заливки"
+              aria-label={t('ed_fill_color_aria')}
               onChange={(e) => setFillColor(e.target.value)}
             />
           </div>
 
           {/* GROUP 2 — cosmetic. Physically separate; the warning does not fold. */}
           <div className="tool-group tool-group--cosmetic">
-            <h4>⚠ Косметика — НЕ защита</h4>
+            <h4>{t('ed_cosmetic_group')}</h4>
             <label className="radio-inline">
               <input type="radio" checked={mode === 'blur'} onChange={() => setMode('blur')} />
-              Блюр
+              {t('label_blur')}
             </label>
             <label className="radio-inline">
               <input
@@ -205,17 +204,13 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
                 checked={mode === 'pixelate'}
                 onChange={() => setMode('pixelate')}
               />
-              Пикселизация
+              {t('label_pixelate')}
             </label>
             <Callout tone="warn">
-              <strong>Блюр и пиксели ОБРАТИМЫ.</strong> Unredacter и Depix восстанавливают из
-              них текст — пароли и ключи в том числе. Для секретов берите заливку.
+              <strong>{t('shot_cosmetic_warn_strong')}</strong> {t('shot_cosmetic_warn_body')}
               <details>
-                <summary>Почему?</summary>
-                Bishop Fox (Unredacter, 2022) и Depix публично восстанавливали
-                пикселизованный текст перебором; блюр — обратимая свёртка. Прямая
-                рекомендация исследователей: «Never use text pixelation to redact sensitive
-                information».
+                <summary>{t('ed_why')}</summary>
+                {t('shot_cosmetic_why_body')}
               </details>
             </Callout>
           </div>
@@ -249,7 +244,7 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
               setDrawing(null);
             }}
           >
-            <img src={url} alt="Снимок вкладки" className="shot-img" />
+            <img src={url} alt={t('shot_img_alt')} className="shot-img" />
             {[...regions, ...(drawing ? [drawing] : [])].map((r) => (
               <div
                 key={r.id}
@@ -262,27 +257,25 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
                   ...(r.mode === 'fill' ? { background: r.fill } : {}),
                 }}
               >
-                {r.mode !== 'fill' && 'косметика'}
+                {r.mode !== 'fill' && t('cosmetic_tag')}
               </div>
             ))}
           </div>
 
-          <p className="muted">Тяните мышью по снимку, чтобы добавить область.</p>
-          <p className="muted">🔒 Скрыто заливкой: {fills} обл.</p>
+          <p className="muted">{t('shot_draw_hint')}</p>
+          <p className="muted">{t('shot_hidden_fill', { n: fills })}</p>
           {cosmetic > 0 && (
-            <p className="warn-text">
-              ⚠ Размыто (НЕ защита): {cosmetic} обл. — если там секрет, замените на заливку.
-            </p>
+            <p className="warn-text">{t('shot_cosmetic_summary', { n: cosmetic })}</p>
           )}
           {regions.length > 0 && (
             <Button variant="ghost" onClick={() => setRegions([])}>
-              Убрать все области
+              {t('shot_clear_areas')}
             </Button>
           )}
 
           <div className="shot-out">
             <label>
-              Формат
+              {t('shot_format')}
               <select
                 value={format}
                 onChange={(e) => {
@@ -297,18 +290,18 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
               </select>
             </label>
             <label>
-              Масштаб
+              {t('shot_scale')}
               <select value={scale} onChange={(e) => setScale(Number(e.target.value))}>
                 <option value={1}>1× ({bitmap.width}px)</option>
                 <option value={0.5}>0.5× ({Math.round(bitmap.width / 2)}px)</option>
               </select>
             </label>
             <label>
-              Уложиться в
+              {t('shot_fit_in')}
               <input
                 type="number"
                 min={0}
-                placeholder="КБ"
+                placeholder={t('shot_kb_ph')}
                 value={targetKb ?? ''}
                 onChange={(e) => setTargetKb(e.target.value ? Number(e.target.value) : null)}
               />
@@ -316,42 +309,44 @@ export function Screenshot({ clip, onClose }: { clip: Clip; onClose: () => void 
           </div>
           {targetKb && format === 'png' && (
             <Callout tone="warn">
-              PNG — формат <strong>без потерь</strong>: до размера он не сжимается, параметр
-              качества на него не действует. Чтобы уложиться в {targetKb} КБ, перейдите на
-              JPEG или WebP.
+              {t('shot_png_warn_1')}
+              <strong>{t('shot_png_warn_strong')}</strong>
+              {t('shot_png_warn_2', { kb: targetKb })}
             </Callout>
           )}
 
           {/* DPR honesty: the file is in physical pixels (design §6.6, §8). */}
           <p className="muted">
-            ⓘ Файл в физических пикселях экрана: {bitmap.width}×{bitmap.height}. На HiDPI это
-            больше, чем CSS-размер вкладки, — так работает captureVisibleTab, и мы показываем
-            настоящее число.
+            {t('shot_physical_note', { w: bitmap.width, h: bitmap.height })}
           </p>
 
           {error && <Callout tone="warn">{error}</Callout>}
           {saved && (
-            <Callout tone="info" title="Готово">
-              Сохранено: {formatBytes(saved.bytes)}
-              {saved.quality != null && ` (качество ${Math.round(saved.quality * 100)}%)`}.
+            <Callout tone="info" title={t('exp_done_title')}>
+              {t('shot_saved_1', { size: formatBytes(saved.bytes, locale) })}
+              {saved.quality != null &&
+                t('shot_saved_quality', { pct: Math.round(saved.quality * 100) })}
+              {'.'}
               <br />
-              Исходный снимок <strong>с незакрытыми данными</strong> остался в библиотеке.{' '}
+              {t('shot_orig_1')}
+              <strong>{t('exp_source_left_strong')}</strong>
+              {t('shot_orig_2')}
               <button
                 type="button"
                 className="ui-btn ui-btn--sm"
                 onClick={() => void deleteClip(clip.id).then(onClose)}
               >
-                Удалить исходник
+                {t('exp_delete_source')}
               </button>
             </Callout>
           )}
 
           <div className="ed-foot">
             <Button variant="ghost" onClick={() => void save(true)} disabled={busy}>
-              Копировать
+              {t('copy')}
             </Button>
             <Button variant="primary" onClick={() => void save(false)} disabled={busy}>
-              {busy ? 'Сохраняем…' : 'Сохранить'}
+              {busy ? t('shot_saving') : t('save')}
             </Button>
           </div>
         </div>

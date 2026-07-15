@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { browser, storage } from '#imports';
-import { Button, Callout } from '@blur/ui';
+import { Button, Callout, useLocale } from '@blur/ui';
 import { formatBytes, formatDuration } from '../../utils/format';
+import { useT } from '../../utils/i18n';
 import { getLive, isStale, watchLive } from '../../utils/live-state';
 import { openDisplayStream } from '../../utils/media';
 import { isMessage, send, type Message, type Reply, type StartOptions } from '../../utils/messages';
 import { LOW_DISK_BYTES, MIC_CHANNEL, RecordingSession } from '../../utils/session';
+import { CaptureLocaleProvider } from '../../utils/use-locale';
 import { elapsedMs, type LiveState } from '../../utils/types';
 
 // RECORDER WINDOW — a real OS window (windows.create({type:'popup'})), NOT an
@@ -33,6 +35,16 @@ const pendingItem = storage.defineItem<StartOptions | null>('session:pending', {
 });
 
 export function App() {
+  return (
+    <CaptureLocaleProvider>
+      <RecorderApp />
+    </CaptureLocaleProvider>
+  );
+}
+
+function RecorderApp() {
+  const t = useT();
+  const locale = useLocale();
   const [live, setLive] = useState<LiveState | null>(null);
   const [pending, setPending] = useState<StartOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +96,9 @@ export function App() {
       return;
     }
     const mark = paused ? '❚❚' : '●';
-    const state = paused ? 'пауза' : 'запись';
+    const state = paused ? t('rec_title_paused') : t('rec_title_recording');
     document.title = `${mark} ${formatDuration(elapsed)} — ${state} · Capture Studio`;
-  }, [elapsed, paused, recording]);
+  }, [elapsed, paused, recording, t]);
 
   // FIREFOX ONLY: this window owns the stream, so closing it ends the recording.
   // Warn — and note that whatever is already recorded is safe regardless, because
@@ -117,7 +129,7 @@ export function App() {
       if (!msg.type.startsWith('recorder:') || msg.type === 'recorder:focus') return false;
       void (async (): Promise<Reply> => {
         const s = sessionRef.current;
-        if (!s) return { ok: false, error: 'Нет активной записи в этом окне.' };
+        if (!s) return { ok: false, error: 'No active recording in this window.' };
         switch (msg.type) {
           case 'recorder:stop':
             await s.stop('user');
@@ -178,7 +190,7 @@ export function App() {
       const name = err instanceof DOMException ? err.name : '';
       setError(
         name === 'NotAllowedError'
-          ? 'Вы отменили выбор источника. Ничего не записано.'
+          ? t('rec_cancelled_source')
           : err instanceof Error
             ? err.message
             : String(err),
@@ -186,7 +198,7 @@ export function App() {
     } finally {
       setStarting(false);
     }
-  }, [pending, starting]);
+  }, [pending, starting, t]);
 
   // ── Firefox: the pre-start screen (the extra, unavoidable click) ───────────
   if (isFirefox && !recording) {
@@ -194,30 +206,25 @@ export function App() {
       <div className="recorder">
         <h1 className="rec-title">Capture Studio</h1>
         {error && (
-          <Callout tone="warn" title="Запись не началась">
+          <Callout tone="warn" title={t('rec_not_started_title')}>
             {error}
           </Callout>
         )}
         {pending ? (
           <>
             <Button variant="primary" onClick={() => void startFirefox()} disabled={starting}>
-              {starting ? 'Открываем…' : '● Начать запись'}
+              {starting ? t('rec_opening') : t('rec_start_btn')}
             </Button>
-            <p className="note">
-              Firefox сам спросит, что записывать, — своим диалогом. Это его требование
-              безопасности: доступ к экрану выдаётся только по клику на странице, и мы не
-              можем сделать это за вас.
-            </p>
+            <p className="note">{t('rec_ff_note')}</p>
             <Callout tone="warn">
-              <strong>Звук вкладки Firefox записать не может.</strong> Его{' '}
-              <code>getDisplayMedia</code> не отдаёт аудиодорожку вообще — это отсутствующая
-              возможность браузера, а не наша настройка. Доступен только микрофон.
+              <strong>{t('rec_ff_audio_strong')}</strong>
+              {t('rec_ff_audio_1')}
+              <code>getDisplayMedia</code>
+              {t('rec_ff_audio_2')}
             </Callout>
           </>
         ) : (
-          <p className="note">
-            Нет запроса на запись. Откройте popup расширения и нажмите «Открыть окно записи».
-          </p>
+          <p className="note">{t('rec_no_request')}</p>
         )}
       </div>
     );
@@ -229,15 +236,13 @@ export function App() {
       <div className="recorder">
         <h1 className="rec-title">Capture Studio</h1>
         {stale ? (
-          <Callout tone="warn" title="Запись прервалась">
-            Процесс, который вёл запись, перестал отвечать. Записанное до последнего сброса
-            (потеряно не более ~3 секунд) лежит на диске — откройте Библиотеку и
-            восстановите.
+          <Callout tone="warn" title={t('rec_interrupted_title')}>
+            {t('rec_interrupted_body')}
           </Callout>
         ) : (
-          <p className="note">Сейчас ничего не записывается.</p>
+          <p className="note">{t('rec_nothing')}</p>
         )}
-        <Button onClick={() => void openStudio()}>Открыть библиотеку</Button>
+        <Button onClick={() => void openStudio()}>{t('rec_open_library')}</Button>
       </div>
     );
   }
@@ -249,7 +254,7 @@ export function App() {
       <div className="rec-head">
         {/* Never colour alone: the red dot always comes with the WORD (§11.2). */}
         <span className={paused ? 'rec-word rec-word--paused' : 'rec-word'}>
-          {paused ? '❚❚ ПАУЗА' : '● ЗАПИСЬ'}
+          {paused ? t('rec_paused_word') : t('rec_recording_word')}
         </span>
         {/* aria-hidden: a screen reader must not read the seconds forever (§11.2). */}
         <span className="rec-time mono" aria-hidden="true">
@@ -258,21 +263,21 @@ export function App() {
       </div>
       {/* Only STATE CHANGES are announced (design §11.2). */}
       <div className="sr-only" role="status" aria-live="polite">
-        {paused ? 'Запись на паузе' : 'Идёт запись'}
+        {paused ? t('rec_sr_paused') : t('rec_sr_recording')}
       </div>
 
       <hr />
 
       <p className="src mono">
         {live.source === 'screen'
-          ? 'Источник: экран или окно'
+          ? t('rec_source_screen')
           : live.host
-            ? `Вкладка: ${live.host}`
-            : 'Источник: выбран в диалоге браузера'}
+            ? t('rec_source_tab', { host: live.host })
+            : t('rec_source_dialog')}
       </p>
       <p className="specs mono">
-        {live.width}×{live.height} · {live.fps} к/с · {live.format.toUpperCase()}
-        {isFirefox ? ' · без звука вкладки' : ''}
+        {live.width}×{live.height} · {t('fps_value', { n: live.fps })} · {live.format.toUpperCase()}
+        {isFirefox ? t('rec_specs_no_tab_audio') : ''}
       </p>
 
       {live.mic ? (
@@ -289,23 +294,18 @@ export function App() {
             className="mini-btn"
             onClick={() => void send({ type: 'capture:mute', muted: !live.micMuted })}
           >
-            {live.micMuted ? 'Включить микрофон' : 'Мьют'}
+            {live.micMuted ? t('rec_mic_unmute') : t('rec_mic_mute')}
           </button>
         </div>
       ) : (
-        <p className="mono muted">🎤 Микрофон выключен</p>
+        <p className="mono muted">{t('rec_mic_off')}</p>
       )}
 
       <p className="disk mono">
-        💾 {formatBytes(live.bytesOnDisk)} записано
-        {live.freeBytes != null && <> · свободно ≈ {formatBytes(live.freeBytes)}</>}
+        {t('rec_recorded', { size: formatBytes(live.bytesOnDisk, locale) })}
+        {live.freeBytes != null && t('rec_free', { size: formatBytes(live.freeBytes, locale) })}
       </p>
-      {lowDisk && (
-        <Callout tone="warn">
-          Место заканчивается. Когда оно кончится, запись остановится сама и записанное
-          сохранится — но лучше остановить заранее.
-        </Callout>
-      )}
+      {lowDisk && <Callout tone="warn">{t('rec_low_disk')}</Callout>}
 
       <div className="controls">
         <button
@@ -313,14 +313,14 @@ export function App() {
           className="ctl"
           onClick={() => void send({ type: paused ? 'capture:resume' : 'capture:pause' })}
         >
-          {paused ? '▶ Продолжить' : '❚❚ Пауза'}
+          {paused ? t('pop_resume') : t('pop_pause')}
         </button>
         <button
           type="button"
           className="ctl ctl--stop"
           onClick={() => void send({ type: 'capture:stop' })}
         >
-          ■ Стоп
+          {t('pop_stop')}
         </button>
         <button
           type="button"
@@ -333,27 +333,20 @@ export function App() {
           }}
           onBlur={() => setCancelArmed(false)}
         >
-          {cancelArmed ? `Точно удалить ${formatDuration(elapsed)}?` : '✕ Отменить'}
+          {cancelArmed ? t('rec_cancel_confirm', { dur: formatDuration(elapsed) }) : t('rec_cancel')}
         </button>
       </div>
       <p className="keys mono">Alt+Shift+P · Alt+Shift+S</p>
 
       {isFirefox ? (
         <Callout tone="warn">
-          <strong>Не закрывайте это окно</strong> — запись живёт здесь. Если закрыть, она
-          остановится, но записанное сохранится. Firefox также показывает свой индикатор «вы
-          делитесь экраном»; его «Прекратить» — тоже штатный «Стоп», а не ошибка.
+          <strong>{t('rec_ff_dont_close_strong')}</strong>
+          {t('rec_ff_dont_close_body')}
         </Callout>
       ) : (
-        <p className="note">
-          Это окно можно закрыть — запись продолжится (она живёт в невидимом
-          offscreen-документе). Остановить: Alt+Shift+S или клик по иконке расширения.
-        </p>
+        <p className="note">{t('rec_chrome_note')}</p>
       )}
-      <p className="note muted">
-        Не сворачивайте записываемую вкладку — перекрытую вкладку браузер может
-        отрисовывать реже, и в записи это будет видно.
-      </p>
+      <p className="note muted">{t('rec_dont_minimize')}</p>
     </div>
   );
 }

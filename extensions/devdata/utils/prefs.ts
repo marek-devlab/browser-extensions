@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { applyTheme, cacheTheme } from '@blur/ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { applyTheme, cacheTheme, useLocale, type Locale } from '@blur/ui';
+import { tAt } from './i18n';
 import { DEFAULT_PREFS, prefsItem, type DevdataPrefs } from './storage';
 
 // The localStorage seed key for the anti-FOUC theme stamp. Unique per extension;
@@ -45,6 +46,9 @@ export function usePrefs(): PrefsApi {
   const [prefs, setPrefs] = useState<DevdataPrefs | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // Locale for error copy, via a ref so the stable `update` callback stays stable.
+  const localeRef = useRef<Locale>('en');
+  localeRef.current = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -62,7 +66,9 @@ export function usePrefs(): PrefsApi {
         // Never render defaults as if they were the user's settings — the first
         // click would then persist them over the real ones.
         setError(
-          `Не удалось прочитать настройки: ${err instanceof Error ? err.message : String(err)}`,
+          tAt(localeRef.current, 'prefs.readFail', {
+            message: err instanceof Error ? err.message : String(err),
+          }),
         );
       });
     return () => {
@@ -90,9 +96,7 @@ export function usePrefs(): PrefsApi {
             // if this ever trips, it is a bug, and we would rather know than
             // shred the item (PLAN.md §18a).
             if (JSON.stringify(merged).length > 4096) {
-              throw new Error(
-                'Объект настроек неожиданно велик — запись отменена, чтобы не упереться в лимит storage.sync (8 КБ на элемент).',
-              );
+              throw new Error(tAt(localeRef.current, 'prefs.tooBig'));
             }
             await prefsItem.setValue(merged);
           }),
@@ -101,7 +105,9 @@ export function usePrefs(): PrefsApi {
           () => setError(null),
           (err: unknown) =>
             setError(
-              `Не удалось сохранить настройку: ${err instanceof Error ? err.message : String(err)}`,
+              tAt(localeRef.current, 'prefs.saveFail', {
+                message: err instanceof Error ? err.message : String(err),
+              }),
             ),
         );
 

@@ -7,7 +7,8 @@ import {
   type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { Badge, Button, Callout, Spinner } from '@blur/ui';
+import { Badge, Button, Callout, Spinner, useLocale, type Locale } from '@blur/ui';
+import { useT, nfmt, type MsgKey } from '../../../utils/i18n';
 import {
   childrenOf,
   expandToDepth,
@@ -90,9 +91,11 @@ export function DataTab({
   prefs: DevdataPrefs | null;
   doc: DocApi;
   onOpenJwt: (token: string) => void;
-  /** A JSONPath the Schema tab asked us to reveal ("Показать в данных"). */
+  /** A JSONPath the Schema tab asked us to reveal ("Show in data"). */
   revealPath?: string | null;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [dragging, setDragging] = useState(false);
   const [fileNote, setFileNote] = useState<string | null>(null);
 
@@ -102,9 +105,9 @@ export function DataTab({
       setDragging(false);
       const files = Array.from(event.dataTransfer.files);
       if (files.length === 0) return;
-      void openFile(files, doc, setFileNote);
+      void openFile(files, doc, setFileNote, t, locale);
     },
-    [doc],
+    [doc, t, locale],
   );
 
   return (
@@ -124,14 +127,15 @@ export function DataTab({
     >
       {dragging && (
         <div className="dropoverlay" aria-hidden="true">
-          Отпустите файл — разберём его здесь
+          {t('data.dropOverlay')}
         </div>
       )}
 
       {doc.jwtOffer !== null && (
-        <Callout tone="warn" title="Похоже на JWT, а не на документ">
-          Это три сегмента base64url с заголовком, где есть <span className="mono">alg</span>.
-          JWT — это учётные данные, и у него отдельный таб с отдельной рамкой безопасности.
+        <Callout tone="warn" title={t('data.jwtOfferTitle')}>
+          {t('data.jwtOfferBody1')}
+          <span className="mono">alg</span>
+          {t('data.jwtOfferBody2')}
           <div className="row row--gap">
             <Button
               variant="primary"
@@ -141,22 +145,24 @@ export function DataTab({
                 if (token) onOpenJwt(token);
               }}
             >
-              Открыть в табе JWT
+              {t('data.openInJwtTab')}
             </Button>
-            <Button onClick={doc.dismissJwtOffer}>Не открывать</Button>
+            <Button onClick={doc.dismissJwtOffer}>{t('data.dontOpen')}</Button>
           </div>
         </Callout>
       )}
 
       {doc.oversize !== null && (
-        <Callout tone="warn" title={`Файл ${formatBytes(doc.oversize.bytes)}`}>
-          Инструмент рассчитан на {formatBytes(SOFT_MAX_BYTES)}. Может подвиснуть на десятки
-          секунд или упасть по памяти. Открыть всё равно?
+        <Callout
+          tone="warn"
+          title={t('data.oversizeTitle', { size: formatBytes(doc.oversize.bytes, locale) })}
+        >
+          {t('data.oversizeBody', { soft: formatBytes(SOFT_MAX_BYTES, locale) })}
           <div className="row row--gap">
             <Button variant="primary" onClick={doc.confirmOversize}>
-              Открыть
+              {t('common.open')}
             </Button>
-            <Button onClick={doc.cancelOversize}>Отмена</Button>
+            <Button onClick={doc.cancelOversize}>{t('common.cancel')}</Button>
           </div>
         </Callout>
       )}
@@ -197,20 +203,23 @@ async function openFile(
   files: File[],
   doc: DocApi,
   setNote: (n: string | null) => void,
+  t: (k: MsgKey, v?: Record<string, string | number>) => string,
+  locale: Locale,
 ): Promise<void> {
   const file = files[0];
   if (!file) return;
   if (files.length > 1) {
     // Silently taking the first of ten is also a lie (design §4.2).
-    setNote(
-      `Открыт «${file.name}». Инструмент работает с одним документом за раз — остальные ${files.length - 1} файл(ов) пропущены.`,
-    );
+    setNote(t('data.openFileMulti', { name: file.name, count: files.length - 1 }));
   } else {
     setNote(null);
   }
   if (file.size > HARD_MAX_BYTES) {
     setNote(
-      `Файл ${formatBytes(file.size)}. Это больше, чем расширение может разобрать в браузере (предел — ${formatBytes(HARD_MAX_BYTES)}).`,
+      t('data.fileTooBig', {
+        size: formatBytes(file.size, locale),
+        limit: formatBytes(HARD_MAX_BYTES, locale),
+      }),
     );
     return;
   }
@@ -220,9 +229,7 @@ async function openFile(
     // JSON parses as JSON (design §4.2).
     doc.load(text, { name: file.name, format: formatFromName(file.name) });
   } catch (err) {
-    setNote(
-      `Файл не прочитан: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    setNote(t('data.fileReadFail', { error: err instanceof Error ? err.message : String(err) }));
   }
 }
 
@@ -260,13 +267,15 @@ function EmptyView({
   doc: DocApi;
   onFileNote: (n: string | null) => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const input = useRef<HTMLInputElement>(null);
   return (
     <div className="empty">
       <div className="dropzone">
-        <p className="dropzone__title">Перетащите файл сюда или вставьте текст (⌘/Ctrl+V)</p>
+        <p className="dropzone__title">{t('data.dropTitle')}</p>
         <Button variant="primary" onClick={() => input.current?.click()}>
-          Выбрать файл…
+          {t('data.chooseFile')}
         </Button>
         <input
           ref={input}
@@ -274,18 +283,17 @@ function EmptyView({
           hidden
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
-            void openFile(files, doc, onFileNote);
+            void openFile(files, doc, onFileNote, t, locale);
             e.target.value = '';
           }}
         />
         <p className="dropzone__formats mono">JSON · JSON5 · JSONC · YAML · XML · CSV · JWT</p>
       </div>
       <p className="empty__note">
-        Формат определяется сам. До {formatBytes(SOFT_MAX_BYTES)}. Всё считается локально:
-        ни один байт не покидает браузер.
+        {t('data.emptyNote', { soft: formatBytes(SOFT_MAX_BYTES, locale) })}
       </p>
       <div className="row row--gap">
-        <span className="empty__examplelabel">Примеры:</span>
+        <span className="empty__examplelabel">{t('data.examples')}</span>
         <button className="chip" type="button" onClick={() => doc.load(EXAMPLE_JSON, { format: 'json' })}>
           JSON
         </button>
@@ -304,22 +312,21 @@ function EmptyView({
 }
 
 function LoadingView({ label, onCancel }: { label: string; onCancel: () => void }) {
+  const t = useT();
   return (
     <div className="loading" role="status" aria-live="polite">
       <Spinner label={label} />
       {/* No fabricated percentage. We do not know how far a parser has got, and
           inventing "87%" is exactly the fake-number bug the house rules exist to
           prevent (design §5.1). */}
-      <p className="fine">
-        Разбор идёт в фоновом потоке — вкладка не заморожена. Отмена действительно останавливает
-        поток.
-      </p>
-      <Button onClick={onCancel}>Отменить</Button>
+      <p className="fine">{t('data.loadingNote')}</p>
+      <Button onClick={onCancel}>{t('data.cancelParse')}</Button>
     </div>
   );
 }
 
 function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
+  const t = useT();
   const from = Math.max(0, failure.line - 3);
   const window = useMemo(() => {
     // Bounded slice: NEVER split the whole document (it can be 40 MB) just to
@@ -353,8 +360,8 @@ function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
   return (
     <div className="parse-error">
       <p className="parse-error__status" role="alert">
-        <Badge severity="poor">✗ Ошибка разбора</Badge> строка {failure.line}, столбец{' '}
-        {failure.column}
+        <Badge severity="poor">{t('data.parseErrorBadge')}</Badge>{' '}
+        {t('data.lineColumn', { line: failure.line, column: failure.column })}
       </p>
 
       <pre className="mono errbox">
@@ -363,7 +370,7 @@ function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
             const n = from + i + 1;
             const marker =
               n === failure.line
-                ? `\n${' '.repeat(String(n).length + 2 + failure.column - 1)}^ строка ${failure.line}, столбец ${failure.column}`
+                ? `\n${' '.repeat(String(n).length + 2 + failure.column - 1)}^ ${t('data.lineColumn', { line: failure.line, column: failure.column })}`
                 : '';
             return `${String(n).padStart(4, ' ')}  ${line}${marker}`;
           })
@@ -374,7 +381,7 @@ function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
 
       {failure.suggestions.length > 0 && (
         <>
-          <p className="fine">Варианты:</p>
+          <p className="fine">{t('data.suggestions')}</p>
           <div className="row row--gap">
             {failure.suggestions.map((s) => (
               <Button key={s.id} onClick={() => doc.reparseAs(s.id)}>
@@ -387,11 +394,8 @@ function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
 
       {failure.partial && failure.partial.length > 0 && (
         <section className="partial">
-          <h2 className="ui-section-heading">Разобрано до ошибки</h2>
-          <p className="fine">
-            Показана часть документа, которую удалось разобрать. Пустой экран из-за одной запятой
-            в 40 МБ — это жестоко.
-          </p>
+          <h2 className="ui-section-heading">{t('data.parsedUpToError')}</h2>
+          <p className="fine">{t('data.parsedUpToErrorNote')}</p>
           <ul className="partial__list mono">
             {failure.partial.slice(0, 40).map((node, i) => (
               <li key={i} style={{ paddingLeft: `${node.depth * 14}px` }}>
@@ -403,7 +407,7 @@ function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
       )}
 
       <div className="row row--gap">
-        <Button onClick={doc.reset}>Начать заново</Button>
+        <Button onClick={doc.reset}>{t('data.startOver')}</Button>
       </div>
     </div>
   );
@@ -420,23 +424,19 @@ function FatalView({
   onText: (text: string) => void;
   onReset: () => void;
 }) {
+  const t = useT();
   return (
     <div className="parse-error">
       <p className="parse-error__status" role="alert">
-        <Badge severity="poor">✗ Разбор не завершён</Badge>
+        <Badge severity="poor">{t('data.fatalBadge')}</Badge>
       </p>
       <p className="parse-error__msg">{message}</p>
-      <p className="fine">Что можно сделать:</p>
+      <p className="fine">{t('data.whatToDo')}</p>
       <div className="row row--gap">
-        {text !== '' && (
-          <Button onClick={() => onText(text)}>Повторить</Button>
-        )}
-        <Button onClick={onReset}>Открыть другой документ</Button>
+        {text !== '' && <Button onClick={() => onText(text)}>{t('common.retry')}</Button>}
+        <Button onClick={onReset}>{t('data.openAnother')}</Button>
       </div>
-      <Callout tone="info">
-        Это ограничение вкладки (памяти или времени), а не ошибка документа. Закрытие других
-        вкладок иногда действительно помогает — браузер выделяет память на вкладку.
-      </Callout>
+      <Callout tone="info">{t('data.fatalNote')}</Callout>
     </div>
   );
 }
@@ -454,6 +454,8 @@ function Ready({
   prefs: DevdataPrefs;
   revealPath: string | null;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [selected, setSelected] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(() =>
     expandToDepth(parsed.tree, prefs.expandDepth),
@@ -481,8 +483,8 @@ function Ready({
 
   const rows = useMemo(() => visibleRows(parsed.tree, expanded), [parsed.tree, expanded]);
   const inspected = useMemo(
-    () => inspectValue(parsed, selected),
-    [parsed, selected],
+    () => inspectValue(parsed, selected, locale),
+    [parsed, selected, locale],
   );
 
   const hits = useMemo(() => {
@@ -518,16 +520,19 @@ function Ready({
     [parsed, prefs],
   );
 
-  const copy = useCallback(async (value: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopyState(`${label} скопирован${label === 'Путь' ? '' : 'о'}`);
-    } catch {
-      // NEVER show "Copied" without checking the promise (design §8).
-      setCopyState('Буфер обмена недоступен — выделите текст и нажмите ⌘/Ctrl+C.');
-    }
-    setTimeout(() => setCopyState(null), 1800);
-  }, []);
+  const copy = useCallback(
+    async (value: string, toastKey: MsgKey) => {
+      try {
+        await navigator.clipboard.writeText(value);
+        setCopyState(t(toastKey));
+      } catch {
+        // NEVER show "Copied" without checking the promise (design §8).
+        setCopyState(t('data.clipboardUnavailable'));
+      }
+      setTimeout(() => setCopyState(null), 1800);
+    },
+    [t],
+  );
 
   const beautify = useCallback(
     (minify: boolean) => {
@@ -584,7 +589,7 @@ function Ready({
         setMode={setMode}
         onConvert={runConvert}
         onBeautify={beautify}
-        onCopy={() => void copy(parsed.text, 'Документ')}
+        onCopy={() => void copy(parsed.text, 'data.copiedDocument')}
         onDownload={() => download(parsed.text, parsed.name ?? `document.${parsed.format}`)}
       />
 
@@ -593,9 +598,8 @@ function Ready({
       </div>
 
       {parsed.truncated && (
-        <Callout tone="warn" title="⚠ Дерево построено частично">
-          Документ содержит больше узлов, чем можно удержать в дереве. Текст показан целиком,
-          дерево — до предела. Поиск по пути ниже предела работает.
+        <Callout tone="warn" title={t('data.truncatedTitle')}>
+          {t('data.truncatedBody')}
         </Callout>
       )}
       {parsed.notes.map((note) => (
@@ -604,7 +608,7 @@ function Ready({
         </Callout>
       ))}
       {convertError !== null && (
-        <Callout tone="poor" title="Преобразование не выполнено">
+        <Callout tone="poor" title={t('data.convertErrorTitle')}>
           {convertError}
         </Callout>
       )}
@@ -619,7 +623,7 @@ function Ready({
             doc.replaceText(text, format);
           }}
           onConvertSubtree={(path, to) => runConvert(to, path)}
-          onCopy={(text) => void copy(text, 'Результат')}
+          onCopy={(text) => void copy(text, 'data.copiedResult')}
         />
       ) : (
         <div className={`workspace workspace--${mode}`}>
@@ -632,8 +636,8 @@ function Ready({
               selected={selected}
               setSelected={setSelected}
               onGotoLine={setGotoLine}
-              onCopyValue={(v) => void copy(v, 'Значение')}
-              onCopyPath={(p) => void copy(p, 'Путь')}
+              onCopyValue={(v) => void copy(v, 'data.copiedValue')}
+              onCopyPath={(p) => void copy(p, 'data.copiedPath')}
             />
           )}
           {mode !== 'tree' && (
@@ -652,13 +656,17 @@ function Ready({
             />
           )}
           {inspected !== null && (
-            <section className="inspector" aria-label="Значение">
+            <section className="inspector" aria-label={t('data.inspectorValue')}>
               <div className="inspector__head">
-                <h2 className="ui-section-heading">Значение</h2>
+                <h2 className="ui-section-heading">{t('data.inspectorValue')}</h2>
                 <code className="mono">{inspected.path}</code>
                 <span className="grow" />
-                <Button onClick={() => void copy(inspected.raw, 'Значение')}>Копировать</Button>
-                <Button onClick={() => void copy(inspected.path, 'Путь')}>Копировать путь</Button>
+                <Button onClick={() => void copy(inspected.raw, 'data.copiedValue')}>
+                  {t('common.copy')}
+                </Button>
+                <Button onClick={() => void copy(inspected.path, 'data.copiedPath')}>
+                  {t('data.copyPath')}
+                </Button>
               </div>
               <p className="inspector__value mono">{inspected.raw}</p>
               {inspected.precisionNote !== null && (
@@ -703,22 +711,29 @@ function Toolbar({
   onCopy: () => void;
   onDownload: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [menu, setMenu] = useState(false);
   const jsonFamily =
     parsed.format === 'json' || parsed.format === 'jsonc' || parsed.format === 'json5';
 
-  // Badge honesty (design §5.1): "Валиден" asserts the WHOLE document parsed
+  // Badge honesty (design §5.1): "Valid" asserts the WHOLE document parsed
   // cleanly. When the tree was cut short (truncated) or CSV rows disagreed with
   // the header (a field-count mismatch note), that assertion is false — the
   // document was merely *parsed*, not validated. Soften the label in that case.
+  // NOTE: the CSV note is produced by the Worker (always Russian), so this string
+  // check is language-independent and the invariant holds regardless of UI locale.
   const csvMismatch = parsed.notes.some((n) => n.includes('число полей не совпадает'));
   const clean = !parsed.truncated && !csvMismatch;
+
+  const viewLabel = (m: ViewMode) =>
+    m === 'tree' ? t('data.viewTree') : m === 'text' ? t('data.viewText') : t('data.viewBoth');
 
   return (
     <div className="toolbar">
       <div className="toolbar__row">
         <label className="field">
-          Формат:
+          {t('data.formatLabel')}
           <select
             value={parsed.format}
             onChange={(e) => {
@@ -729,30 +744,33 @@ function Toolbar({
           >
             {FORMAT_OPTIONS.map((f) => (
               <option key={f} value={f}>
-                {f === 'auto' ? 'Авто (перепроверить)' : FORMAT_LABELS[f]}
+                {f === 'auto' ? t('data.formatAutoRecheck') : FORMAT_LABELS[f]}
               </option>
             ))}
           </select>
         </label>
         {parsed.autodetected && (
-          <span className="fine" title="Автодетект может ошибиться — смените формат слева">
-            авто
+          <span className="fine" title={t('data.autoBadgeTitle')}>
+            {t('data.autoBadge')}
           </span>
         )}
         <span className="stats mono">
-          {formatBytes(parsed.bytes)} · {parsed.lines.toLocaleString('ru')} строк ·{' '}
-          {parsed.tree.length.toLocaleString('ru')} узлов
+          {t('data.stats', {
+            size: formatBytes(parsed.bytes, locale),
+            lines: nfmt(locale, parsed.lines),
+            nodes: nfmt(locale, parsed.tree.length),
+          })}
         </span>
         <span className="grow" />
         {clean ? (
-          <Badge severity="ok">✓ Валиден</Badge>
+          <Badge severity="ok">{t('data.badgeValid')}</Badge>
         ) : (
-          <Badge severity="warn">✓ Разобран</Badge>
+          <Badge severity="warn">{t('data.badgeParsed')}</Badge>
         )}
       </div>
 
       <div className="toolbar__row">
-        <div className="segmented" role="group" aria-label="Вид">
+        <div className="segmented" role="group" aria-label={t('data.viewAria')}>
           {(['tree', 'text', 'both'] as ViewMode[]).map((m) => (
             <button
               key={m}
@@ -761,31 +779,24 @@ function Toolbar({
               aria-pressed={mode === m}
               onClick={() => setMode(m)}
             >
-              {m === 'tree' ? 'Дерево' : m === 'text' ? 'Текст' : 'Оба'}
+              {viewLabel(m)}
             </button>
           ))}
         </div>
 
-        <Button
-          disabled={busy}
-          onClick={() => onBeautify(false)}
-        >
+        <Button disabled={busy} onClick={() => onBeautify(false)}>
           Beautify
         </Button>
         <Button disabled={busy} onClick={() => onBeautify(true)}>
           Minify
         </Button>
-        {!jsonFamily && (
-          <span className="fine">
-            Beautify заменит документ его JSON-представлением
-          </span>
-        )}
+        {!jsonFamily && <span className="fine">{t('data.beautifyNote')}</span>}
 
         <span className="grow" />
 
         <div className="convert">
           <Button onClick={() => setMenu((v) => !v)} disabled={busy}>
-            Конвертировать в ▾
+            {t('data.convertTo')}
           </Button>
           {menu && (
             <ul className="menu" role="menu">
@@ -800,7 +811,7 @@ function Toolbar({
                     }}
                   >
                     {FORMAT_LABELS[f]}
-                    {f === 'csv' && <span className="fine"> (плоский)</span>}
+                    {f === 'csv' && <span className="fine">{t('data.csvFlat')}</span>}
                   </button>
                 </li>
               ))}
@@ -808,12 +819,12 @@ function Toolbar({
           )}
         </div>
         <Button disabled={busy} onClick={onCopy}>
-          Копировать
+          {t('common.copy')}
         </Button>
         <Button disabled={busy} onClick={onDownload}>
-          Скачать
+          {t('common.download')}
         </Button>
-        <Button onClick={doc.reset}>Закрыть документ</Button>
+        <Button onClick={doc.reset}>{t('data.closeDocument')}</Button>
       </div>
     </div>
   );
@@ -842,6 +853,8 @@ function TreePane({
   onCopyValue: (value: string) => void;
   onCopyPath: (path: string) => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(420);
@@ -965,17 +978,17 @@ function TreePane({
   };
 
   return (
-    <section className="pane pane--tree" aria-label="Дерево">
+    <section className="pane pane--tree" aria-label={t('data.viewTree')}>
       <div className="pane__head">
-        <h2 className="ui-section-heading">Дерево</h2>
-        <span className="fine">{rows.length.toLocaleString('ru')} видимых узлов</span>
+        <h2 className="ui-section-heading">{t('data.viewTree')}</h2>
+        <span className="fine">{t('data.visibleNodes', { count: nfmt(locale, rows.length) })}</span>
       </div>
       {/* ONE tab stop for the whole tree (roving tabindex) — not 40 000. */}
       <div
         ref={scroller}
         className="tree"
         role="tree"
-        aria-label="Структура документа"
+        aria-label={t('data.treeStructureAria')}
         tabIndex={0}
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         onKeyDown={onKeyDown}
@@ -1011,10 +1024,7 @@ function TreePane({
           </div>
         </div>
       </div>
-      <p className="fine">
-        ↑↓ навигация · →/← раскрыть/свернуть · Enter — показать в тексте · ⌘/Ctrl+C — значение ·
-        ⌘/Ctrl+⇧+C — путь
-      </p>
+      <p className="fine">{t('data.treeControls')}</p>
     </section>
   );
 }
@@ -1109,6 +1119,8 @@ function TextPane({
   gotoLine: number | null;
   onPath: (path: string) => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const scroller = useRef<HTMLDivElement>(null);
   const pre = useRef<HTMLPreElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -1184,17 +1196,19 @@ function TextPane({
   const isPath = query.startsWith('$');
 
   return (
-    <section className="pane pane--text" aria-label="Текст">
+    <section className="pane pane--text" aria-label={t('data.viewText')}>
       <div className="pane__head">
-        <h2 className="ui-section-heading">Текст</h2>
+        <h2 className="ui-section-heading">{t('data.viewText')}</h2>
         <div className="searchbox">
           <input
             className="search"
             type="search"
             value={query}
             disabled={searchDisabled}
-            placeholder={searchDisabled ? 'Поиск отключён на большом документе' : 'Поиск или $.path'}
-            aria-label="Поиск в документе или переход по JSONPath"
+            placeholder={
+              searchDisabled ? t('data.searchDisabledPlaceholder') : t('data.searchPlaceholder')
+            }
+            aria-label={t('data.searchAria')}
             onChange={(e) => {
               setQuery(e.target.value);
               setHitIndex(0);
@@ -1207,14 +1221,14 @@ function TextPane({
           />
           <span className="fine" role="status" aria-live="polite">
             {searchDisabled
-              ? `> ${formatBytes(MAX_SEARCH_BYTES)}`
+              ? `> ${formatBytes(MAX_SEARCH_BYTES, locale)}`
               : isPath
-                ? 'Enter — перейти по пути'
+                ? t('data.searchEnterPath')
                 : query === ''
                   ? ''
                   : hits.length === 0
-                    ? 'нет совпадений'
-                    : `${hitIndex + 1} из ${hits.length}`}
+                    ? t('data.searchNoMatches')
+                    : t('data.searchCount', { index: hitIndex + 1, total: hits.length })}
           </span>
         </div>
       </div>
@@ -1253,11 +1267,9 @@ function TextPane({
       </div>
 
       <p className="fine">
-        {!supported &&
-          'Подсветка синтаксиса недоступна в этом браузере (нет CSS Custom Highlight API) — текст показан без цвета. '}
-        {!whole &&
-          'Отрисовывается только видимое окно строк, поэтому встроенный поиск браузера (⌘/Ctrl+F) увидит не весь документ — пользуйтесь поиском выше. '}
-        {wrap && !whole && 'Перенос строк отключён на больших документах: он ломает виртуализацию.'}
+        {!supported && t('data.highlightUnavailable')}
+        {!whole && t('data.windowedNote')}
+        {wrap && !whole && t('data.wrapOffNote')}
       </p>
     </section>
   );
@@ -1280,6 +1292,7 @@ function ConversionView({
   onConvertSubtree: (path: string, to: DocFormat) => void;
   onCopy: (text: string) => void;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(true);
 
   if (result.refusal !== null) {
@@ -1290,13 +1303,13 @@ function ConversionView({
             {FORMAT_LABELS[result.from]} → {FORMAT_LABELS[result.to]}
           </strong>
           <span className="grow" />
-          <Button onClick={onBack}>← Назад к {FORMAT_LABELS[result.from]}</Button>
+          <Button onClick={onBack}>{t('data.backTo', { format: FORMAT_LABELS[result.from] })}</Button>
         </div>
-        <Callout tone="poor" title="Преобразование невозможно — и мы не сделаем вид, что оно прошло">
+        <Callout tone="poor" title={t('data.conversionRefusalTitle')}>
           {result.refusal}
           {result.candidates.length > 0 && (
             <>
-              <p className="fine">Массивы объектов, найденные в этом документе:</p>
+              <p className="fine">{t('data.arraysFound')}</p>
               <div className="row row--gap">
                 {result.candidates.map((path) => (
                   <Button key={path} onClick={() => onConvertSubtree(path, result.to)}>
@@ -1306,11 +1319,7 @@ function ConversionView({
               </div>
             </>
           )}
-          {result.candidates.length === 0 && (
-            <p className="fine">
-              Массивов объектов в документе не нашлось — CSV для него не подходит вовсе.
-            </p>
-          )}
+          {result.candidates.length === 0 && <p className="fine">{t('data.noArrays')}</p>}
         </Callout>
       </div>
     );
@@ -1323,15 +1332,13 @@ function ConversionView({
           {FORMAT_LABELS[result.from]} → {FORMAT_LABELS[result.to]}
         </strong>
         <span className="grow" />
-        <Button onClick={onBack}>← Назад к {FORMAT_LABELS[result.from]}</Button>
-        <Button onClick={() => onCopy(result.text)}>Копировать</Button>
-        <Button
-          onClick={() => download(result.text, `document.${result.to}`)}
-        >
-          Скачать
+        <Button onClick={onBack}>{t('data.backTo', { format: FORMAT_LABELS[result.from] })}</Button>
+        <Button onClick={() => onCopy(result.text)}>{t('common.copy')}</Button>
+        <Button onClick={() => download(result.text, `document.${result.to}`)}>
+          {t('common.download')}
         </Button>
         <Button variant="primary" onClick={() => onAdopt(result.text, result.to)}>
-          Сделать {FORMAT_LABELS[result.to]} документом
+          {t('data.makeDocument', { format: FORMAT_LABELS[result.to] })}
         </Button>
       </div>
 
@@ -1349,13 +1356,13 @@ function ConversionView({
           onClick={() => setExpanded((v) => !v)}
         >
           {result.warnings.length === 0 ? (
-            <Badge severity="ok">Потерь не обнаружено</Badge>
+            <Badge severity="ok">{t('data.noLossDetected')}</Badge>
           ) : (
             <Badge severity="warn">
-              ⚠ {result.warnings.length} предупреждени(й) преобразования
+              {t('data.conversionWarnings', { count: result.warnings.length })}
             </Badge>
           )}
-          <span className="fine">{expanded ? 'Свернуть' : 'Развернуть'}</span>
+          <span className="fine">{expanded ? t('data.collapse') : t('data.expand')}</span>
         </button>
         {expanded && result.warnings.length > 0 && (
           <ul className="warns__list">

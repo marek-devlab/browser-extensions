@@ -15,8 +15,9 @@ import { loadEmoji } from '../utils/emoji';
 import { collectEnv, envToMarkdown, type EnvFacts } from '../utils/environment';
 import { openWorkbenchTab, requestActiveTabInfo } from '../utils/surface';
 import { templatesItem } from '../utils/storage';
-import { TARGETS, targetInfo } from '../utils/targets';
+import { TARGETS } from '../utils/targets';
 import { BUILTIN_TEMPLATES } from '../utils/templates';
+import { useT, type MsgKey } from '../utils/i18n';
 import type { Settings, Target, Template } from '../utils/types';
 import type { ActionId } from '../utils/editor-actions';
 import type { RegexMatch } from '../utils/regex-client';
@@ -34,6 +35,24 @@ const SPLIT_THRESHOLD = 560;
 const HUGE_CHARS = 200_000;
 const SHORTCODE_RE = /:[a-z0-9_+-]+:/i;
 
+/** Combo → description key for the F1 cheatsheet. Combos are literal. */
+const SHORTCUTS: [string, MsgKey][] = [
+  ['Ctrl+B / Ctrl+I / Ctrl+E', 'sc_format'],
+  ['Ctrl+Shift+C', 'sc_task'],
+  ['Ctrl+Shift+D', 'sc_details'],
+  ['Ctrl+Shift+T', 'sc_table'],
+  ['Ctrl+K', 'sc_link'],
+  ['Ctrl+Shift+J', 'sc_emoji'],
+  ['Ctrl+F / Ctrl+H', 'sc_find'],
+  ['Ctrl+Shift+L', 'sc_translit'],
+  ['Ctrl+Shift+K', 'sc_stats'],
+  ['Ctrl+Shift+P', 'sc_preview'],
+  ['Ctrl+Enter', 'sc_copy_target'],
+  ['Ctrl+Shift+Enter', 'sc_copy_html'],
+  ['Ctrl+Z / Ctrl+Shift+Z', 'sc_undo'],
+  ['F1', 'sc_help'],
+];
+
 export function Workbench({
   surface,
   settings,
@@ -47,7 +66,15 @@ export function Workbench({
   theme: Theme | null;
   setTheme: (t: Theme) => void;
 }) {
-  const draft = useDraft(settings.autosaveDelay, settings.autosave, settings.historyLimit);
+  const t = useT();
+  const targetLabel = useCallback((id: Target) => t(`target_${id}` as MsgKey), [t]);
+  const copyVerb = useCallback((id: Target) => t(`copy_${id}` as MsgKey), [t]);
+  const fmtMB = useCallback(
+    (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} ${t('unit_mb')}`,
+    [t],
+  );
+
+  const draft = useDraft(settings.autosaveDelay, settings.autosave, settings.historyLimit, t);
   const {
     drafts,
     active,
@@ -131,25 +158,25 @@ export function Workbench({
       setDegradations([]);
       return;
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       try {
-        setDegradations(convert(deferredBody, target).degradations);
+        setDegradations(convert(deferredBody, target, { t }).degradations);
       } catch {
         // A parser failure must not block copying — the copy path reports it.
         setDegradations([]);
       }
     }, 250);
-    return () => clearTimeout(t);
-  }, [deferredBody, target]);
+    return () => clearTimeout(timer);
+  }, [deferredBody, target, t]);
 
   /* ── copy (design §4.1, §5.6, §6.2) ────────────────────────────────────*/
 
   const build = useCallback(
-    async (t: Target): Promise<ConversionResult> => {
+    async (tgt: Target): Promise<ConversionResult> => {
       // Jira/Telegram don't know `:tada:` — resolve shortcodes to characters, but
       // only pull the (lazy, heavy) emoji chunk when the draft actually has one.
       let shortcodeToEmoji: ((s: string) => string | null) | undefined;
-      if ((t === 'jira' || t === 'telegram') && SHORTCODE_RE.test(body)) {
+      if ((tgt === 'jira' || tgt === 'telegram') && SHORTCODE_RE.test(body)) {
         try {
           const index = await loadEmoji();
           shortcodeToEmoji = (code) => index.byShortcode.get(code) ?? null;
@@ -157,23 +184,25 @@ export function Workbench({
           // Data unavailable → leave the shortcodes as typed rather than guess.
         }
       }
-      return convert(body, t, { shortcodeToEmoji });
+      return convert(body, tgt, { shortcodeToEmoji, t });
     },
-    [body],
+    [body, t],
   );
 
   const performCopy = useCallback(
-    async (t: Target, asHtml: boolean) => {
+    async (tgt: Target, asHtml: boolean) => {
       try {
-        const result = await build(asHtml ? 'html' : t);
+        const result = await build(asHtml ? 'html' : tgt);
         const outcome = await copyToClipboard(result.text, result.html);
         if (outcome.ok) {
           const bytes = new TextEncoder().encode(result.text).length;
           setToast(
             asHtml
-              ? `Скопировано как HTML — ${bytes} Б. В текстовое поле вставится чистый Markdown.`
-              : `Скопировано для ${targetInfo(t).label} — ${bytes} Б.` +
-                  (result.degradations.length ? ` Упрощено: ${result.degradations.join('; ')}` : ''),
+              ? t('toast_copied_html', { bytes })
+              : t('toast_copied_target', { label: targetLabel(tgt), bytes }) +
+                  (result.degradations.length
+                    ? t('toast_copied_simplified', { list: result.degradations.join('; ') })
+                    : ''),
           );
           return;
         }
@@ -183,10 +212,10 @@ export function Workbench({
         manualRef.current?.showModal();
         requestAnimationFrame(() => manualTextRef.current?.select());
       } catch (e) {
-        setToast(`Не удалось преобразовать текст: ${e instanceof Error ? e.message : String(e)}`);
+        setToast(t('toast_convert_failed', { error: e instanceof Error ? e.message : String(e) }));
       }
     },
-    [build],
+    [build, t, targetLabel],
   );
 
   const copyForTarget = useCallback(() => {
@@ -201,45 +230,49 @@ export function Workbench({
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 6000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(timer);
   }, [toast]);
 
   /* ── toolbar / templates / environment ─────────────────────────────────*/
 
   const applyAction = (id: ActionId) => editorRef.current?.applyAction(id);
 
-  const onTemplate = (t: Template, mode: 'append' | 'replace') => {
+  const onTemplate = (tpl: Template, mode: 'append' | 'replace') => {
     if (mode === 'replace') {
       // §5.2 — a destructive op on a non-empty draft asks first, and says HOW
       // MUCH text it is about to overwrite.
       if (!empty) {
-        setPendingTemplate(t);
+        setPendingTemplate(tpl);
         replaceRef.current?.showModal();
         return;
       }
-      void applyDestructive(t.body, 'до вставки шаблона');
+      void applyDestructive(tpl.body, t('snap_before_template'));
       return;
     }
     const sep = body === '' || body.endsWith('\n') ? '' : '\n\n';
-    editorRef.current?.replaceRange(body.length, body.length, sep + t.body);
+    editorRef.current?.replaceRange(body.length, body.length, sep + tpl.body);
   };
 
   const onEnvironment = async () => {
     try {
       const tab = await requestActiveTabInfo();
-      const facts = await collectEnv({ includeFullUA: settings.envIncludeFullUA, url: tab?.url });
+      const facts = await collectEnv({
+        includeFullUA: settings.envIncludeFullUA,
+        url: tab?.url,
+        window: t('env_screen_window'),
+      });
       setEnv(facts);
       envRef.current?.showModal();
     } catch (e) {
-      setToast(`Не удалось собрать данные окружения: ${e instanceof Error ? e.message : String(e)}`);
+      setToast(t('toast_env_failed', { error: e instanceof Error ? e.message : String(e) }));
     }
   };
 
   const insertEnv = () => {
     if (!env) return;
     const at = selection.end || body.length;
-    editorRef.current?.replaceRange(at, at, '\n' + envToMarkdown(env) + '\n');
+    editorRef.current?.replaceRange(at, at, '\n' + envToMarkdown(env, t) + '\n');
     envRef.current?.close();
   };
 
@@ -280,7 +313,7 @@ export function Workbench({
       }
       if (e.shiftKey && k === 'p') {
         e.preventDefault();
-        if (isNarrow) setNarrowTab((t) => (t === 'editor' ? 'preview' : 'editor'));
+        if (isNarrow) setNarrowTab((tab) => (tab === 'editor' ? 'preview' : 'editor'));
         else updateSettings({ showPreview: !settings.showPreview });
         return;
       }
@@ -293,7 +326,7 @@ export function Workbench({
     return () => document.removeEventListener('keydown', onKey);
   }, [copyAsHtml, copyForTarget, isNarrow, settings.showPreview, updateSettings]);
 
-  if (drafts === null) return <div className="cw-loading">Загрузка…</div>;
+  if (drafts === null) return <div className="cw-loading">{t('loading')}</div>;
 
   const showPreview = settings.showPreview && !empty;
 
@@ -304,13 +337,13 @@ export function Workbench({
         <label className="cw-header__draft">
           <span aria-hidden="true">✎</span>
           <select
-            aria-label="Черновик"
+            aria-label={t('draft_aria')}
             value={active?.id ?? ''}
             onChange={(e) => selectDraft(e.target.value)}
           >
             {drafts.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.title || '(без имени)'}
+                {d.title || t('draft_untitled')}
               </option>
             ))}
           </select>
@@ -318,23 +351,23 @@ export function Workbench({
         <button
           type="button"
           className="cw-tool cw-tool--inline"
-          title="Новый черновик"
-          aria-label="Новый черновик"
+          title={t('new_draft_title')}
+          aria-label={t('new_draft_title')}
           onClick={() => newDraft({ target: settings.defaultTarget })}
         >
           ＋
         </button>
 
         <label className="cw-header__target">
-          Куда:
+          {t('target_label')}
           <select
-            aria-label="Целевая площадка"
+            aria-label={t('target_aria')}
             value={target}
             onChange={(e) => setTarget(e.target.value as Target)}
           >
-            {TARGETS.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
+            {TARGETS.map((tg) => (
+              <option key={tg.id} value={tg.id}>
+                {targetLabel(tg.id)}
               </option>
             ))}
           </select>
@@ -344,19 +377,22 @@ export function Workbench({
 
         <span className="cw-save" role="status" aria-live="polite">
           {saveState === 'saving'
-            ? '● Сохраняется…'
+            ? t('save_saving')
             : saveState === 'saved'
-              ? `✓ Сохранено${savedAt ? ' ' + new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`
+              ? t('save_saved') +
+                (savedAt
+                  ? ' ' + new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '')
               : saveState === 'error'
-                ? '⚠️ Не сохранено'
+                ? t('save_error')
                 : ''}
         </span>
 
         <button
           type="button"
           className="cw-tool cw-tool--inline"
-          title="История черновиков и снимков"
-          aria-label="История"
+          title={t('history_title_btn')}
+          aria-label={t('history_aria')}
           onClick={() => historyRef.current?.showModal()}
         >
           ⟲
@@ -365,8 +401,8 @@ export function Workbench({
           <button
             type="button"
             className="cw-tool cw-tool--inline"
-            title="Открыть во вкладке"
-            aria-label="Открыть во вкладке"
+            title={t('open_tab_title')}
+            aria-label={t('open_tab_title')}
             onClick={() => void openWorkbenchTab()}
           >
             ⛶
@@ -375,8 +411,8 @@ export function Workbench({
         <button
           type="button"
           className="cw-tool cw-tool--inline"
-          title="Горячие клавиши (F1)"
-          aria-label="Горячие клавиши"
+          title={t('shortcuts_title')}
+          aria-label={t('shortcuts_aria')}
           onClick={() => helpRef.current?.showModal()}
         >
           ?
@@ -386,35 +422,35 @@ export function Workbench({
 
       {/* §8.2 — the write failed. The text is NOT lost; say what to do. */}
       {saveError && (
-        <Callout tone="poor" title="Черновик не сохранён">
+        <Callout tone="poor" title={t('save_fail_title')}>
           {saveError}{' '}
           <button type="button" className="cw-linklike" onClick={() => historyRef.current?.showModal()}>
-            Освободить место / экспортировать
+            {t('save_fail_action')}
           </button>
         </Callout>
       )}
 
       {/* §8.3 — an unsaved buffer survived; the user decides, not us. */}
       {recovery && (
-        <Callout tone="warn" title="Есть несохранённый текст">
+        <Callout tone="warn" title={t('recovery_title')}>
           <p>
-            Восстановлен текст от{' '}
-            {new Date(recovery.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (
-            {countText(recovery.body).graphemes} симв.). Текущая версия сохранится снимком — откат
-            возможен.
+            {t('recovery_body', {
+              time: new Date(recovery.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              n: countText(recovery.body).graphemes,
+            })}
           </p>
           <div className="cw-actions">
-            <Button variant="primary" onClick={acceptRecovery}>Восстановить</Button>
-            <Button onClick={dismissRecovery}>Оставить текущий</Button>
+            <Button variant="primary" onClick={acceptRecovery}>{t('btn_recover')}</Button>
+            <Button onClick={dismissRecovery}>{t('btn_keep_current')}</Button>
           </div>
         </Callout>
       )}
 
       {usage && usage.ratio > 0.8 && (
-        <Callout tone="warn" title="Хранилище почти заполнено">
-          Занято {fmtMB(usage.bytes)} из {fmtMB(usage.quota)}. Старые автоснимки будут вытесняться.{' '}
+        <Callout tone="warn" title={t('storage_full_title')}>
+          {t('storage_full_body', { used: fmtMB(usage.bytes), quota: fmtMB(usage.quota) })}{' '}
           <button type="button" className="cw-linklike" onClick={() => historyRef.current?.showModal()}>
-            История и экспорт
+            {t('storage_history_export')}
           </button>
         </Callout>
       )}
@@ -429,17 +465,17 @@ export function Workbench({
       />
 
       {isNarrow && showPreview && (
-        <div className="cw-viewtabs" role="tablist" aria-label="Редактор и превью">
-          {(['editor', 'preview'] as const).map((t) => (
+        <div className="cw-viewtabs" role="tablist" aria-label={t('viewtabs_aria')}>
+          {(['editor', 'preview'] as const).map((tab) => (
             <button
-              key={t}
+              key={tab}
               role="tab"
               type="button"
-              aria-selected={narrowTab === t}
-              className={narrowTab === t ? 'cw-tab cw-tab--active' : 'cw-tab'}
-              onClick={() => setNarrowTab(t)}
+              aria-selected={narrowTab === tab}
+              className={narrowTab === tab ? 'cw-tab cw-tab--active' : 'cw-tab'}
+              onClick={() => setNarrowTab(tab)}
             >
-              {t === 'editor' ? 'Редактор' : 'Превью'}
+              {tab === 'editor' ? t('view_editor') : t('view_preview')}
             </button>
           ))}
         </div>
@@ -452,15 +488,15 @@ export function Workbench({
           <div className="cw-editorcol">
             {empty && (
               <EmptyState
-                title="Пустой черновик"
-                hint="Начните печатать, или выделите текст на странице → ПКМ → «Добавить выделенное в черновик»."
+                title={t('empty_title')}
+                hint={t('empty_hint')}
                 action={
                   <div className="cw-actions">
                     <Button
                       variant="primary"
                       onClick={() => onTemplate(templates[0] ?? BUILTIN_TEMPLATES[0], 'append')}
                     >
-                      📋 Взять шаблон баг-репорта
+                      {t('empty_take_template')}
                     </Button>
                   </div>
                 }
@@ -516,9 +552,9 @@ export function Workbench({
 
       <footer className="cw-copybar">
         <Button variant="primary" disabled={empty} onClick={copyForTarget}>
-          {targetInfo(target).copyVerb}
+          {copyVerb(target)}
         </Button>
-        <Button disabled={empty} onClick={copyAsHtml} ariaLabel="Копировать как HTML">
+        <Button disabled={empty} onClick={copyAsHtml} ariaLabel={t('copy_html_aria')}>
           ⧉ HTML
         </Button>
       </footer>
@@ -538,17 +574,14 @@ export function Workbench({
 
       {/* ── §6.4 compatibility dialog — shown BEFORE anything is copied ─────*/}
       <dialog ref={compatRef} className="cw-dialog" aria-labelledby="cw-compat-title">
-        <h2 id="cw-compat-title">{targetInfo(target).label} не поддерживает часть вашей разметки</h2>
-        <p>Текст не потеряется — он будет упрощён при копировании:</p>
+        <h2 id="cw-compat-title">{t('compat_title', { label: targetLabel(target) })}</h2>
+        <p>{t('compat_body')}</p>
         <ul className="cw-deg-list">
           {degradations.map((d) => (
             <li key={d}>{d}</li>
           ))}
         </ul>
-        <p className="cw-hint">
-          ⓘ Черновик не меняется. Конверсия происходит только в буфере обмена — переключение
-          площадки туда-обратно ничего не портит.
-        </p>
+        <p className="cw-hint">{t('compat_note')}</p>
         <div className="cw-actions">
           <Button
             variant="primary"
@@ -557,65 +590,58 @@ export function Workbench({
               void performCopy(target, false);
             }}
           >
-            Копировать всё равно
+            {t('btn_copy_anyway')}
           </Button>
-          <Button onClick={() => compatRef.current?.close()}>Сменить площадку</Button>
+          <Button onClick={() => compatRef.current?.close()}>{t('btn_change_platform')}</Button>
         </div>
       </dialog>
 
       {/* ── §2.9 environment preview ───────────────────────────────────────*/}
       <dialog ref={envRef} className="cw-dialog" aria-labelledby="cw-env-title">
-        <h2 id="cw-env-title">Вставить окружение</h2>
+        <h2 id="cw-env-title">{t('env_title')}</h2>
         {env ? (
           <>
-            <pre className="mono cw-env-preview">{envToMarkdown(env)}</pre>
+            <pre className="mono cw-env-preview">{envToMarkdown(env, t)}</pre>
             <label className="cw-check">
               <input
                 type="checkbox"
                 checked={settings.envIncludeFullUA}
                 onChange={(e) => {
                   updateSettings({ envIncludeFullUA: e.target.checked });
-                  void collectEnv({ includeFullUA: e.target.checked, url: env.url })
+                  void collectEnv({
+                    includeFullUA: e.target.checked,
+                    url: env.url,
+                    window: t('env_screen_window'),
+                  })
                     .then(setEnv)
                     .catch(() => {});
                 }}
               />{' '}
-              Включать полный User-Agent (длинный, в баг-репорте часто не нужен)
+              {t('env_full_ua')}
             </label>
-            {!env.url && (
-              <p className="cw-hint">
-                URL активной вкладки недоступен: браузер выдаёт доступ к вкладке только по жесту.
-                Откройте панель кликом по иконке расширения или добавьте выделение через контекстное
-                меню — и URL появится.
-              </p>
-            )}
-            <p className="cw-hint">
-              Ничего никуда не отправляется — таблица просто вставляется в ваш черновик.
-            </p>
+            {!env.url && <p className="cw-hint">{t('env_no_url')}</p>}
+            <p className="cw-hint">{t('env_nothing_sent')}</p>
           </>
         ) : (
-          <p>Собираем данные…</p>
+          <p>{t('env_collecting')}</p>
         )}
         <div className="cw-actions">
-          <Button variant="primary" onClick={insertEnv}>Вставить</Button>
-          <Button onClick={() => envRef.current?.close()}>Отмена</Button>
+          <Button variant="primary" onClick={insertEnv}>{t('btn_insert')}</Button>
+          <Button onClick={() => envRef.current?.close()}>{t('cancel')}</Button>
         </div>
       </dialog>
 
       {/* ── §5.6 clipboard refused — manual copy ───────────────────────────*/}
       <dialog ref={manualRef} className="cw-dialog" aria-labelledby="cw-manual-title">
-        <h2 id="cw-manual-title">Браузер не дал доступ к буферу обмена</h2>
-        <p>
-          Обычно это значит, что панель потеряла фокус. Кликните в панель и попробуйте снова — или
-          скопируйте вручную: текст ниже уже выделен, нажмите Ctrl+C.
-        </p>
-        {copyError && <p className="cw-hint mono">{copyError}</p>}
+        <h2 id="cw-manual-title">{t('manual_title')}</h2>
+        <p>{t('manual_body')}</p>
+        {copyError && <p className="cw-hint mono">{t(copyError as MsgKey)}</p>}
         <textarea
           ref={manualTextRef}
           className="cw-input mono cw-manual-text"
           readOnly
           value={manualText}
-          aria-label="Текст для ручного копирования"
+          aria-label={t('manual_text_aria')}
         />
         <div className="cw-actions">
           <Button
@@ -625,52 +651,46 @@ export function Workbench({
               void performCopy(target, false);
             }}
           >
-            Повторить копирование
+            {t('btn_retry_copy')}
           </Button>
-          <Button onClick={() => manualTextRef.current?.select()}>Выделить всё</Button>
-          <Button onClick={() => manualRef.current?.close()}>Закрыть</Button>
+          <Button onClick={() => manualTextRef.current?.select()}>{t('btn_select_all')}</Button>
+          <Button onClick={() => manualRef.current?.close()}>{t('close')}</Button>
         </div>
       </dialog>
 
       {/* ── §9.1 shortcut cheatsheet ───────────────────────────────────────*/}
       <dialog ref={helpRef} className="cw-dialog" aria-labelledby="cw-help-title">
-        <h2 id="cw-help-title">Горячие клавиши</h2>
+        <h2 id="cw-help-title">{t('help_title')}</h2>
         <table className="cw-stats__table">
           <tbody>
-            {SHORTCUTS.map(([k, v]) => (
-              <tr key={k}>
-                <td className="mono">{k}</td>
-                <td>{v}</td>
+            {SHORTCUTS.map(([combo, key]) => (
+              <tr key={combo}>
+                <td className="mono">{combo}</td>
+                <td>{t(key)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="cw-hint">
-          Tab отступает список только когда каретка в списке — иначе Tab уводит фокус (ловушку
-          фокуса мы не делаем никогда).
-        </p>
+        <p className="cw-hint">{t('help_tab_note')}</p>
         <div className="cw-actions">
-          <Button onClick={() => helpRef.current?.close()}>Закрыть</Button>
+          <Button onClick={() => helpRef.current?.close()}>{t('close')}</Button>
         </div>
       </dialog>
 
       {/* ── §5.2 destructive confirmation ──────────────────────────────────*/}
       <dialog ref={replaceRef} className="cw-dialog" aria-labelledby="cw-replace-title">
-        <h2 id="cw-replace-title">Заменить черновик шаблоном?</h2>
-        <p>
-          Будет перезаписано {counts.graphemes} символов текущего черновика. Перед заменой мы
-          сделаем снимок — откатить можно через «⟲ История».
-        </p>
+        <h2 id="cw-replace-title">{t('replace_title')}</h2>
+        <p>{t('replace_body', { n: counts.graphemes })}</p>
         <div className="cw-actions">
           <Button
             variant="primary"
             onClick={() => {
-              if (pendingTemplate) void applyDestructive(pendingTemplate.body, 'до вставки шаблона');
+              if (pendingTemplate) void applyDestructive(pendingTemplate.body, t('snap_before_template'));
               setPendingTemplate(null);
               replaceRef.current?.close();
             }}
           >
-            Заменить
+            {t('btn_replace')}
           </Button>
           <Button
             onClick={() => {
@@ -678,7 +698,7 @@ export function Workbench({
               replaceRef.current?.close();
             }}
           >
-            Отмена
+            {t('cancel')}
           </Button>
         </div>
       </dialog>
@@ -691,30 +711,9 @@ export function Workbench({
         onSelect={selectDraft}
         onDelete={deleteDraft}
         onNew={() => newDraft({ target: settings.defaultTarget })}
-        onRestore={(bodyText) => void applyDestructive(bodyText, 'до восстановления снимка')}
+        onRestore={(bodyText) => void applyDestructive(bodyText, t('snap_before_restore'))}
         onRefreshUsage={draft.refreshUsage}
       />
     </div>
   );
-}
-
-const SHORTCUTS: [string, string][] = [
-  ['Ctrl+B / Ctrl+I / Ctrl+E', 'жирный / курсив / код'],
-  ['Ctrl+Shift+C', 'чекбокс - [ ]'],
-  ['Ctrl+Shift+D', '<details>'],
-  ['Ctrl+Shift+T', 'таблица'],
-  ['Ctrl+K', 'ссылка'],
-  ['Ctrl+Shift+J', 'эмодзи'],
-  ['Ctrl+F / Ctrl+H', 'найти и заменить'],
-  ['Ctrl+Shift+L', 'транслитерация'],
-  ['Ctrl+Shift+K', 'статистика'],
-  ['Ctrl+Shift+P', 'превью вкл/выкл (узкая панель — переключить таб)'],
-  ['Ctrl+Enter', 'копировать для площадки'],
-  ['Ctrl+Shift+Enter', 'копировать как HTML'],
-  ['Ctrl+Z / Ctrl+Shift+Z', 'отмена / возврат'],
-  ['F1', 'эта справка'],
-];
-
-function fmtMB(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }

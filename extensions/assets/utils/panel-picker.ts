@@ -24,8 +24,16 @@
 
 const PICK_GLOBAL = '__blurAssetsPick';
 
-/** Arm the picker in the inspected page. Resolves nothing — the panel polls. */
-export const PICKER_SOURCE = `(function () {
+/**
+ * Arm the picker in the inspected page. Resolves nothing — the panel polls.
+ *
+ * `tipText` is the localized instruction shown in the page. It is embedded via
+ * `JSON.stringify`, which produces a safe JS string literal (quotes/backslashes
+ * escaped), so a translated string with an apostrophe cannot break the eval'd
+ * source. It is a catalog string, never page data.
+ */
+export function pickerSource(tipText: string): string {
+  return `(function () {
   var KEY = '${PICK_GLOBAL}';
   if (window[KEY + 'Active']) { window[KEY + 'Stop'](); }
   window[KEY] = null;
@@ -39,7 +47,7 @@ export const PICKER_SOURCE = `(function () {
   tip.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;top:8px;left:50%;' +
     'transform:translateX(-50%);background:#111;color:#fff;font:13px system-ui,sans-serif;' +
     'padding:8px 14px;border-radius:8px';
-  tip.textContent = 'Asset Inspector: click an element · Esc to cancel';
+  tip.textContent = ${JSON.stringify(tipText)};
   var current = null;
 
   function label(el) {
@@ -106,6 +114,7 @@ export const PICKER_SOURCE = `(function () {
   document.documentElement.appendChild(tip);
   return true;
 })()`;
+}
 
 /** Read (and clear) the pick result. Polled by the panel — `eval` cannot await. */
 export const POLL_SOURCE = `(function () {

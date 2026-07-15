@@ -53,6 +53,8 @@ hr {
   margin: 2px 0;
   color: var(--text-dim);
   font-size: 11px;
+  /* A long recorded-surface title ("Tab: {host}") must wrap, not overflow. */
+  overflow-wrap: anywhere;
 }
 
 .mic-row {
@@ -90,10 +92,15 @@ hr {
   display: flex;
   gap: 6px;
   margin-top: 6px;
+  /* The armed cancel label ("Really delete 0:05?" / "Kas tõesti kustutada 0:05?")
+     is much longer than the idle one. Allow the row to wrap in the fixed-width
+     recorder window rather than clip. */
+  flex-wrap: wrap;
 }
 
 .ctl {
-  flex: 1;
+  flex: 1 1 100px;
+  min-width: 0;
   padding: 7px 6px;
 }
 

@@ -359,7 +359,7 @@ async function runPass(
   if (!conversion.isValid) {
     const why = conversion.discardedTracks.map((d) => d.reason).join(', ');
     throw new Error(
-      `Этот файл не удаётся перекодировать в выбранный формат (${why || 'нет подходящего кодека'}). Исходная запись цела.`,
+      `This file can't be re-encoded to the chosen format (${why || 'no suitable codec'}). The source recording is safe.`,
     );
   }
 
@@ -409,7 +409,7 @@ async function runPass(
   }
 
   const buffer = target.buffer;
-  if (!buffer) throw new Error('Кодирование завершилось без данных.');
+  if (!buffer) throw new Error('Encoding finished with no data.');
   const blob = new Blob([buffer], {
     type: settings.format === 'mp4' ? 'video/mp4' : 'video/webm',
   });
@@ -442,7 +442,7 @@ export async function runTargetEncode(req: EncodeRequest): Promise<EncodeResult>
   // No target → a single pass at the encoder's own discretion.
   if (!settings.targetBytes) {
     const r = await runPass(req, null, 1, null);
-    if (!r.blob) throw new Error('Кодирование прервано.');
+    if (!r.blob) throw new Error('Encoding was aborted.');
     passes.push({ pass: 1, bitrate: 0, actualBytes: r.bytes, hit: true });
     req.onPass(passes[0]!);
     return { blob: r.blob, passes, missedTarget: false };
@@ -479,7 +479,7 @@ export async function runTargetEncode(req: EncodeRequest): Promise<EncodeResult>
         actualBytes: r.bytes,
         hit: false,
         aborted: true,
-        note: 'Проход прерван досрочно: прогноз уже был мимо цели.',
+        note: 'Pass stopped early: the projection had already missed the target.',
       });
       req.onPass(passes[passes.length - 1]!);
     } else if (r.blob) {
@@ -507,7 +507,7 @@ export async function runTargetEncode(req: EncodeRequest): Promise<EncodeResult>
     bitrate = next;
   }
 
-  if (candidates.length === 0) throw new Error('Кодирование не дало результата.');
+  if (candidates.length === 0) throw new Error('Encoding produced no result.');
   const under = candidates.filter((c) => c.bytes <= target);
   const best = under.length
     ? // biggest one that still fits = best quality within the ceiling
@@ -539,7 +539,7 @@ export async function renderScreenshot(
   const h = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('OffscreenCanvas 2D недоступен.');
+  if (!ctx) throw new Error('OffscreenCanvas 2D is not available.');
   ctx.drawImage(bitmap, 0, 0, w, h);
   paintOverlays(ctx, canvas, w, h, comp, 0);
   const type = `image/${format}` as const;

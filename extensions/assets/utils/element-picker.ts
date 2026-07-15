@@ -32,6 +32,8 @@
  * DOM of the page the script was injected into on a user gesture.
  */
 
+import type { TFn } from './i18n';
+
 /** Classes that look auto-generated (hashes, CSS-modules, utility soup) — skip. */
 function isStableClass(cls: string): boolean {
   if (cls.length === 0 || cls.length > 40) return false;
@@ -164,6 +166,9 @@ export interface PickerOptions {
   showBreadcrumbs: boolean;
   /** Pref: on a wrapper div, jump straight to the nested img/video. */
   autoJumpToResource: boolean;
+  /** Locale-bound translator for the picker's own announcements/tag. Optional so the
+   *  picker still works standalone; the inspector always supplies it. */
+  t?: TFn;
   onPick: (el: Element) => void;
   onCancel: () => void;
 }
@@ -224,8 +229,10 @@ export function startPicker(o: PickerOptions): PickerHandle {
       width: `${r.width}px`,
       height: `${r.height}px`,
     });
-    const res = hasResource(current) ? ' · resource' : '';
-    const pos = stack.length > 1 ? ` · ${stackIndex + 1} of ${stack.length} under cursor` : '';
+    const res = hasResource(current) ? (o.t ? o.t('pickTagResource') : ' · resource') : '';
+    const pos = stack.length > 1
+      ? (o.t ? o.t('pickTagStack', { i: stackIndex + 1, total: stack.length }) : ` · ${stackIndex + 1} of ${stack.length} under cursor`)
+      : '';
     chrome.tag.textContent = `${shortLabel(current)} · ${Math.round(r.width)}×${Math.round(r.height)}${res}${pos}`;
     Object.assign(chrome.tag.style, {
       display: '',
@@ -278,9 +285,23 @@ export function startPicker(o: PickerOptions): PickerHandle {
     // a screen reader (design §11.2).
     announceTimer = setTimeout(() => {
       const r = el.getBoundingClientRect();
-      chrome.live.textContent = `${shortLabel(el)}, ${Math.round(r.width)} by ${Math.round(r.height)}, ${
-        hasResource(el) ? 'has a resource' : 'no resource'
-      }${stack.length > 1 ? `, ${stackIndex + 1} of ${stack.length} under the cursor` : ''}`;
+      if (o.t) {
+        const resource = hasResource(el) ? o.t('pickHasResource') : o.t('pickNoResource');
+        const stackPhrase = stack.length > 1
+          ? o.t('pickStackSuffix', { i: stackIndex + 1, total: stack.length })
+          : '';
+        chrome.live.textContent = o.t('pickAnnounce', {
+          label: shortLabel(el),
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          resource,
+          stack: stackPhrase,
+        });
+      } else {
+        chrome.live.textContent = `${shortLabel(el)}, ${Math.round(r.width)} by ${Math.round(r.height)}, ${
+          hasResource(el) ? 'has a resource' : 'no resource'
+        }${stack.length > 1 ? `, ${stackIndex + 1} of ${stack.length} under the cursor` : ''}`;
+      }
     }, 150);
   }
 
@@ -453,7 +474,7 @@ export function startPicker(o: PickerOptions): PickerHandle {
       current ??
       (focused instanceof Element && focused !== document.body && focused !== host ? focused : null);
     if (start) setCurrent(start);
-    else chrome.live.textContent = 'Element picker active. Move the pointer or press arrow keys.';
+    else chrome.live.textContent = o.t ? o.t('pickerActive') : 'Element picker active. Move the pointer or press arrow keys.';
   }
 
   restart();

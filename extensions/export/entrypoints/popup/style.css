@@ -33,8 +33,16 @@
 .head h1 {
   font-size: 14px;
   margin: 0;
-  flex: none;
-  white-space: nowrap;
+  /* RU/ET titles are longer than EN: let the heading shrink and wrap instead of
+     pushing the theme toggle off the 360px popup. */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Buttons in a wrapping row must be able to shrink; their text ellipsizes rather
+   than forcing the row wider than the popup. */
+.btnrow > button {
+  min-width: 0;
 }
 
 .host {

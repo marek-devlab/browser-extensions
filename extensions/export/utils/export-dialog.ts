@@ -21,6 +21,7 @@ import {
 import { buildFilename } from './filename';
 import { saveBlob, saveTextParts, type SaveResult } from './file-writer';
 import { buildMatrix, headersFrom, parseLocaleNumber, pageDecimalSeparator } from './table-extract';
+import type { Locale } from '@blur/ui';
 import {
   button,
   destroyOverlay,
@@ -30,6 +31,7 @@ import {
   trapKeys,
   type OverlayTheme,
 } from './overlay';
+import { localeTag, tAt, type MsgKey } from './i18n';
 import {
   awaitXlsxWriter,
   sanitizeSheetName,
@@ -55,6 +57,7 @@ export interface DialogDeps {
   prefs: ExportPrefs;
   ask: (req: BgRequest) => Promise<BgResponse>;
   extractOptions: ExtractOptions;
+  locale: Locale;
 }
 
 interface Picked {
@@ -106,6 +109,8 @@ function rowsToTsv(rows: string[][]): string {
 
 export async function openExportDialog(picked: Picked[], deps: DialogDeps): Promise<void> {
   const { prefs } = deps;
+  const t = (k: MsgKey, v?: Record<string, string | number>): string => tAt(deps.locale, k, v);
+  const numTag = localeTag(deps.locale);
   const multi = picked.length > 1;
   const primary = picked[0]!;
 
@@ -135,7 +140,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
   const panel = el('div', 'bx-panel bx-panel--center');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
-  panel.setAttribute('aria-label', 'Экспорт таблицы');
+  panel.setAttribute('aria-label', t('exportTableTitle'));
   h.ui.append(panel);
 
   const release = trapKeys(panel, { onEscape: close });
@@ -188,24 +193,27 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
 
     /* --- header --- */
     const head = el('div');
-    head.append(el('h2', 'bx-h', multi ? `Экспорт: ${picked.length} таблицы` : 'Экспорт таблицы'));
+    head.append(
+      el('h2', 'bx-h', multi ? t('dlgTitleMulti', { n: picked.length }) : t('exportTableTitle')),
+    );
     head.append(
       el(
         'p',
         'bx-sub',
-        `${primary.model.caption ? `«${primary.model.caption}» · ` : ''}${primary.model.rows} строк × ${
-          columns.filter((c) => c.included).length
-        } колонок · ${location.hostname}`,
+        `${primary.model.caption ? `«${primary.model.caption}» · ` : ''}${t('dlgRowsCols', {
+          rows: primary.model.rows,
+          cols: columns.filter((c) => c.included).length,
+        })} · ${location.hostname}`,
       ),
     );
     panel.append(head);
 
     /* --- format --- */
     const fmt = el('div', 'bx-field');
-    fmt.append(el('span', undefined, 'Формат'));
+    fmt.append(el('span', undefined, t('fieldFormat')));
     const fmtGroup = el('div', 'bx-row');
     fmtGroup.setAttribute('role', 'radiogroup');
-    fmtGroup.setAttribute('aria-label', 'Формат файла');
+    fmtGroup.setAttribute('aria-label', t('fileFormatAria'));
     for (const f of ['xlsx', 'csv', 'md', 'txt'] as TableFormat[]) {
       const lab = el('label', 'bx-check');
       const input = el('input');
@@ -216,7 +224,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         format = f;
         render();
       });
-      lab.append(input, el('span', undefined, `.${f}${f === 'xlsx' ? ' (рекомендуется)' : ''}`));
+      lab.append(input, el('span', undefined, `.${f}${f === 'xlsx' ? t('recommendedSuffix') : ''}`));
       fmtGroup.append(lab);
     }
     fmt.append(fmtGroup);
@@ -224,27 +232,15 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
 
     // 🔴 Say WHY xlsx is the default — it is a safety property, not a feature.
     if (format === 'xlsx') {
-      panel.append(
-        el(
-          'p',
-          'bx-note bx-note--info',
-          'В .xlsx формула — отдельный элемент файла, поэтому текстовая ячейка никогда не станет формулой. И типы чисел сохраняются точно.',
-        ),
-      );
+      panel.append(el('p', 'bx-note bx-note--info', t('noteXlsx')));
     }
     if (format === 'csv') {
-      panel.append(
-        el(
-          'p',
-          'bx-note bx-note--info',
-          'В .csv типов нет: Excel заново решит сам и может превратить «05.06» в дату, а «0012345» в «12345». Нужна точность — берите .xlsx.',
-        ),
-      );
+      panel.append(el('p', 'bx-note bx-note--info', t('noteCsv')));
     }
 
     /* --- filename --- */
     const nameField = el('label', 'bx-field');
-    nameField.append(el('span', undefined, 'Имя файла'));
+    nameField.append(el('span', undefined, t('fieldFilename')));
     const nameInput = el('input');
     nameInput.type = 'text';
     nameInput.value = filenameBase || currentFilename().replace(/\.[^.]+$/, '');
@@ -265,10 +261,10 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
           'p',
           'bx-note bx-note--warn',
           guard === 'escape'
-            ? `⚠ ${guarded} ячейка(и) начинается с «=», «+», «−» или «@» — будет записана как текст (защита от исполнения формул в Excel). Валидные числа вроде «−5» не трогаем.`
+            ? t('guardWarnEscape', { n: guarded })
             : guard === 'warn'
-              ? `⚠ ${guarded} потенциально опасная ячейка. Режим «только предупредить»: подтвердите сохранение внизу.`
-              : `⚠ ${guarded} ячейка(и) может быть исполнена Excel как формула. Вы выбрали «оставить как есть».`,
+              ? t('guardWarnWarn', { n: guarded })
+              : t('guardWarnKeep', { n: guarded }),
         ),
       );
     }
@@ -277,28 +273,21 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         el(
           'p',
           'bx-note bx-note--warn',
-          `⚠ Объединённые ячейки (${primary.model.hasMergedCells}): значение ${
-            prefs.mergedCells === 'duplicate' ? 'продублировано в каждую позицию' : 'оставлено только в первой'
-          }. Само объединение в файл не переносится — только значения.`,
+          t('noteMerged', {
+            n: primary.model.hasMergedCells,
+            mode: prefs.mergedCells === 'duplicate' ? t('mergedModeDuplicate') : t('mergedModeFirst'),
+          }),
         ),
       );
     }
     if (primary.model.hasNestedTables > 0) {
       panel.append(
-        el(
-          'p',
-          'bx-note bx-note--warn',
-          `⚠ Вложенные таблицы (${primary.model.hasNestedTables}): в плоский файл они не помещаются. Их содержимое сплющено в текст ячейки. Нужна именно вложенная — выберите её отдельно в списке таблиц.`,
-        ),
+        el('p', 'bx-note bx-note--warn', t('noteNested', { n: primary.model.hasNestedTables })),
       );
     }
     if (primary.model.virtualized) {
       panel.append(
-        el(
-          'p',
-          'bx-note bx-note--warn',
-          `⚠ Похоже, таблица подгружает строки при прокрутке. Сейчас в странице ${primary.model.rows} строк — возможно, это не все. Прокрутите таблицу до конца и повторите.`,
-        ),
+        el('p', 'bx-note bx-note--warn', t('noteVirtualized', { rows: primary.model.rows })),
       );
     }
     if (totalCells > CELLS_WARN && totalCells <= CELLS_XLSX_MAX) {
@@ -306,7 +295,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         el(
           'p',
           'bx-note bx-note--warn',
-          `⚠ Большая таблица (${totalCells.toLocaleString('ru-RU')} ячеек). Сборка займёт несколько секунд; превью показывает первые ${PREVIEW_ROWS} строк.`,
+          t('noteBigTable', { cells: totalCells.toLocaleString(numTag), rows: PREVIEW_ROWS }),
         ),
       );
     }
@@ -318,8 +307,14 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
           'p',
           'bx-note bx-note--err',
           primary.model.rows > XLSX_MAX_ROWS
-            ? `🔴 ${primary.model.rows.toLocaleString('ru-RU')} строк — это больше предела самого формата Excel (${XLSX_MAX_ROWS.toLocaleString('ru-RU')}). Это ограничение Excel, не наше. Экспортируйте как .csv.`
-            : `🔴 Слишком большая для .xlsx (${totalCells.toLocaleString('ru-RU')} ячеек > ${CELLS_XLSX_MAX.toLocaleString('ru-RU')}): книга целиком держится в памяти и вкладка может упасть. Экспортируйте как .csv — он собирается по частям.`,
+            ? t('refuseRows', {
+                rows: primary.model.rows.toLocaleString(numTag),
+                max: XLSX_MAX_ROWS.toLocaleString(numTag),
+              })
+            : t('refuseCells', {
+                cells: totalCells.toLocaleString(numTag),
+                max: CELLS_XLSX_MAX.toLocaleString(numTag),
+              }),
         ),
       );
     }
@@ -328,8 +323,8 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
     const tabs = el('div', 'bx-tabs');
     tabs.setAttribute('role', 'tablist');
     for (const [id, label] of [
-      ['table', 'Таблица'],
-      ['raw', format === 'csv' ? 'Сырые байты' : 'Текст файла'],
+      ['table', t('tabTable')],
+      ['raw', format === 'csv' ? t('tabRawCsv') : t('tabRawText')],
     ] as const) {
       const b = button(label, () => {
         tab = id;
@@ -352,9 +347,9 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
     const summary = el('span', 'bx-summary');
     summary.id = 'bx-summary';
     foot.append(summary);
-    foot.append(button('Отмена', close, 'bx-btn--ghost'));
+    foot.append(button(t('cancel'), close, 'bx-btn--ghost'));
     const save = button(
-      busy ? 'Собираю…' : multi ? 'Сохранить файл' : 'Сохранить файл',
+      busy ? t('building') : t('saveButton'),
       () => void doSave(),
       'bx-btn--primary',
     );
@@ -370,7 +365,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         acknowledgedUnsafe = cb.checked;
         render();
       });
-      ack.append(cb, el('span', undefined, 'Я понимаю: файл может исполнить формулу при открытии в Excel'));
+      ack.append(cb, el('span', undefined, t('ackFormula')));
       panel.append(ack);
     }
 
@@ -382,14 +377,25 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
     const s = panel.querySelector('#bx-summary');
     if (!s) return;
     const cols = columns.filter((c) => c.included).length;
-    s.textContent = `${primary.model.rows} строк × ${cols} колонок → ${currentFilename()}`;
+    s.textContent = t('summaryLine', {
+      rows: primary.model.rows,
+      cols,
+      filename: currentFilename(),
+    });
   }
 
   /* --- preview table (a REAL <table> with scope, design §10.1) --- */
   function buildPreviewTable(rows: string[][]): HTMLElement {
     const wrap = el('div', 'bx-tablewrap');
     const table = el('table', 'bx-table');
-    const cap = el('caption', undefined, `Что попадёт в файл — первые ${Math.max(0, rows.length - (headersFirst ? 1 : 0))} строк из ${primary.model.rows}`);
+    const cap = el(
+      'caption',
+      undefined,
+      t('previewCaption', {
+        shown: Math.max(0, rows.length - (headersFirst ? 1 : 0)),
+        total: primary.model.rows,
+      }),
+    );
     table.append(cap);
 
     const thead = el('thead');
@@ -401,7 +407,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
       const cb = el('input');
       cb.type = 'checkbox';
       cb.checked = col.included;
-      cb.setAttribute('aria-label', `Включить колонку ${col.header}`);
+      cb.setAttribute('aria-label', t('includeColumnAria', { header: col.header }));
       cb.addEventListener('change', () => {
         columns = columns.map((c, j) => (j === i ? { ...c, included: cb.checked } : c));
         render();
@@ -411,11 +417,11 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
 
       // Column type is an .xlsx concept only — CSV has no types (design §6.5).
       const sel = el('select');
-      sel.setAttribute('aria-label', `Тип колонки ${col.header}`);
+      sel.setAttribute('aria-label', t('columnTypeAria', { header: col.header }));
       sel.disabled = format !== 'xlsx' || !col.included;
       for (const [v, l] of [
-        ['text', 'Текст'],
-        ['number', 'Число'],
+        ['text', t('typeText')],
+        ['number', t('typeNumber')],
       ] as const) {
         const o = el('option', undefined, l);
         o.value = v;
@@ -463,22 +469,22 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
           ? rowsToMarkdown(rows.slice(0, PREVIEW_ROWS + 1), primary.model.caption)
           : format === 'txt'
             ? rowsToTsv(rows.slice(0, PREVIEW_ROWS + 1))
-            : 'Формат .xlsx — двоичный. Ячейки записываются с типами: текст остаётся текстом, формулой стать не может.';
+            : t('rawXlsxNote');
     const pre = el('pre', 'bx-raw', text.replace(BOM, '<BOM>').split(/\r?\n/).slice(0, PREVIEW_ROWS).join('\n'));
-    pre.setAttribute('aria-label', 'Первые строки файла');
+    pre.setAttribute('aria-label', t('firstLines'));
     return pre;
   }
 
   function buildOptions(): HTMLElement {
     const box = el('details', 'bx-opts');
     box.open = true;
-    box.append(el('summary', undefined, 'Параметры файла'));
+    box.append(el('summary', undefined, t('optionsSummary')));
 
     if (format === 'csv') {
       box.append(
-        selectField('Разделитель', delimiter, [
-          ['auto', `Авто (${resolveDelimiter('auto', locale)})`],
-          [';', '; (Excel, ру-локаль)'],
+        selectField(t('csvDelimiter'), delimiter, [
+          ['auto', t('delimiterAutoResolved', { delim: resolveDelimiter('auto', locale) })],
+          [';', t('delimiterSemicolonExcel')],
           [',', ','],
           ['\t', 'Tab'],
           ['|', '|'],
@@ -488,24 +494,18 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         }),
       );
       box.append(
-        selectField('Кодировка', encoding, [
+        selectField(t('csvEncoding'), encoding, [
           ['utf8-bom', 'UTF-8 + BOM'],
-          ['utf8', 'UTF-8 без BOM'],
+          ['utf8', t('utf8NoBom')],
         ], (v) => {
           encoding = v as typeof encoding;
           render();
         }),
       );
+      box.append(el('p', 'bx-note bx-note--info', t('noteBom')));
       box.append(
-        el(
-          'p',
-          'bx-note bx-note--info',
-          'Без BOM Excel покажет кириллицу как «ÐšÑƒÑ€Ñ». Windows-1251 не предлагаем: браузер умеет кодировать только в UTF-8.',
-        ),
-      );
-      box.append(
-        selectField('Конец строки', eol, [
-          ['crlf', 'CRLF (Windows/Excel)'],
+        selectField(t('csvEol'), eol, [
+          ['crlf', t('eolCrlf')],
           ['lf', 'LF'],
         ], (v) => {
           eol = v as typeof eol;
@@ -513,10 +513,10 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         }),
       );
       box.append(
-        selectField('Опасные ячейки', guard, [
-          ['escape', 'Экранировать (рекомендуется)'],
-          ['keep', 'Оставить как есть'],
-          ['warn', 'Только предупредить'],
+        selectField(t('csvGuard'), guard, [
+          ['escape', t('guardEscape')],
+          ['keep', t('guardKeep')],
+          ['warn', t('guardWarn')],
         ], (v) => {
           guard = v as typeof guard;
           acknowledgedUnsafe = false;
@@ -531,24 +531,24 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         sepLine = cb.checked;
         render();
       });
-      sep.append(cb, el('span', undefined, 'Добавить строку «sep=» — помогает Excel, ломает pandas и Google Sheets'));
+      sep.append(cb, el('span', undefined, t('sepLineLong')));
       box.append(sep);
       if (primary.model.caption) {
         box.append(
           el(
             'p',
             'bx-note bx-note--info',
-            `Название «${primary.model.caption}» в .csv не попадёт — CSV не умеет заголовки над шапкой (любой парсер на этом ломается). Оно попадёт в имя файла.`,
+            t('noteCaptionCsv', { caption: primary.model.caption }),
           ),
         );
       }
     } else {
       const hdr = el('div', 'bx-field');
-      hdr.append(el('span', undefined, 'Первая строка'));
+      hdr.append(el('span', undefined, t('fieldFirstRow')));
       const grp = el('div', 'bx-row');
       for (const [v, l] of [
-        [true, 'заголовки'],
-        [false, 'обычные данные'],
+        [true, t('firstRowHeaders')],
+        [false, t('firstRowData')],
       ] as const) {
         const lab = el('label', 'bx-check');
         const r = el('input');
@@ -613,12 +613,12 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
           // first ~PREVIEW_ROWS. A table that grows WIDER below that window would
           // otherwise have its extra columns silently dropped here — append the
           // missing ones as default (included) columns so no data is lost.
-          const extra = headersFrom(matrix, width)
+          const extra = headersFrom(matrix, width, deps.extractOptions.columnFallback)
             .slice(columns.length)
             .map<TableColumn>((header) => ({ header, type: 'text', included: true }));
           cols = extra.length ? [...columns, ...extra] : columns;
         } else {
-          cols = headersFrom(matrix, width).map<TableColumn>((header) => ({
+          cols = headersFrom(matrix, width, deps.extractOptions.columnFallback).map<TableColumn>((header) => ({
             header,
             type: 'text',
             included: true,
@@ -627,7 +627,7 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         const rows = rowsFromMatrix(matrix.cells, matrix.headerRows, cols, headersFirst);
         allRows.push(rows);
         sheets.push({
-          name: sanitizeSheetName(p.model.caption ?? '', `Таблица ${sheets.length + 1}`),
+          name: sanitizeSheetName(p.model.caption ?? '', t('sheetDefault', { n: sheets.length + 1 })),
           rows: toXlsxRows(rows, cols, headersFirst),
         });
       }
@@ -637,12 +637,10 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
       if (format === 'xlsx') {
         // Second injection, and ONLY now (design §0).
         const injected = await deps.ask({ type: 'injectXlsx' });
-        if (!injected.ok) throw new Error('Не удалось загрузить модуль .xlsx: ' + injected.error);
+        if (!injected.ok) throw new Error(t('xlsxLoadFail') + injected.error);
         const writer = await awaitXlsxWriter();
         if (!writer) {
-          throw new Error(
-            'Модуль .xlsx не загрузился (возможно, страница ограничивает выполнение скриптов). Экспортируйте как .csv.',
-          );
+          throw new Error(t('xlsxLoadFail2'));
         }
         const named = uniqueSheetNames(sheets.map((s) => s.name));
         const blob = await writer.write(sheets.map((s, i) => ({ ...s, name: named[i]! })));
@@ -675,11 +673,11 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
         // 🔴 A FACT, not a celebration (design §7.8): without the `downloads`
         // permission we genuinely do not know where the file landed, or whether the
         // page's CSP dropped it. So we offer the escape hatch every time.
-        showToast(`Сохранение запущено: ${result.filename}`, {
+        showToast(t('saveStarted', { filename: result.filename }), {
           theme: prefs.theme as OverlayTheme,
           actions: [
             {
-              label: 'Файл не появился?',
+              label: t('fileDidntAppear'),
               onClick: () => {
                 void fallbackSave(filename);
               },
@@ -689,16 +687,13 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
       } else {
         busy = false;
         render();
-        showToast(
-          `Не удалось сохранить файл (${result.reason}). Эта страница может запрещать загрузки.`,
-          {
-            tone: 'error',
-            theme: prefs.theme as OverlayTheme,
-            actions: [
-              { label: 'Сохранить через вкладку расширения', onClick: () => void fallbackSave(filename) },
-            ],
-          },
-        );
+        showToast(t('saveFailed', { reason: result.reason }), {
+          tone: 'error',
+          theme: prefs.theme as OverlayTheme,
+          actions: [
+            { label: t('saveViaTab'), onClick: () => void fallbackSave(filename) },
+          ],
+        });
       }
     } catch (e) {
       busy = false;
@@ -731,14 +726,11 @@ export async function openExportDialog(picked: Picked[], deps: DialogDeps): Prom
             : buildCsv(rows, csvOpts());
       const mime = format === 'md' ? MIME.md! : format === 'txt' ? MIME.txt! : MIME.csv!;
       if (format === 'xlsx') {
-        showToast(
-          '.xlsx через вкладку расширения не пересобрать — сохраняю как .csv. Данные те же, типы Excel определит сам.',
-          { tone: 'warn', theme: prefs.theme as OverlayTheme },
-        );
+        showToast(t('fallbackXlsxWarn'), { tone: 'warn', theme: prefs.theme as OverlayTheme });
       }
       const res = await deps.ask({ type: 'stashAndSave', filename: name, text, mime });
       if (!res.ok) {
-        showToast(`Не получилось: ${res.error}`, { tone: 'error', theme: prefs.theme as OverlayTheme });
+        showToast(t('fallbackFail', { error: res.error }), { tone: 'error', theme: prefs.theme as OverlayTheme });
       }
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), {

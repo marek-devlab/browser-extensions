@@ -21,7 +21,10 @@ body {
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 16px;
+  /* RU/ET tab + brand labels are longer than EN; let the bar wrap rather than
+     overflow the viewport. The theme toggle keeps its margin-left:auto. */
+  flex-wrap: wrap;
+  gap: 12px 16px;
   padding: 8px 14px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
@@ -47,6 +50,7 @@ body {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
 }
 
@@ -822,8 +826,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  /* Longer RU/ET labels must not squeeze the control off-row: wrap instead. */
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 4px 0;
+}
+
+/* Text-bearing children shrink instead of forcing horizontal overflow. */
+.setrow > div,
+.setrow > span,
+.setrow > label {
+  min-width: 0;
 }
 
 .setrow--toggle {

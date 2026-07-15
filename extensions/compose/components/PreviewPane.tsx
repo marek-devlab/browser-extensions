@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Callout } from '@blur/ui';
 import { renderPreview } from '../utils/markdown';
+import { useT } from '../utils/i18n';
 
 // Read-only preview (design §2.2, §5.5, §7).
 //
@@ -63,6 +64,7 @@ export function PreviewPane({
   body: string;
   warnOnSanitize: boolean;
 }) {
+  const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLElement | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
@@ -76,7 +78,7 @@ export function PreviewPane({
     if (!mount) return;
     const started = performance.now();
     try {
-      const { fragment, removed: stripped } = renderPreview(source);
+      const { fragment, removed: stripped } = renderPreview(source, t);
       mount.replaceChildren(fragment); // ✅ the single string→DOM boundary
       setRemoved(stripped);
       setError(null);
@@ -87,7 +89,7 @@ export function PreviewPane({
       mount.replaceChildren();
     }
     if (performance.now() - started > SLOW_RENDER_MS) setManual(true);
-  }, []);
+  }, [t]);
 
   /* Create the closed shadow root once. */
   useEffect(() => {
@@ -131,25 +133,23 @@ export function PreviewPane({
     <div className="cw-preview-wrap">
       {manual && (
         <div className="cw-preview-manual" role="status">
-          <span>
-            ⓘ Большой черновик — живое превью в ручном режиме{stale ? ' (показан устаревший рендер)' : ''}.
-          </span>
-          <Button onClick={() => paint(body)}>Обновить превью</Button>
+          <span>{t('preview_manual', { stale: stale ? t('preview_stale') : '' })}</span>
+          <Button onClick={() => paint(body)}>{t('preview_refresh')}</Button>
         </div>
       )}
 
       {error && (
-        <Callout tone="poor" title="Не удалось отрендерить превью">
-          Текст цел — сломалось только превью. {error}
+        <Callout tone="poor" title={t('preview_error_title')}>
+          {t('preview_error_body', { error })}
         </Callout>
       )}
 
       {warnOnSanitize && removed.length > 0 && (
-        <Callout tone="warn" title={`В превью не показаны фрагменты: ${removed.length}`}>
+        <Callout tone="warn" title={t('preview_removed_title', { n: removed.length })}>
           <p>
-            Мы вырезали HTML, который может выполнить код внутри расширения. Ваш текст{' '}
-            <strong>не изменён</strong> — вырезано только из превью; при копировании отправится то,
-            что вы написали. GitHub и GitLab вырежут это тоже: их санитайзеры строже нашего.
+            {t('preview_removed_body_1')}
+            <strong>{t('preview_removed_strong')}</strong>
+            {t('preview_removed_body_2')}
           </p>
           <button
             type="button"
@@ -157,7 +157,7 @@ export function PreviewPane({
             aria-expanded={showRemoved}
             onClick={() => setShowRemoved((v) => !v)}
           >
-            {showRemoved ? 'Скрыть' : 'Показать, что вырезано'}
+            {showRemoved ? t('preview_hide') : t('preview_show_removed')}
           </button>
           {showRemoved && (
             // textContent only — the removed markup is rendered as ESCAPED TEXT,
@@ -171,7 +171,7 @@ export function PreviewPane({
         ref={hostRef}
         className="cw-preview"
         role="region"
-        aria-label="Превью — близко к GitHub, не идентично"
+        aria-label={t('preview_region_aria')}
       />
     </div>
   );

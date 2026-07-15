@@ -1,15 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ThemeToggle, Callout } from '@blur/ui';
-import { useSettings, useThemeSetter } from '../../utils/settings';
+import { Callout, LanguageSwitcher, LocaleProvider, ThemeToggle, type Locale } from '@blur/ui';
+import { useSettings, useThemeSetter, useWhoamiLocale } from '../../utils/settings';
+import { useT, type TT } from '../../utils/i18n';
 import { hasIspPermission, revokeIspPermission } from '../../utils/network';
 import type { CopyFormat, IspProvider, Units } from '../../utils/storage';
 
 // OPTIONS (design §2.7): the things a user needs exactly once — appearance, the
 // network opt-ins and their REVOCATION, and the honest "what this extension never
 // does" list. Nothing here stores data about the user; it stores prefs and consent
-// flags only (utils/storage.ts).
+// flags only (utils/storage.ts). This surface also owns the runtime language switch.
 
 export function App() {
+  const { locale, setLocale } = useWhoamiLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <OptionsApp locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function OptionsApp({ locale, setLocale }: { locale: Locale; setLocale: (l: Locale) => void }) {
+  const t = useT();
   const { settings, update, reset } = useSettings();
   const { theme, setTheme } = useThemeSetter(settings, update);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -26,7 +37,7 @@ export function App() {
     return (
       <main className="opts">
         <p role="status" aria-live="polite">
-          <span className="ui-spinner" aria-hidden="true" /> Загрузка…
+          <span className="ui-spinner" aria-hidden="true" /> {t('loading')}
         </p>
       </main>
     );
@@ -48,24 +59,27 @@ export function App() {
 
   return (
     <main className="opts">
-      <h1>Кто я · Настройки</h1>
+      <h1>{t('opt_title')}</h1>
 
       <section className="opts__section">
-        <h2>Внешний вид</h2>
-        <Row label="Тема">
+        <h2>{t('opt_appearance')}</h2>
+        <Row label={t('opt_theme')}>
           <ThemeToggle theme={theme} onChange={setTheme} />
         </Row>
-        <Row label="Единицы">
+        <Row label={t('language')}>
+          <LanguageSwitcher locale={locale} onChange={setLocale} label={t('langSwitcherLabel')} />
+        </Row>
+        <Row label={t('opt_units')}>
           <Segmented<Units>
             value={settings.units}
             options={[
-              ['GB', 'ГБ / МБ'],
-              ['GiB', 'ГиБ / МиБ'],
+              ['GB', t('opt_unitsGb')],
+              ['GiB', t('opt_unitsGib')],
             ]}
             onChange={(units) => update({ units })}
           />
         </Row>
-        <Row label="Копировать как">
+        <Row label={t('opt_copyAs')}>
           <Segmented<CopyFormat>
             value={settings.copyFormat}
             options={[
@@ -79,11 +93,8 @@ export function App() {
       </section>
 
       <section className="opts__section">
-        <h2>Сеть</h2>
-        <Callout tone="info">
-          По умолчанию расширение не делает НИ ОДНОГО сетевого запроса. Всё ниже
-          включается вами.
-        </Callout>
+        <h2>{t('opt_network')}</h2>
+        <Callout tone="info">{t('opt_networkCallout')}</Callout>
 
         <label className="opts__check">
           <input
@@ -92,11 +103,8 @@ export function App() {
             onChange={(e) => update({ allowCloudflare: e.target.checked })}
           />
           <span>
-            Разрешить кнопку «Показать мой IP»
-            <small>
-              Источник: Cloudflare (one.one.one.one/cdn-cgi/trace). Без ключа. Отдаёт IP, страну,
-              PoP, TLS. ISP — нет.
-            </small>
+            {t('opt_allowIpBtn')}
+            <small>{t('opt_allowIpSmall')}</small>
           </span>
         </label>
 
@@ -108,61 +116,44 @@ export function App() {
             onChange={(e) => update({ autoFetchIp: e.target.checked })}
           />
           <span>
-            Автоматически показывать IP при открытии попапа
-            <small>
-              ⚠ Тогда каждый раз при открытии попапа будет сетевой запрос. По умолчанию выключено
-              намеренно. Доступно только после первого явного согласия на запрос к Cloudflare.
-            </small>
+            {t('opt_autoFetch')}
+            <small>{t('opt_autoFetchSmall')}</small>
           </span>
         </label>
 
         <fieldset className="opts__fieldset">
-          <legend>Сервис для ISP / ASN</legend>
+          <legend>{t('opt_ispLegend')}</legend>
           <IspRadio
             value={settings.ispProvider}
             onChange={(ispProvider) => update({ ispProvider })}
           />
           {settings.ispProvider === 'ipinfo' && (
             <label className="opts__token">
-              Токен ipinfo.io
+              {t('opt_ipinfoTokenLabel')}
               <input
                 type="password"
                 value={settings.ipinfoToken}
-                placeholder="Бесплатный Lite-токен"
+                placeholder={t('opt_ipinfoTokenPlaceholder')}
                 onChange={(e) => update({ ipinfoToken: e.target.value })}
               />
-              <small>
-                ⓘ Хранится только на этом компьютере (storage.local), не синхронизируется, не
-                покидает браузер, кроме запросов к ipinfo.io. 🔴 В экспорт и копирование не
-                включается никогда.
-              </small>
+              <small>{t('opt_ipinfoTokenSmall')}</small>
             </label>
           )}
-          <Callout tone="info">
-            ⓘ Раньше здесь планировался второй, беcтокенный сервис (ipapi.co). Он{' '}
-            <strong>не подключён</strong>: его бесплатный тариф, судя по условиям, не допускает
-            коммерческого использования — пока это не выяснено юридически, расширение к нему не
-            обращается, и его нет ни в манифесте, ни в CSP. 🔴 Ни при какой ошибке ipinfo.io мы не
-            переключаемся на другой сервис молча.
-          </Callout>
+          <Callout tone="info">{t('opt_ipapiCallout')}</Callout>
         </fieldset>
 
         <div className="opts__consents">
-          <h3>Состояние согласий</h3>
+          <h3>{t('opt_consentsTitle')}</h3>
           <div className="opts__consentrow">
-            <span>Cloudflare: {consentLabel(settings.cfConsent)}</span>
+            <span>Cloudflare: {consentLabel(settings.cfConsent, t)}</span>
             <button type="button" className="ui-btn ui-btn--sm" onClick={revokeCf} disabled={settings.cfConsent === 'unset'}>
-              Отозвать
+              {t('opt_revoke')}
             </button>
           </div>
           <div className="opts__consentrow">
             <span>
-              ipinfo.io: {consentLabel(settings.ispConsent)}
-              {permHeld === null
-                ? ''
-                : permHeld
-                  ? ' · доступ к хосту выдан браузером'
-                  : ' · доступа к хосту нет'}
+              ipinfo.io: {consentLabel(settings.ispConsent, t)}
+              {permHeld === null ? '' : permHeld ? t('opt_hostGranted') : t('opt_hostNone')}
             </span>
             <button
               type="button"
@@ -170,35 +161,27 @@ export function App() {
               onClick={() => void revokeIsp()}
               disabled={settings.ispConsent === 'unset' && permHeld !== true}
             >
-              Отозвать
+              {t('opt_revoke')}
             </button>
           </div>
-          <small className="opts__hint">
-            ⓘ «Отозвать» для ipinfo — настоящий отзыв: снимает host-доступ через
-            permissions.remove и сбрасывает флаг согласия, поэтому в следующий раз диалог
-            раскрытия покажется заново. Отозвать доступ можно и в настройках самого браузера —
-            расширение это заметит и откатит свой флаг.
-          </small>
+          <small className="opts__hint">{t('opt_ipinfoRevokeHint')}</small>
         </div>
       </section>
 
       <section className="opts__section">
-        <h2>Чего это расширение не делает — никогда</h2>
+        <h2>{t('opt_neverTitle')}</h2>
         <ul className="opts__never">
-          <li>не считает и не хранит отпечаток (fingerprint-хеш)</li>
-          <li>не хранит историю IP-адресов</li>
-          <li>не имеет аналитики и телеметрии</li>
-          <li>не может обратиться ни к одному хосту, кроме перечисленных выше (зафиксировано в CSP манифеста)</li>
+          <li>{t('opt_never1')}</li>
+          <li>{t('opt_never2')}</li>
+          <li>{t('opt_never3')}</li>
+          <li>{t('opt_never4')}</li>
           <li>
-            не подменяет User-Agent —{' '}
+            {t('opt_never5Pre')}
             <button type="button" className="linkbtn" popoverTarget="why-no-ua">
-              Почему?
+              {t('opt_whyBtn')}
             </button>
             <div id="why-no-ua" popover="auto" className="popover" role="note">
-              <p className="popover__body">
-                Это другой продукт. Подмена UA потребовала бы доступа ко всем сайтам и всё равно
-                детектится тривиально (Sec-CH-UA выдаёт настоящий бренд). «Показать» ≠ «подменить».
-              </p>
+              <p className="popover__body">{t('opt_whyBody')}</p>
             </div>
           </li>
         </ul>
@@ -207,13 +190,13 @@ export function App() {
       <section className="opts__section opts__reset">
         {!confirmReset ? (
           <button type="button" className="ui-btn" onClick={() => setConfirmReset(true)}>
-            Сбросить все настройки
+            {t('opt_resetBtn')}
           </button>
         ) : (
           <div className="opts__confirm">
-            <span>Точно сбросить всё и снять host-доступ?</span>
+            <span>{t('opt_resetConfirmQ')}</span>
             <button type="button" className="ui-btn ui-btn--sm" onClick={() => setConfirmReset(false)}>
-              Отмена
+              {t('opt_cancel')}
             </button>
             <button
               type="button"
@@ -225,18 +208,18 @@ export function App() {
                 setConfirmReset(false);
               }}
             >
-              Сбросить
+              {t('opt_resetDo')}
             </button>
           </div>
         )}
-        <span className="opts__version">Версия 1.0.0</span>
+        <span className="opts__version">{t('opt_version')}</span>
       </section>
     </main>
   );
 }
 
-function consentLabel(c: 'unset' | 'granted' | 'never'): string {
-  return c === 'granted' ? 'согласие дано' : c === 'never' ? 'больше не предлагать' : 'не запрошено';
+function consentLabel(c: 'unset' | 'granted' | 'never', t: TT): string {
+  return c === 'granted' ? t('consent_granted') : c === 'never' ? t('consent_never') : t('consent_unset');
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -275,9 +258,10 @@ function Segmented<T extends string>({
 }
 
 function IspRadio({ value, onChange }: { value: IspProvider; onChange: (v: IspProvider) => void }) {
+  const t = useT();
   const options: [IspProvider, string][] = [
-    ['ipinfo', 'ipinfo.io — нужен ваш токен (бесплатный)'],
-    ['off', 'Выключено — кнопка ISP не показывается вообще'],
+    ['ipinfo', t('opt_ispRadioIpinfo')],
+    ['off', t('opt_ispRadioOff')],
   ];
   return (
     <div className="opts__radios">

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { browser } from 'wxt/browser';
-import { Callout, ThemeToggle } from '@blur/ui';
-import { DEFAULT_PREFS, prefsItem } from '../../utils/storage';
+import { Callout, LanguageSwitcher, LocaleProvider, ThemeToggle, useLocaleController } from '@blur/ui';
+import { DEFAULT_PREFS, localeItem, prefsItem } from '../../utils/storage';
 import type { ExportPrefs } from '../../utils/types';
 import { useExportTheme } from '../../utils/theme';
+import { useT } from '../../utils/i18n';
 import { buildFilename } from '../../utils/filename';
 
 // Options — the persisted defaults (design §2.5 / §3). Persistence is REAL: every
@@ -34,6 +35,26 @@ function usePrefs(): {
 }
 
 export function App() {
+  const { locale, setLocale } = useLocaleController({
+    key: 'blur-export:locale',
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <AppBody locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function AppBody({
+  locale,
+  setLocale,
+}: {
+  locale: Parameters<typeof LanguageSwitcher>[0]['locale'];
+  setLocale: (l: Parameters<typeof LanguageSwitcher>[0]['locale']) => void;
+}) {
+  const t = useT();
   const { theme, setTheme } = useExportTheme();
   const { prefs, update } = usePrefs();
   const [tab, setTab] = useState<TabId>('tables');
@@ -63,17 +84,22 @@ export function App() {
   return (
     <div className="opt">
       <header className="opt__head">
-        <h1>Экспорт контента — настройки</h1>
+        <h1>{t('optionsTitle')}</h1>
         <ThemeToggle theme={theme ?? 'auto'} onChange={setTheme} />
       </header>
+
+      <section className="opt__group">
+        <h2>{t('language')}</h2>
+        <LanguageSwitcher locale={locale} onChange={setLocale} label={t('language')} />
+      </section>
 
       <nav className="opt__tabs" role="tablist">
         {(
           [
-            ['tables', 'Таблицы'],
-            ['text', 'Текст'],
-            ['filenames', 'Имена файлов'],
-            ['about', 'О расширении'],
+            ['tables', t('tables')],
+            ['text', t('tabText')],
+            ['filenames', t('tabFilenames')],
+            ['about', t('tabAbout')],
           ] as [TabId, string][]
         ).map(([id, label]) => (
           <button
@@ -90,9 +116,9 @@ export function App() {
 
       {tab === 'tables' && (
         <>
-          <Group title="Формат по умолчанию">
+          <Group title={t('groupDefaultFormat')}>
             <RadioRow
-              legend="Таблицы"
+              legend={t('tables')}
               value={prefs.defaultTableFormat}
               options={[
                 ['xlsx', '.xlsx'],
@@ -101,19 +127,16 @@ export function App() {
               ]}
               onChange={(v) => update({ defaultTableFormat: v as ExportPrefs['defaultTableFormat'] })}
             />
-            <Callout tone="info">
-              .xlsx безопаснее: Excel не исполняет формулы из текстовых ячеек, а типы
-              чисел и дат сохраняются точно.
-            </Callout>
+            <Callout tone="info">{t('calloutXlsxSafer')}</Callout>
           </Group>
 
           <Group title="CSV">
             <SelectRow
-              label="Разделитель"
+              label={t('csvDelimiter')}
               value={prefs.csvDelimiter}
               options={[
-                ['auto', 'Авто (по локали)'],
-                [';', '; (Excel, ру)'],
+                ['auto', t('delimiterAuto')],
+                [';', t('delimiterSemicolonExcel')],
                 [',', ','],
                 ['\t', 'Tab'],
                 ['|', '|'],
@@ -121,16 +144,16 @@ export function App() {
               onChange={(v) => update({ csvDelimiter: v as ExportPrefs['csvDelimiter'] })}
             />
             <SelectRow
-              label="Кодировка"
+              label={t('csvEncoding')}
               value={prefs.csvEncoding}
               options={[
                 ['utf8-bom', 'UTF-8 + BOM'],
-                ['utf8', 'UTF-8 без BOM'],
+                ['utf8', t('utf8NoBom')],
               ]}
               onChange={(v) => update({ csvEncoding: v as ExportPrefs['csvEncoding'] })}
             />
             <SelectRow
-              label="Конец строки"
+              label={t('csvEol')}
               value={prefs.csvEol}
               options={[
                 ['crlf', 'CRLF'],
@@ -139,63 +162,60 @@ export function App() {
               onChange={(v) => update({ csvEol: v as ExportPrefs['csvEol'] })}
             />
             <SelectRow
-              label="Опасные ячейки"
+              label={t('csvGuard')}
               value={prefs.csvFormulaGuard}
               options={[
-                ['escape', 'Экранировать (рекомендуется)'],
-                ['keep', 'Оставить как есть'],
-                ['warn', 'Только предупредить'],
+                ['escape', t('guardEscape')],
+                ['keep', t('guardKeep')],
+                ['warn', t('guardWarn')],
               ]}
               onChange={(v) => update({ csvFormulaGuard: v as ExportPrefs['csvFormulaGuard'] })}
             />
             <CheckRow
-              label="Добавлять строку «sep=»"
+              label={t('sepLine')}
               checked={prefs.csvSepLine}
               onChange={(v) => update({ csvSepLine: v })}
             />
           </Group>
 
-          <Group title="Семантика таблицы">
+          <Group title={t('groupTableSemantics')}>
             <RadioRow
-              legend="Объединённые ячейки"
+              legend={t('legendMergedCells')}
               value={prefs.mergedCells}
               options={[
-                ['duplicate', 'Дублировать значение'],
-                ['empty', 'Оставить пустыми'],
+                ['duplicate', t('mergedDuplicate')],
+                ['empty', t('mergedEmpty')],
               ]}
               onChange={(v) => update({ mergedCells: v as ExportPrefs['mergedCells'] })}
             />
             <SelectRow
-              label="Ссылки в ячейках"
+              label={t('linksInCells')}
               value={prefs.linksInCells}
               options={[
-                ['text', 'Только текст'],
-                ['text-url', 'Текст (URL)'],
-                ['url', 'Только URL'],
+                ['text', t('linksText')],
+                ['text-url', t('linksTextUrl')],
+                ['url', t('linksUrl')],
               ]}
               onChange={(v) => update({ linksInCells: v as ExportPrefs['linksInCells'] })}
             />
             <CheckRow
-              label="Распознавать «1 234,56» как число"
+              label={t('parseNumbers')}
               checked={prefs.parseNumbers}
               onChange={(v) => update({ parseNumbers: v })}
             />
-            <Callout tone="info">
-              Неоднозначные числа («1,234» — это 1234 или 1.234?) остаются текстом. Ошибиться
-              здесь дороже, чем не угадать: молча испорченный отчёт хуже, чем ячейка-текст.
-            </Callout>
+            <Callout tone="info">{t('calloutAmbiguousNumbers')}</Callout>
             <CheckRow
-              label="Распознавать даты (05.06 → 5 июня)"
+              label={t('parseDates')}
               checked={prefs.parseDates}
               onChange={(v) => update({ parseDates: v })}
             />
             <CheckRow
-              label="Только видимые строки (пропускать display:none)"
+              label={t('visibleRowsOnly')}
               checked={prefs.visibleRowsOnly}
               onChange={(v) => update({ visibleRowsOnly: v })}
             />
             <CheckRow
-              label="Всегда показывать превью перед сохранением"
+              label={t('alwaysPreview')}
               checked={prefs.alwaysPreview}
               onChange={(v) => update({ alwaysPreview: v })}
             />
@@ -204,9 +224,9 @@ export function App() {
       )}
 
       {tab === 'text' && (
-        <Group title="Текст">
+        <Group title={t('tabText')}>
           <RadioRow
-            legend="Формат текста по умолчанию"
+            legend={t('legendDefaultTextFormat')}
             value={prefs.defaultTextFormat}
             options={[
               ['md', '.md'],
@@ -214,16 +234,14 @@ export function App() {
             ]}
             onChange={(v) => update({ defaultTextFormat: v as ExportPrefs['defaultTextFormat'] })}
           />
-          <Callout tone="info">
-            Порядок пунктов меню это не меняет — оба формата всегда видны.
-          </Callout>
+          <Callout tone="info">{t('calloutTextMenuOrder')}</Callout>
         </Group>
       )}
 
       {tab === 'filenames' && (
-        <Group title="Шаблон имени">
+        <Group title={t('groupFilenameTemplate')}>
           <label className="opt__field opt__field--stack">
-            <span>Шаблон</span>
+            <span>{t('templateLabel')}</span>
             <input
               type="text"
               value={prefs.filenameTemplate}
@@ -231,16 +249,18 @@ export function App() {
             />
           </label>
           <p className="opt__hint">
-            Доступно: {'{host} {title} {caption} {date} {time} {index} {rows} {cols}'}
+            {t('availableTokens', {
+              tokens: '{host} {title} {caption} {date} {time} {index} {rows} {cols}',
+            })}
           </p>
           <p className="opt__hint mono">
-            Пример:{' '}
+            {t('example')}{' '}
             {buildFilename(
               prefs.filenameTemplate,
               {
-                host: 'cbr.ru',
-                title: 'ЦБ РФ',
-                caption: 'Курсы валют',
+                host: t('exampleHost'),
+                title: t('exampleTitle'),
+                caption: t('exampleCaption'),
                 date: '2026-07-14',
                 time: '1200',
                 index: '1',
@@ -252,81 +272,52 @@ export function App() {
             )}
           </p>
           <CheckRow
-            label="Транслитерировать кириллицу в имени файла"
+            label={t('translitFilename')}
             checked={prefs.filenameTranslit}
             onChange={(v) => update({ filenameTranslit: v })}
           />
-          <Callout tone="warn" title="Безопасность имён">
-            Запрещённые символы, RTL-подмена и имена вроде CON/PRN обезвреживаются
-            автоматически (utils/filename — реальная логика).
+          <Callout tone="warn" title={t('calloutFilenameSafetyTitle')}>
+            {t('calloutFilenameSafetyBody')}
           </Callout>
         </Group>
       )}
 
       {tab === 'about' && (
         <>
-          <Group title="Как это работает">
-            <p className="opt__hint">
-              Выделите текст → правая кнопка → «Сохранить контент страницы». Или откройте
-              это расширение из панели: там видно, что вообще есть на странице — выделение,
-              таблицы, картинки — и оттуда же всё запускается.
-            </p>
-            <p className="opt__hint">
-              На телефоне (Firefox для Android) контекстного меню нет — все действия
-              доступны из окна расширения.
-            </p>
+          <Group title={t('groupHowItWorks')}>
+            <p className="opt__hint">{t('aboutHow1')}</p>
+            <p className="opt__hint">{t('aboutHow2')}</p>
           </Group>
 
-          <Group title="Разрешения">
+          <Group title={t('groupPermissions')}>
+            <p className="opt__hint">{t('aboutPerm1')}</p>
             <p className="opt__hint">
-              Расширение не имеет постоянного доступа ни к одному сайту: страница читается
-              только в момент вашего жеста. Поэтому при установке нет строчки «читать и
-              изменять все ваши данные на всех сайтах».
-            </p>
-            <p className="opt__hint">
-              <strong>Сохранение картинок с чужих доменов.</strong> Атрибут{' '}
-              <code>download</code> браузер игнорирует для чужих доменов: вместо сохранения
-              произошёл бы переход по ссылке. Мы этого не делаем. Если сервер картинки
-              разрешает CORS — мы прочитаем её и сохраним сами. Если нет — честно откажем и
-              предложим открыть картинку. Разрешение «Управление загрузками» снимает это
-              ограничение, но добавляет строчку в предупреждения при установке — поэтому
-              оно опциональное и выключено по умолчанию.
+              <strong>{t('aboutPermImagesTitle')}</strong> {t('aboutPermImagesBody')}
             </p>
             <p className="line">
-              Статус:{' '}
+              {t('statusLabel')}{' '}
               {downloadsGranted === null
                 ? '…'
                 : downloadsGranted
-                  ? 'разрешение выдано'
-                  : 'не выдано'}
+                  ? t('statusGranted')
+                  : t('statusNotGranted')}
             </p>
             <div className="btnrow">
               <button className="opt__btn" onClick={() => void requestDownloads()}>
-                {downloadsGranted ? 'Отозвать разрешение' : 'Запросить разрешение'}
+                {downloadsGranted ? t('revokePermission') : t('requestPermission')}
               </button>
             </div>
           </Group>
 
-          <Group title="Безопасность">
-            <Callout tone="info" title="Ноль сети, ноль телеметрии">
-              Файл собирается локально в браузере. Единственный сетевой запрос, который
-              расширение вообще может сделать, — загрузка той самой картинки, которую вы
-              попросили сохранить. Никакой аналитики, никакого удалённого кода.
+          <Group title={t('groupSecurity')}>
+            <Callout tone="info" title={t('calloutZeroNetworkTitle')}>
+              {t('calloutZeroNetworkBody')}
             </Callout>
-            <Callout tone="warn" title="Формулы в .csv">
-              Ячейка, начинающаяся с <code>=</code>, <code>+</code>, <code>-</code> или{' '}
-              <code>@</code>, исполняется Excel как формула — а данные берутся с
-              произвольной веб-страницы. По умолчанию мы ставим перед такой ячейкой
-              апостроф. Валидные числа (<code>-5</code>) не трогаем. Формат{' '}
-              <strong>.xlsx этой проблемы не имеет вообще</strong>: там формула — отдельный
-              элемент файла, и текстовая ячейка ею не станет. Поэтому .xlsx — формат по
-              умолчанию.
+            <Callout tone="warn" title={t('calloutCsvFormulaTitle')}>
+              {t('calloutCsvFormulaBody')}
             </Callout>
-            <Callout tone="info" title="Имена файлов">
-              RTL-подмена (<code>отчет‮exe.xslx</code>), путь наружу (<code>../</code>),
-              зарезервированные имена Windows (<code>CON</code>, <code>PRN</code>) и
-              управляющие символы обезвреживаются перед записью. Расширение файла всегда
-              ставим мы — из выбранного формата, никогда из вашего ввода.
+            <Callout tone="info" title={t('calloutFilenamesTitle')}>
+              {t('calloutFilenamesBody')}
             </Callout>
           </Group>
         </>

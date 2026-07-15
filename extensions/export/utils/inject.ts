@@ -8,6 +8,8 @@
 // reachable from here — see entrypoints/popup/App.tsx.
 
 import { browser } from 'wxt/browser';
+import { localeItem } from './storage';
+import { tAt } from './i18n';
 import type { EngineCommand, EngineResponse } from './messages';
 
 export class NoPageAccess extends Error {}
@@ -44,12 +46,15 @@ export async function injectFile(
     await legacy.executeScript(tabId, { file, ...(frameId ? { frameId } : {}) });
     return;
   }
-  throw new NoPageAccess('Браузер не даёт внедрить скрипт на эту страницу.');
+  throw new NoPageAccess(tAt(await localeItem.getValue(), 'injectNoScriptApi'));
 }
 
 export async function runOnActiveTab(cmd: EngineCommand): Promise<EngineResponse> {
+  // These NoPageAccess messages surface in the popup's ErrorState, so translate them
+  // to the persisted UI language (English default).
+  const locale = await localeItem.getValue();
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (typeof tab?.id !== 'number') throw new NoPageAccess('Нет активной вкладки');
+  if (typeof tab?.id !== 'number') throw new NoPageAccess(tAt(locale, 'injectNoActiveTab'));
 
   try {
     await injectFile(tab.id, undefined, '/engine.js');
@@ -58,12 +63,10 @@ export async function runOnActiveTab(cmd: EngineCommand): Promise<EngineResponse
     // without permission — the browser forbids injection there, for everyone.
     // 🔴 Say so; do not show an empty inventory and let the user think the page has
     // nothing on it (design §7 — never lie about a limitation).
-    throw new NoPageAccess(
-      'На этой странице расширения работать не могут (служебная страница браузера, магазин дополнений или PDF).',
-    );
+    throw new NoPageAccess(tAt(locale, 'injectRestrictedPage'));
   }
 
   const res = (await browser.tabs.sendMessage(tab.id, cmd)) as EngineResponse | undefined;
-  if (!res) throw new NoPageAccess('Страница не ответила. Перезагрузите её и попробуйте снова.');
+  if (!res) throw new NoPageAccess(tAt(locale, 'injectNoResponse'));
   return res;
 }

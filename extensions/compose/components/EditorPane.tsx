@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { actions, insertText, type ActionId, type EditState } from '../utils/editor-actions';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { createActions, insertText, type ActionId, type EditState } from '../utils/editor-actions';
+import { useT } from '../utils/i18n';
 
 // The editor — a flat <textarea> that IS the single source of truth (design §1.3).
 //
@@ -66,6 +67,8 @@ export function EditorPane({
   matches: { start: number; end: number }[];
   currentMatch: number;
 }) {
+  const t = useT();
+  const actions = useMemo(() => createActions(t), [t]);
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLPreElement>(null);
   const undoStack = useRef<Snapshot[]>([]);
@@ -310,7 +313,7 @@ export function EditorPane({
           onSelectionChange({ start: el.selectionStart, end: el.selectionEnd });
         }}
         spellCheck={spellcheck}
-        aria-label="Редактор Markdown"
+        aria-label={t('editor_aria')}
         style={{
           fontFamily: monospace ? 'var(--mono)' : 'var(--sans)',
           whiteSpace: softWrap ? 'pre-wrap' : 'pre',

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Spinner } from '@blur/ui';
 import { DEFAULT_RECENT, loadEmoji, searchEmoji, type EmojiEntry, type EmojiIndex } from '../utils/emoji';
 import { recentEmojiItem } from '../utils/storage';
+import { useT, type MsgKey } from '../utils/i18n';
 import type { Target } from '../utils/types';
 
 // Emoji picker (design §2.4). Popover API, NOT a modal — top-layer, light-dismiss,
@@ -30,6 +31,7 @@ export function EmojiPicker({
   onInsert: (value: string) => void;
   onModeChange: (mode: 'unicode' | 'shortcode') => void;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState<EmojiIndex | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,13 +89,13 @@ export function EmojiPicker({
       <input
         type="search"
         className="cw-input"
-        placeholder="Поиск: rocket…"
-        aria-label="Поиск эмодзи"
+        placeholder={t('emoji_search_placeholder')}
+        aria-label={t('emoji_search_aria')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      <p className="cw-emoji__group">Недавние</p>
+      <p className="cw-emoji__group">{t('emoji_recent')}</p>
       <div className="cw-emoji__grid">
         {recent.map((c) => (
           <button
@@ -101,26 +103,26 @@ export function EmojiPicker({
             type="button"
             className="cw-emoji__btn"
             onClick={() => insert({ char: c, shortcode: findShortcode(index, c) })}
-            aria-label={`Вставить ${c}`}
+            aria-label={t('emoji_insert_aria', { char: c })}
           >
             {c}
           </button>
         ))}
       </div>
 
-      {loading && <Spinner label="Загрузка набора эмодзи…" />}
+      {loading && <Spinner label={t('emoji_loading')} />}
 
       {error && (
         <div role="alert" className="cw-invalid">
-          <p>Не удалось загрузить набор эмодзи.</p>
-          <Button onClick={load}>Повторить</Button>
+          <p>{t('emoji_load_error')}</p>
+          <Button onClick={load}>{t('btn_retry')}</Button>
         </div>
       )}
 
       {index && query.trim() !== '' && (
         <>
-          <p className="cw-emoji__group">Результаты «{query}»</p>
-          {results.length === 0 && <p className="cw-hint">Ничего не найдено.</p>}
+          <p className="cw-emoji__group">{t('emoji_results', { query })}</p>
+          {results.length === 0 && <p className="cw-hint">{t('emoji_none')}</p>}
           <div className="cw-emoji__results">
             {results.map((e) => (
               <button
@@ -137,7 +139,7 @@ export function EmojiPicker({
       )}
 
       <fieldset className="cw-emoji__mode">
-        <legend>Вставить как:</legend>
+        <legend>{t('emoji_mode_legend')}</legend>
         <label>
           <input
             type="radio"
@@ -145,7 +147,7 @@ export function EmojiPicker({
             checked={mode === 'unicode'}
             onChange={() => onModeChange('unicode')}
           />{' '}
-          Символ 🚀
+          {t('emoji_mode_unicode')}
         </label>
         <label>
           <input
@@ -155,12 +157,11 @@ export function EmojiPicker({
             disabled={shortcodeUnsupported}
             onChange={() => onModeChange('shortcode')}
           />{' '}
-          Шорткод :rocket:
+          {t('emoji_mode_shortcode')}
         </label>
         {shortcodeUnsupported && (
           <p className="cw-hint">
-            ⚠️ {target === 'jira' ? 'Jira' : 'Telegram'} шорткоды не понимает — вставится символ.
-            При копировании оставшиеся в тексте шорткоды тоже станут символами.
+            {t('emoji_shortcode_unsupported', { platform: t(`target_${target}` as MsgKey) })}
           </p>
         )}
       </fieldset>

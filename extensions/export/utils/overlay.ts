@@ -14,9 +14,20 @@
 // ring (the page's background colour is unknown to us), touch targets ≥44px,
 // responsive to 360px, no hover-only affordance, forced-colors + reduced-motion.
 
+import type { Locale } from '@blur/ui';
+import { tAt } from './i18n';
+
 export const OVERLAY_MARKER = 'data-blur-export-overlay';
 
 export type OverlayTheme = 'auto' | 'light' | 'dark';
+
+// The overlay's UI language. Set once from the persisted pref when the engine wakes
+// (engine.ts → setOverlayLocale), so the low-level toast/close builders here can
+// translate without every caller threading a locale through. Defaults to English.
+let overlayLocale: Locale = 'en';
+export function setOverlayLocale(locale: Locale): void {
+  overlayLocale = locale;
+}
 
 interface Host {
   shadow: ShadowRoot;
@@ -140,7 +151,7 @@ export function showToast(
     toast.append(row);
   }
   toast.append(
-    button('Закрыть', () => {
+    button(tAt(overlayLocale, 'close'), () => {
       toast.remove();
       if (!h.ui.childElementCount && !h.layer.childElementCount) destroyOverlay();
     }, 'bx-btn--x'),
@@ -368,7 +379,9 @@ const OVERLAY_CSS = `
 .bx-summary { margin-right: auto; font-size: 12px; color: var(--dim); word-break: break-all; }
 
 .bx-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; margin: 6px 0; }
-.bx-field > span:first-child { flex: 0 0 150px; color: var(--dim); }
+/* RU/ET labels run longer than EN — allow the label to wrap instead of forcing a
+   fixed 150px column that clips or pushes the control off-panel. */
+.bx-field > span:first-child { flex: 0 1 150px; min-width: 0; color: var(--dim); }
 .bx-field select, .bx-field input[type="text"] {
   font: inherit; font-size: 13px; min-height: 44px; padding: 6px 8px;
   background: var(--bg); color: var(--fg);

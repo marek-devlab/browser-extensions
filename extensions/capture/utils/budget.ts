@@ -8,6 +8,8 @@
 // NONE of this encodes anything. The actual 2-pass encoder that consumes these
 // numbers is stubbed in utils/media.ts.
 
+import type { MsgKey } from './i18n';
+
 /** 3% reserved for container overhead / indices (design §6.3). */
 const CONTAINER_OVERHEAD = 0.03;
 
@@ -102,27 +104,32 @@ export function verdictForBpp(bpp: number): QualityVerdict {
   return 'mush';
 }
 
-export const VERDICT_COPY: Record<
-  QualityVerdict,
-  { label: string; tone: 'ok' | 'warn' | 'poor'; note: string }
-> = {
-  excellent: { label: 'отлично', tone: 'ok', note: 'Запас есть.' },
-  good: { label: 'хорошо', tone: 'ok', note: '' },
-  acceptable: {
-    label: 'приемлемо',
-    tone: 'warn',
-    note: 'Мелкий текст может «поплыть» на движении.',
-  },
-  poor: {
-    label: 'плохо',
-    tone: 'warn',
-    note: 'Текст будет мылом. Лучше понизить разрешение.',
-  },
-  mush: {
-    label: 'каша',
-    tone: 'poor',
-    note: 'Картинка развалится, а размер почти не упадёт. Это предел, а не лень.',
-  },
+/** The per-verdict message keys, resolved to text at the display site through the
+ *  i18n catalog (utils/i18n.ts). Kept here so the verdict→copy mapping stays with
+ *  the verdict logic; the actual strings live in the catalog, translated. */
+export const VERDICT_LABEL_KEY: Record<QualityVerdict, MsgKey> = {
+  excellent: 'verdict_excellent_label',
+  good: 'verdict_good_label',
+  acceptable: 'verdict_acceptable_label',
+  poor: 'verdict_poor_label',
+  mush: 'verdict_mush_label',
+};
+
+export const VERDICT_NOTE_KEY: Record<QualityVerdict, MsgKey> = {
+  excellent: 'verdict_excellent_note',
+  good: 'verdict_good_note',
+  acceptable: 'verdict_acceptable_note',
+  poor: 'verdict_poor_note',
+  mush: 'verdict_mush_note',
+};
+
+/** The tone chip for a verdict (presentation-neutral, so it stays here). */
+export const VERDICT_TONE: Record<QualityVerdict, 'ok' | 'warn' | 'poor'> = {
+  excellent: 'ok',
+  good: 'ok',
+  acceptable: 'warn',
+  poor: 'warn',
+  mush: 'poor',
 };
 
 /** The export button is disabled iff the plan is mush/impossible AND the user has
@@ -131,11 +138,20 @@ export function isExportBlocked(result: BudgetResult): boolean {
   return result.verdict === 'mush' || result.impossible;
 }
 
+/**
+ * A size-fit escape route. It carries the catalog KEY plus the raw numbers/verdict
+ * it needs; the display site (ExportDialog) resolves them to text so the copy is
+ * translated — the logic stays language-agnostic.
+ */
 export interface Suggestion {
   id: string;
-  label: string;
-  /** Estimated resulting size in bytes after applying this change, when known. */
-  estimateBytes?: number;
+  labelKey: MsgKey;
+  /** The verdict word to interpolate into the label, when the key expects one. */
+  verdict?: QualityVerdict;
+  /** Half fps for the downscale option, when the key expects it. */
+  fps?: number;
+  /** MB freed by dropping audio, when the key expects it. */
+  mb?: number;
   /** true = jumps to the trim tool instead of re-running the budget. */
   toTrim?: boolean;
 }
@@ -158,36 +174,27 @@ export function suggestionsFor(input: BudgetInput): Suggestion[] {
   });
   out.push({
     id: 'downscale-480',
-    label: `854×480 · ${Math.min(input.fps, 15)} к/с — качество «${VERDICT_COPY[half.verdict].label}»`,
-    estimateBytes: budgetToTargetBytes(input),
+    labelKey: 'sugg_downscale',
+    fps: Math.min(input.fps, 15),
+    verdict: half.verdict,
   });
 
   // Drop frame rate only.
   const lowFps = computeBudget({ ...input, fps: 15 });
-  out.push({
-    id: 'fps-15',
-    label: `15 к/с — качество «${VERDICT_COPY[lowFps.verdict].label}»`,
-    estimateBytes: budgetToTargetBytes(input),
-  });
+  out.push({ id: 'fps-15', labelKey: 'sugg_fps15', verdict: lowFps.verdict });
 
   // Drop audio → frees its bytes for video.
   if (input.audioBps > 0) {
     const noAudio = computeBudget({ ...input, audioBps: 0 });
     out.push({
       id: 'drop-audio',
-      label: `Убрать звук — освободит ${Math.round(
-        (noAudio.videoBytes - computeBudget(input).videoBytes) / 1024 / 1024 * 10,
-      ) / 10} МБ на видео`,
+      labelKey: 'sugg_drop_audio',
+      mb: Math.round(((noAudio.videoBytes - computeBudget(input).videoBytes) / 1024 / 1024) * 10) / 10,
     });
   }
 
   // Trim is the strongest lever of all: seconds cut bytes linearly (§6.3, §14.1).
-  out.push({ id: 'trim', label: 'Обрезать клип — секунды режут мегабайты', toTrim: true });
+  out.push({ id: 'trim', labelKey: 'sugg_trim', toTrim: true });
 
   return out;
-}
-
-/** Passthrough helper: the target itself is the size ceiling. */
-function budgetToTargetBytes(input: BudgetInput): number {
-  return input.targetBytes;
 }

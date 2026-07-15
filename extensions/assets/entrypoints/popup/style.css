@@ -37,7 +37,7 @@ body {
 }
 .pick:disabled { opacity: 0.5; cursor: not-allowed; }
 .pick__icon { font-size: 20px; }
-.pick__label { text-align: left; }
+.pick__label { text-align: left; min-width: 0; overflow-wrap: anywhere; }
 .pick__hint { font-size: 11px; opacity: 0.85; font-family: var(--mono); }
 
 .muted { margin: 0; color: var(--text-dim); font-size: 12px; }

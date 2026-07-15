@@ -466,6 +466,8 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+  /* Longer localised button labels wrap to a second row rather than overflow. */
+  flex-wrap: wrap;
 }
 
 .progress {
@@ -676,8 +678,12 @@ select {
 }
 
 .set-label {
-  min-width: 220px;
+  /* A rigid 220px min pushed longer RU/ET labels ("Kustuta automaatselt
+     salvestised, mis on vanemad kui") off the row. Let it wrap and shrink. */
+  flex: 1 1 220px;
+  min-width: 0;
   display: inline-block;
+  overflow-wrap: anywhere;
 }
 
 .set-ctl {
@@ -687,11 +693,29 @@ select {
   flex-wrap: wrap;
 }
 
+/* A vertical settings section (heading + note + a group of controls), unlike
+   `.set-row` which is a horizontal label↔control line. Used where a block stacks
+   its children rather than splitting them left/right. */
+.set-section {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Per-platform size limits flow in a WRAPPING grid, so six presets (with longer
+   RU/ET labels) wrap to the next line instead of overflowing the page. */
+.preset-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 6px;
+}
+
 .preset-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 4px 0;
+  margin: 0;
+  flex: 0 0 auto;
 }
 
 .preset-row input[type='number'] {

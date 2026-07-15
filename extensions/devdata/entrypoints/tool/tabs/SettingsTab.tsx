@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { browser } from 'wxt/browser';
-import { Badge, Button, Callout } from '@blur/ui';
+import { Badge, Button, Callout, LanguageSwitcher, type Locale } from '@blur/ui';
 import {
   requestAllUrls,
   requestScripting,
@@ -9,6 +9,7 @@ import {
 } from '../../../utils/permissions';
 import { highlightSupported } from '../../../utils/highlight';
 import { documentItem } from '../../../utils/storage';
+import { useT } from '../../../utils/i18n';
 import type { DevdataPrefs, FormatPref } from '../../../utils/storage';
 import type { PrefsApi } from '../../../utils/prefs';
 
@@ -37,52 +38,67 @@ function hasSourceAccess(): boolean {
   }
 }
 
-export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
+export function SettingsTab({
+  prefs,
+  update,
+  ready,
+  error,
+  retry,
+  locale,
+  setLocale,
+}: PrefsApi & { locale: Locale; setLocale: (l: Locale) => void }) {
+  const t = useT();
   const d = !ready;
   const [sourceAccess] = useState(hasSourceAccess);
   const [highlights] = useState(highlightSupported);
 
   return (
     <div className="settings">
-      {!ready && error === null && (
-        <Callout tone="info">Читаем настройки… контролы заблокированы до загрузки.</Callout>
-      )}
+      {!ready && error === null && <Callout tone="info">{t('settings.readingPrefs')}</Callout>}
       {error !== null && (
-        <Callout tone="poor" title="Не удалось прочитать настройки">
+        <Callout tone="poor" title={t('settings.readFailTitle')}>
           {error}
           <div className="row row--gap">
-            <Button onClick={retry}>Повторить</Button>
+            <Button onClick={retry}>{t('common.retry')}</Button>
           </div>
         </Callout>
       )}
 
-      <Section title="Вид">
-        <Row label="Отступ">
+      <Section title={t('settings.language')}>
+        <LanguageSwitcher
+          locale={locale}
+          onChange={setLocale}
+          label={t('settings.language')}
+        />
+      </Section>
+
+      <Section title={t('settings.sectionView')}>
+        <Row label={t('settings.indent')}>
           <select
             disabled={d}
             value={prefs?.indent ?? '2'}
             onChange={(e) => update({ indent: e.target.value as DevdataPrefs['indent'] })}
           >
-            <option value="2">2 пробела</option>
-            <option value="4">4 пробела</option>
-            <option value="tab">Tab</option>
-            <option value="min">Minified</option>
+            <option value="2">{t('settings.indent2')}</option>
+            <option value="4">{t('settings.indent4')}</option>
+            <option value="tab">{t('settings.indentTab')}</option>
+            <option value="min">{t('settings.indentMin')}</option>
           </select>
         </Row>
         <Toggle
-          label="Перенос длинных строк"
-          hint="На больших документах перенос отключается автоматически: он несовместим с виртуализацией строк."
+          label={t('settings.wrapLabel')}
+          hint={t('settings.wrapHint')}
           disabled={d}
           checked={prefs?.wrap ?? true}
           onChange={(v) => update({ wrap: v })}
         />
         <Toggle
-          label="Показывать номера строк"
+          label={t('settings.lineNumbers')}
           disabled={d}
           checked={prefs?.lineNumbers ?? true}
           onChange={(v) => update({ lineNumbers: v })}
         />
-        <Row label="Стартовый таб">
+        <Row label={t('settings.startTab')}>
           <select
             disabled={d}
             value={prefs?.defaultTab ?? 'data'}
@@ -90,29 +106,28 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
               update({ defaultTab: e.target.value as DevdataPrefs['defaultTab'] })
             }
           >
-            <option value="data">Данные</option>
-            <option value="jwt">JWT</option>
-            <option value="schema">Схема</option>
+            <option value="data">{t('tab.data')}</option>
+            <option value="jwt">{t('tab.jwt')}</option>
+            <option value="schema">{t('tab.schema')}</option>
           </select>
         </Row>
         {!highlights && (
           <Callout tone="warn">
-            ⚠ Этот браузер не поддерживает CSS Custom Highlight API — подсветка синтаксиса не
-            работает. Текст показывается без цвета; подделывать подсветку тысячами{' '}
-            <span className="mono">&lt;span&gt;</span> мы не будем (это и медленно, и открывает
-            дыру для инъекции разметки).
+            {t('settings.highlightWarn1')}
+            <span className="mono">&lt;span&gt;</span>
+            {t('settings.highlightWarn2')}
           </Callout>
         )}
       </Section>
 
-      <Section title="Разбор">
-        <Row label="Формат по умолчанию">
+      <Section title={t('settings.sectionParse')}>
+        <Row label={t('settings.defaultFormat')}>
           <select
             disabled={d}
             value={prefs?.defaultFormat ?? 'auto'}
             onChange={(e) => update({ defaultFormat: e.target.value as FormatPref })}
           >
-            <option value="auto">Автоопределение</option>
+            <option value="auto">{t('settings.formatAuto')}</option>
             <option value="json">JSON</option>
             <option value="json5">JSON5</option>
             <option value="jsonc">JSONC</option>
@@ -122,13 +137,13 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
           </select>
         </Row>
         <Toggle
-          label="Сортировать ключи"
-          hint="Только ВЫВОД (beautify/конвертация). Дерево всегда показывает исходный порядок — иначе мы врали бы о документе."
+          label={t('settings.sortKeys')}
+          hint={t('settings.sortKeysHint')}
           disabled={d}
           checked={prefs?.sortKeys ?? false}
           onChange={(v) => update({ sortKeys: v })}
         />
-        <Row label="Разворачивать дерево до">
+        <Row label={t('settings.expandTree')}>
           <select
             disabled={d}
             value={prefs?.expandDepth ?? 2}
@@ -136,7 +151,7 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
           >
             {[0, 1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>
-                {n} уровней
+                {t('settings.levels', { n })}
               </option>
             ))}
           </select>
@@ -149,19 +164,14 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
             cannot do is recover the source spelling for YAML/CSV/JSON5, whose
             parsers hand back values — and the inspector says exactly that. */}
         <Callout tone={sourceAccess ? 'info' : 'warn'}>
-          <strong>Точные большие числа.</strong>{' '}
-          {sourceAccess
-            ? 'Ваш браузер поддерживает JSON.parse source access (ES2026).'
-            : 'Ваш браузер НЕ поддерживает JSON.parse source access (ES2026).'}{' '}
-          Для JSON и JSONC это не имеет значения: исходное написание чисел мы берём из позиций
-          токенов в самом документе, поэтому{' '}
-          <span className="mono">12345678901234567890</span> показывается как есть в любом
-          браузере. Для YAML, CSV и JSON5 исходное написание недоступно в принципе — их парсеры
-          отдают уже округлённые значения, и инспектор пишет об этом прямо, а не показывает
-          округлённое как исходное.
+          <strong>{t('settings.exactTitle')}</strong>{' '}
+          {sourceAccess ? t('settings.exactSupported') : t('settings.exactNotSupported')}{' '}
+          {t('settings.exactBody1')}
+          <span className="mono">12345678901234567890</span>
+          {t('settings.exactBody2')}
         </Callout>
 
-        <Row label="Разделитель CSV">
+        <Row label={t('settings.csvDelimiter')}>
           <select
             disabled={d}
             value={prefs?.csvDelimiter ?? 'auto'}
@@ -169,15 +179,15 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
               update({ csvDelimiter: e.target.value as DevdataPrefs['csvDelimiter'] })
             }
           >
-            <option value="auto">авто</option>
-            <option value="comma">запятая ,</option>
-            <option value="semicolon">точка с запятой ;</option>
+            <option value="auto">{t('settings.csvAuto')}</option>
+            <option value="comma">{t('settings.csvComma')}</option>
+            <option value="semicolon">{t('settings.csvSemicolon')}</option>
             <option value="tab">Tab</option>
           </select>
         </Row>
         <Toggle
-          label="BOM при экспорте CSV"
-          hint="Без BOM Excel читает UTF-8 как локальную кодировку и ломает кириллицу."
+          label={t('settings.csvBom')}
+          hint={t('settings.csvBomHint')}
           disabled={d}
           checked={prefs?.csvBom ?? true}
           onChange={(v) => update({ csvBom: v })}
@@ -185,7 +195,7 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
       </Section>
 
       <Section title="JSON Schema">
-        <Row label="Драфт">
+        <Row label={t('settings.draft')}>
           <select
             disabled={d}
             value={prefs?.schemaDraft ?? '2020-12'}
@@ -200,45 +210,46 @@ export function SettingsTab({ prefs, update, ready, error, retry }: PrefsApi) {
           </select>
         </Row>
         <Toggle
-          label="Проверять format:"
-          hint="По спецификации format — аннотация, а не ограничение. Когда выключено, ключевое слово убирается из схемы перед проверкой, а не просто прячется из отчёта."
+          label={t('settings.checkFormat')}
+          hint={t('settings.checkFormatHint')}
           disabled={d}
           checked={prefs?.schemaFormats ?? false}
           onChange={(v) => update({ schemaFormats: v })}
         />
       </Section>
 
-      <Section title="Хранение">
+      <Section title={t('settings.sectionStorage')}>
         <Toggle
-          label="Восстанавливать последний документ"
+          label={t('settings.restore')}
           disabled={d}
           checked={prefs?.restore ?? true}
           onChange={(v) => update({ restore: v })}
         />
         <Callout tone="warn">
-          ⚠ Сохраняется только в этом браузере (<span className="mono">storage.local</span>), до
-          1 МБ. Документы больше 1 МБ не сохраняются — и мы об этом говорим, а не теряем их молча.
-          Содержимое таба JWT не сохраняется <strong>НИКОГДА</strong>: для токена, секрета и ключа
-          в этом расширении просто нет места в хранилище.
+          {t('settings.storageWarn1')}
+          <span className="mono">storage.local</span>
+          {t('settings.storageWarn2')}
+          <strong>{t('settings.storageNever')}</strong>
+          {t('settings.storageWarn3')}
         </Callout>
         <EraseDocumentButton disabled={d} />
       </Section>
 
       <PageFormattingSection prefs={prefs} update={update} disabled={d} />
 
-      <Section title="О расширении">
-        <p className="fine">
-          Версия 1.0.0 · Ноль сети · Ноль аналитики · Открытый код
-        </p>
+      <Section title={t('settings.sectionAbout')}>
+        <p className="fine">{t('settings.aboutLine')}</p>
         <Callout tone="info">
-          У расширения нет ни одного сетевого вызова: ни <span className="mono">fetch</span>, ни
-          загрузки JWKS по URL, ни внешних <span className="mono">$ref</span>, ни телеметрии, ни
-          отчётов об ошибках. Всё, что вы сюда вставите, остаётся во вкладке.
+          {t('settings.aboutNetwork1')}
+          <span className="mono">fetch</span>
+          {t('settings.aboutNetwork2')}
+          <span className="mono">$ref</span>
+          {t('settings.aboutNetwork3')}
         </Callout>
         <p className="fine">
-          Библиотеки: jsonc-parser (MIT) · json5 (MIT) · yaml (ISC) · papaparse (MIT) · jose (MIT)
-          · @cfworker/json-schema (MIT). XML — нативный DOMParser. Полные тексты лицензий — в
-          файле <span className="mono">THIRD-PARTY-NOTICES.md</span> в пакете расширения.
+          {t('settings.aboutLibs1')}
+          <span className="mono">THIRD-PARTY-NOTICES.md</span>
+          {t('settings.aboutLibs2')}
         </p>
       </Section>
     </div>
@@ -256,6 +267,7 @@ function PageFormattingSection({
   update: (patch: Partial<DevdataPrefs>) => void;
   disabled: boolean;
 }) {
+  const t = useT();
   const scripting = usePermissionFact('scripting');
   const allUrls = usePermissionFact('allUrls');
   const dialog = useRef<HTMLDialogElement>(null);
@@ -292,53 +304,41 @@ function PageFormattingSection({
   const revoke = async () => {
     const ok = await revokeAllUrls();
     update({ autoFormat: false });
-    setNote(
-      ok
-        ? 'Доступ отозван, скрипт снят с регистрации.'
-        : 'Браузер не отозвал доступ — снимите его вручную на странице расширений.',
-    );
+    setNote(ok ? t('settings.revokedNote') : t('settings.revokeFailedNote'));
     setTimeout(() => setNote(null), 4000);
   };
 
   return (
-    <Section title="Форматирование страниц">
+    <Section title={t('popup.pageFormatting')}>
       <div className="setrow">
         <div>
-          <div className="setrow__label">Форматировать по клику</div>
-          <div className="fine">
-            Разово, только текущая вкладка. Доступ к сайтам не выдаётся: вкладку на этот момент
-            открывает сам клик по иконке (activeTab).
-          </div>
+          <div className="setrow__label">{t('settings.formatOnClick')}</div>
+          <div className="fine">{t('settings.formatOnClickNote')}</div>
         </div>
         {scripting === null ? (
-          <span className="fine">проверяем…</span>
+          <span className="fine">{t('settings.checkingShort')}</span>
         ) : scripting ? (
-          <Badge severity="ok">✓ Разрешено</Badge>
+          <Badge severity="ok">{t('settings.allowed')}</Badge>
         ) : (
           <Button disabled={disabled} onClick={() => void requestScripting()}>
-            Разрешить
+            {t('settings.allow')}
           </Button>
         )}
       </div>
 
       <div className="setrow">
         <div>
-          <div className="setrow__label">Авто-формат JSON-страниц</div>
+          <div className="setrow__label">{t('settings.autoFormatJson')}</div>
           {allUrls === true ? (
-            <div className="fine">
-              ✓ Доступ выдан. ⚠ В Firefox встроенный просмотрщик JSON перехватывает страницу раньше
-              нас — см. ниже.
-            </div>
+            <div className="fine">{t('settings.autoGranted')}</div>
           ) : denied ? (
-            <div className="fine">
-              Доступ не выдан — фича не работает. Всё остальное работает как работало.
-            </div>
+            <div className="fine">{t('popup.resultDenied')}</div>
           ) : (
-            <div className="fine">⚠ Требует доступа ко всем сайтам. Подробности — по кнопке.</div>
+            <div className="fine">{t('settings.autoNeedsAll')}</div>
           )}
         </div>
         {allUrls === true ? (
-          <Button onClick={() => void revoke()}>Отозвать доступ</Button>
+          <Button onClick={() => void revoke()}>{t('settings.revokeAccess')}</Button>
         ) : (
           <Button
             disabled={disabled || allUrls === null}
@@ -347,69 +347,74 @@ function PageFormattingSection({
               dialog.current?.showModal();
             }}
           >
-            {denied ? 'Попробовать снова' : 'Включить'}
+            {denied ? t('settings.tryAgain') : t('settings.enable')}
           </Button>
         )}
       </div>
 
-      {note !== null && <p className="fine" role="status">{note}</p>}
+      {note !== null && (
+        <p className="fine" role="status">
+          {note}
+        </p>
+      )}
 
       {allUrls === true && prefs?.autoFormat === false && (
         <Callout tone="warn">
-          Доступ выдан, но авто-формат выключен настройкой. Он ничего не делает, пока вы не
-          включите его снова — либо отзовите доступ, чтобы не держать лишнее разрешение.
+          {t('settings.autoOffWarn')}
           <div className="row row--gap">
-            <Button onClick={() => update({ autoFormat: true })}>Включить авто-формат</Button>
+            <Button onClick={() => update({ autoFormat: true })}>
+              {t('settings.enableAutoFormat')}
+            </Button>
           </div>
         </Callout>
       )}
 
-      <Callout tone="warn" title="⚠ Firefox: встроенный просмотрщик JSON выигрывает у нас">
-        Firefox сам перехватывает <span className="mono">application/json</span>, и отключить его
-        из расширения <strong>невозможно</strong> — такого API нет, и мы не будем притворяться,
-        что он есть. Чтобы работал наш вид: откройте <span className="mono">about:config</span>,
-        найдите <span className="mono">devtools.jsonview.enabled</span> и поставьте{' '}
-        <span className="mono">false</span>. Всё остальное в расширении работает без этого.
+      <Callout tone="warn" title={t('settings.firefoxWinTitle')}>
+        {t('settings.ffBody1')}
+        <span className="mono">application/json</span>
+        {t('settings.ffBody2')}
+        <strong>{t('settings.ffImpossible')}</strong>
+        {t('settings.ffBody3')}
+        <span className="mono">about:config</span>
+        {t('settings.ffBody4')}
+        <span className="mono">devtools.jsonview.enabled</span>
+        {t('settings.ffBody5')}
+        <span className="mono">false</span>
+        {t('settings.ffBody6')}
       </Callout>
 
       {/* The honest consent screen comes BEFORE the browser's prompt (§2.11).
           Native <dialog>: focus trap + ::backdrop for free. */}
       <dialog ref={dialog} className="consent">
-        <h3>Авто-форматирование JSON-страниц</h3>
+        <h3>{t('settings.consentTitle')}</h3>
         <p>
-          <strong>Что это даёт.</strong> Когда вы открываете URL, отдающий{' '}
-          <span className="mono">application/json</span>, расширение само покажет его деревом — без
-          клика по иконке.
+          <strong>{t('settings.consentWhat')}</strong> {t('settings.consentWhatBody1')}
+          <span className="mono">application/json</span>
+          {t('settings.consentWhatBody2')}
         </p>
         <p>
-          <strong>Что браузер спросит.</strong> «Читать и изменять все ваши данные на всех
-          веб-сайтах». Это единственная формулировка, которую даёт Chrome. Мягче не бывает — иначе
-          фича невозможна.
+          <strong>{t('settings.consentAsk')}</strong> {t('settings.consentAskBody')}
         </p>
         <p>
-          <strong>Почему так грубо.</strong> Браузер не умеет давать доступ «только к
-          JSON-страницам»: чтобы узнать тип документа, скрипт уже должен быть на странице.
-          activeTab не подходит — он выдаётся только по вашему клику, а здесь клика нет по
-          определению.
+          <strong>{t('settings.consentWhy')}</strong> {t('settings.consentWhyBody')}
         </p>
         <p>
-          <strong>Что мы будем делать с этим доступом.</strong> Ровно одно: на document_start
-          проверять <span className="mono">document.contentType</span> и, если это JSON, подменять
-          вид документа. На всех остальных страницах скрипт немедленно выходит и ничего не читает.
-          Ноль сети. Ничего никуда не отправляется. Никогда.
+          <strong>{t('settings.consentDo')}</strong> {t('settings.consentDoBody1')}
+          <span className="mono">document.contentType</span>
+          {t('settings.consentDoBody2')}
         </p>
         <Callout tone="warn">
-          ⚠ FIREFOX: у Firefox есть свой встроенный JSON-просмотрщик, он перехватывает{' '}
-          <span className="mono">application/json</span> раньше нас, и отключить его из расширения
-          невозможно. Нужно вручную выставить{' '}
-          <span className="mono">devtools.jsonview.enabled = false</span> в about:config. Мы не
-          можем сделать это за вас и не будем притворяться, что можем.
+          {t('settings.consentFfWarn1')}
+          <span className="mono">application/json</span>
+          {t('settings.consentFfWarn2')}
+          <span className="mono">devtools.jsonview.enabled = false</span>
+          {t('settings.consentFfWarn3')}
         </Callout>
-        <p className="fine">Отозвать доступ можно в любой момент здесь же.</p>
+        <p className="fine">{t('settings.consentRevokeNote')}</p>
         <div className="row row--gap consent__actions">
-          <Button onClick={() => dialog.current?.close()}>Отмена</Button>
+          <Button onClick={() => dialog.current?.close()}>{t('common.cancel')}</Button>
           <Button variant="primary" onClick={() => void grant()}>
-            Запросить доступ
+            {t('settings.consentRequestBtn')}
           </Button>
         </div>
       </dialog>
@@ -418,13 +423,14 @@ function PageFormattingSection({
 }
 
 function EraseDocumentButton({ disabled }: { disabled: boolean }) {
+  const t = useT();
   const [armed, setArmed] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
     if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(timer);
   }, [armed]);
 
   return (
@@ -438,17 +444,19 @@ function EraseDocumentButton({ disabled }: { disabled: boolean }) {
           }
           void documentItem
             .removeValue()
-            .then(() => setDone('Стёрто.'))
+            .then(() => setDone(t('settings.erased')))
             .catch((err: unknown) =>
               setDone(
-                `Не удалось стереть: ${err instanceof Error ? err.message : String(err)}`,
+                t('settings.eraseFailed', {
+                  message: err instanceof Error ? err.message : String(err),
+                }),
               ),
             );
           setArmed(false);
           setTimeout(() => setDone(null), 2500);
         }}
       >
-        {armed ? 'Точно стереть?' : 'Стереть сохранённый документ'}
+        {armed ? t('settings.eraseConfirm') : t('settings.eraseArm')}
       </Button>
       <span className="fine" role="status" aria-live="polite">
         {done ?? ''}

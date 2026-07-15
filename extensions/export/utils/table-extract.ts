@@ -128,7 +128,8 @@ function readCell(td: Element, opts: ExtractOptions): CellScan {
       const input = el as HTMLInputElement;
       const type = input.type.toLowerCase();
       // Very common in admin panels (design §6.7).
-      if (type === 'checkbox' || type === 'radio') out.push(input.checked ? 'да' : 'нет');
+      if (type === 'checkbox' || type === 'radio')
+        out.push(input.checked ? (opts.checkboxYes ?? 'yes') : (opts.checkboxNo ?? 'no'));
       else if (type !== 'button' && type !== 'submit' && type !== 'hidden') out.push(input.value);
       return;
     }
@@ -402,7 +403,11 @@ export async function buildMatrix(
 
 /** Multi-level headers are JOINED with ` / ` into one row — two header rows would
  *  make pandas lose its mind (design §6.2). Empty → `Колонка N`. Dupes → `X (2)`. */
-export function headersFrom(matrix: Matrix, width: number): string[] {
+export function headersFrom(
+  matrix: Matrix,
+  width: number,
+  columnFallback = 'Column {n}',
+): string[] {
   const out: string[] = [];
   for (let c = 0; c < width; c++) {
     const levels: string[] = [];
@@ -415,7 +420,8 @@ export function headersFrom(matrix: Matrix, width: number): string[] {
 
   const seen = new Map<string, number>();
   return out.map((h, i) => {
-    const base = h || `Колонка ${i + 1}`; // never '' — pandas would emit `Unnamed: 2`
+    // never '' — pandas would emit `Unnamed: 2`
+    const base = h || columnFallback.replace('{n}', String(i + 1));
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     return n === 1 ? base : `${base} (${n})`;
@@ -474,7 +480,7 @@ export async function buildTableModel(
   const previewMatrix = await buildMatrix(table, opts, PREVIEW_ROWS + 4);
   const width = previewMatrix.cells[0]?.length ?? 0;
 
-  const headers = headersFrom(previewMatrix, width);
+  const headers = headersFrom(previewMatrix, width, opts.columnFallback);
   const body = previewMatrix.cells.slice(previewMatrix.headerRows);
   const columns: TableColumn[] = headers.map((header, c) => ({
     header,

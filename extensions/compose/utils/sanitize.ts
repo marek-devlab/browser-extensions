@@ -1,4 +1,10 @@
 import DOMPurify from 'dompurify';
+import { tAt, type MsgKey } from './i18n';
+
+/** Locale-bound translator for the "we stripped this" descriptions. Presentation
+ *  only — it never affects WHAT is stripped, just how the tally reads. */
+type Translate = (key: MsgKey, vars?: Record<string, string | number>) => string;
+let translate: Translate = (key, vars) => tAt('en', key, vars);
 
 // 🔴 THE SECURITY BOUNDARY (design §7.1, §7.2).
 //
@@ -87,14 +93,14 @@ function installHooks(): void {
     const tag = node.nodeName.toLowerCase();
     if (!attr) return;
     if (!data.allowedAttributes[attr]) {
-      record(`атрибут ${attr} у <${tag}>`);
+      record(translate('sanitize_attr', { attr, tag }));
       return;
     }
     if ((attr === 'href' || attr === 'src') && data.attrValue) {
       const value = data.attrValue.trim();
       // Scheme-less (relative / anchor) URLs are left to DOMPurify.
       if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !ALLOWED_URI_REGEXP.test(value)) {
-        record(`ссылка с запрещённой схемой в <${tag}>`);
+        record(translate('sanitize_uri', { tag }));
       }
     }
   });
@@ -130,8 +136,9 @@ function installHooks(): void {
  * Turn an (assumed HOSTILE) HTML string into a sanitized DocumentFragment.
  * The single string→DOM point in the codebase.
  */
-export function sanitizeToFragment(html: string): SanitizeResult {
+export function sanitizeToFragment(html: string, t?: Translate): SanitizeResult {
   installHooks();
+  translate = t ?? ((key, vars) => tAt('en', key, vars));
   tally = new Map();
   try {
     const fragment = DOMPurify.sanitize(html, {

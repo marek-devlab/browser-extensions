@@ -36,7 +36,7 @@ export default defineUnlistedScript(() => {
         })) as Blob;
       }
       return (await writeXlsxFile(data[0] as never, {
-        sheet: sheets[0]?.name ?? 'Таблица',
+        sheet: sheets[0]?.name ?? 'Table',
       })) as Blob;
     },
   });

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Callout } from '@blur/ui';
+import { Button, Callout, useLocale } from '@blur/ui';
 import {
   computeBudget,
   isExportBlocked,
   suggestionsFor,
-  VERDICT_COPY,
+  VERDICT_LABEL_KEY,
+  VERDICT_NOTE_KEY,
   type BudgetInput,
 } from '../../utils/budget';
 import { clipBlob, deleteClip, getBlob } from '../../utils/db';
+import { useT } from '../../utils/i18n';
 // The export reads the edit state from the SAME store the editor writes to. A
 // second copy of it here is exactly how a redaction region gets "forgotten" and a
 // password ships in the file (design §7.6).
@@ -55,6 +57,8 @@ export function ExportDialog({
   onClose: () => void;
   onTrim: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const { prefs, update } = usePrefs();
   const edit = useEdit(clip.id, clip.durationMs);
 
@@ -81,7 +85,10 @@ export function ExportDialog({
 
   const resolutions: Res[] = useMemo(() => {
     const src: Res = {
-      label: `${clip.resolution.width}×${clip.resolution.height} (как есть)`,
+      label: t('res_as_is_label', {
+        w: clip.resolution.width,
+        h: clip.resolution.height,
+      }),
       width: clip.resolution.width,
       height: clip.resolution.height,
       asRecorded: true,
@@ -93,7 +100,7 @@ export function ExportDialog({
       { label: '640×360', width: 640, height: 360 },
     ].filter((r) => r.height < clip.resolution.height);
     return [src, ...lower];
-  }, [clip.resolution.width, clip.resolution.height]);
+  }, [clip.resolution.width, clip.resolution.height, t]);
 
   const res = resolutions[Math.min(resIdx, resolutions.length - 1)]!;
 
@@ -258,9 +265,7 @@ export function ExportDialog({
       // 🔴 The SOURCE IS NEVER TOUCHED before a successful export. Any failure here
       // leaves the user with a working recording (design §5.7).
       if (wedged) {
-        setError(
-          'Кодирование зависло: энкодер перестал двигаться. Исходная запись цела. Попробуйте другой формат или меньшее разрешение.',
-        );
+        setError(t('exp_wedged'));
       } else if (ac.signal.aborted) {
         setPhase('config');
         return;
@@ -282,12 +287,16 @@ export function ExportDialog({
   if (phase === 'encoding') {
     return (
       <div className="export">
-        <h2>{target ? `Подгоняем под ${formatBytes(target.bytes)}` : 'Кодируем'}</h2>
+        <h2>
+          {target
+            ? t('exp_fitting', { size: formatBytes(target.bytes, locale) })
+            : t('exp_encoding')}
+        </h2>
         {/* Two levels of progress and not one lie. There is deliberately NO single
             overall percentage: it would run BACKWARDS when a new pass starts
             (design §2.9). "Pass N of M" + an honest percentage inside the pass. */}
         <p className="mono">
-          Проход {progress?.pass ?? 1} из {prefs.maxPasses} (максимум)
+          {t('exp_pass_of', { pass: progress?.pass ?? 1, max: prefs.maxPasses })}
         </p>
         <progress
           value={progress?.progress ?? 0}
@@ -296,29 +305,31 @@ export function ExportDialog({
           aria-valuenow={Math.round((progress?.progress ?? 0) * 100)}
         />
         <p id="pass-note" className="mono">
-          {Math.round((progress?.progress ?? 0) * 100)}% · записано{' '}
-          {formatBytes(progress?.bytesSoFar ?? 0)}
-          {progress?.projectedBytes != null && (
-            <> · прогноз итога ≈ {formatBytes(progress.projectedBytes)}</>
-          )}
+          {t('exp_pct_written', {
+            pct: Math.round((progress?.progress ?? 0) * 100),
+            size: formatBytes(progress?.bytesSoFar ?? 0, locale),
+          })}
+          {progress?.projectedBytes != null &&
+            t('exp_projected', { size: formatBytes(progress.projectedBytes, locale) })}
         </p>
 
-        <h3>Журнал</h3>
+        <h3>{t('exp_log')}</h3>
         <ul className="pass-log mono">
           {passes.map((p) => (
             <li key={p.pass}>
-              {p.aborted ? '✕' : p.hit ? '✓' : '·'} Проход {p.pass} ·{' '}
-              {Math.round(p.bitrate / 1000)} кбит/с · {formatBytes(p.actualBytes)}
+              {p.aborted ? '✕' : p.hit ? '✓' : '·'}{' '}
+              {t('exp_pass_line', {
+                pass: p.pass,
+                kbps: Math.round(p.bitrate / 1000),
+                size: formatBytes(p.actualBytes, locale),
+              })}
               {p.note ? ` — ${p.note}` : ''}
             </li>
           ))}
-          {passes.length === 0 && <li className="muted">Первый проход…</li>}
+          {passes.length === 0 && <li className="muted">{t('exp_first_pass')}</li>}
         </ul>
 
-        <p className="muted">
-          Каждый проход — это полное перекодирование. Так и работает подгонка размера в
-          браузере: двухпроходного кодировщика, как в ffmpeg, здесь просто нет.
-        </p>
+        <p className="muted">{t('exp_pass_note')}</p>
 
         <Button
           variant="ghost"
@@ -327,7 +338,7 @@ export function ExportDialog({
             setPhase('config');
           }}
         >
-          Остановить
+          {t('stop')}
         </Button>
       </div>
     );
@@ -336,10 +347,11 @@ export function ExportDialog({
   if (phase === 'failed') {
     return (
       <div className="export">
-        <Callout tone="warn" title="Не удалось перекодировать">
+        <Callout tone="warn" title={t('exp_fail_title')}>
           {error}
           <br />
-          <strong>Исходная запись цела</strong> — мы не трогаем её до успешного экспорта.
+          <strong>{t('exp_source_safe_strong')}</strong>
+          {t('exp_fail_tail')}
         </Callout>
         <div className="ed-foot">
           <Button
@@ -349,10 +361,10 @@ export function ExportDialog({
               setPhase('config');
             }}
           >
-            Скачать как есть (без перекодирования)
+            {t('exp_download_asis')}
           </Button>
           <Button variant="ghost" onClick={() => setPhase('config')}>
-            Назад
+            {t('back')}
           </Button>
         </div>
       </div>
@@ -362,47 +374,52 @@ export function ExportDialog({
   if (phase === 'done' && result) {
     return (
       <div className="export">
-        <Callout tone={result.missed ? 'warn' : 'info'} title={result.missed ? 'Не уложились' : 'Готово'}>
+        <Callout
+          tone={result.missed ? 'warn' : 'info'}
+          title={result.missed ? t('exp_missed_title') : t('exp_done_title')}
+        >
           {result.missed && target ? (
             <>
-              Цель: {formatBytes(target.bytes)}. Получили: {formatBytes(result.bytes)} — лучший
-              из {passes.length} проходов. Дальше снижать битрейт бессмысленно: на 0,015
-              бит/пиксель картинка разваливается, а размер почти не падает. Это предел, а не
-              наша лень.
+              {t('exp_missed_body', {
+                target: formatBytes(target.bytes, locale),
+                got: formatBytes(result.bytes, locale),
+                n: passes.length,
+              })}
               {target.hard && (
                 <>
                   <br />
-                  <strong>
-                    ⚠ Это жёсткий лимит площадки — файл такого размера туда не загрузится.
-                  </strong>{' '}
-                  Помогут: понизить разрешение, снизить частоту кадров, убрать звук (
-                  {formatBytes(budget?.audioBytes ?? 0)}) или обрезать клип.
+                  <strong>{t('exp_hard_limit_strong')}</strong>
+                  {t('exp_hard_limit_tail', {
+                    size: formatBytes(budget?.audioBytes ?? 0, locale),
+                  })}
                 </>
               )}
             </>
           ) : (
-            <>Сохранено: {formatBytes(result.bytes)}.</>
+            <>{t('exp_saved', { size: formatBytes(result.bytes, locale) })}</>
           )}
           {(fillCount > 0 || hasCosmetic) && !deleteSource && (
             <>
               <br />
-              Исходная запись <strong>с незакрытыми данными</strong> осталась в библиотеке.
+              {t('exp_source_left_1')}
+              <strong>{t('exp_source_left_strong')}</strong>
+              {t('exp_source_left_2')}
               <button
                 type="button"
                 className="ui-btn ui-btn--sm"
                 onClick={() => void deleteClip(clip.id).then(onClose)}
               >
-                Удалить исходник
+                {t('exp_delete_source')}
               </button>
             </>
           )}
         </Callout>
         <div className="ed-foot">
           <Button variant="ghost" onClick={() => setPhase('config')}>
-            Экспортировать ещё раз
+            {t('exp_again')}
           </Button>
           <Button variant="primary" onClick={onClose}>
-            В библиотеку
+            {t('exp_to_library')}
           </Button>
         </div>
       </div>
@@ -414,10 +431,10 @@ export function ExportDialog({
 
   return (
     <div className="export">
-      <h2>Экспорт</h2>
+      <h2>{t('exp_title')}</h2>
 
       <section>
-        <h3>Формат</h3>
+        <h3>{t('exp_format')}</h3>
         <label className="radio-inline">
           <input
             type="radio"
@@ -425,19 +442,18 @@ export function ExportDialog({
             disabled={h264 === false}
             onChange={() => setFormat('mp4')}
           />
-          MP4 (H.264) — совместим со всем
+          {t('exp_mp4_compat')}
         </label>
         <label className="radio-inline">
           <input type="radio" checked={format === 'webm'} onChange={() => setFormat('webm')} />
-          WebM (VP9)
+          {t('exp_webm')}
         </label>
         {h264 === false && (
           <Callout tone="warn">
-            <strong>Ваш браузер не умеет кодировать H.264</strong> —{' '}
-            <code>VideoEncoder.isConfigSupported(&#39;avc1.42001f&#39;)</code> вернул «нет».
-            MP4 поэтому недоступен, и мы не показываем его, чтобы упасть в конце
-            перекодирования. Доступен WebM (VP9). Тянуть ради этого 30 МБ ffmpeg.wasm с
-            GPL-ядром мы не будем — это чужой код в вашем браузере ради одного контейнера.
+            <strong>{t('exp_no_h264_strong')}</strong>
+            {t('exp_no_h264_dash')}
+            <code>VideoEncoder.isConfigSupported(&#39;avc1.42001f&#39;)</code>
+            {t('exp_no_h264_tail')}
           </Callout>
         )}
 
@@ -448,19 +464,19 @@ export function ExportDialog({
             disabled={copyImpossible}
             onChange={(e) => setKeepAsRecorded(e.target.checked)}
           />
-          Как записано — без перекодирования, мгновенно
+          {t('exp_as_recorded')}
         </label>
         {copyImpossible && keepAsRecorded && (
           <Callout tone="warn">
-            <strong>Нельзя.</strong> Копирование потока не наносит пиксели: у вас есть{' '}
-            {hasRedaction && 'скрытые области, '}
-            {edit.watermark && 'watermark, '}
-            {resized && 'изменение разрешения, '}
-            {target && 'цель по размеру, '}
-            {format !== clipFormat(clip) && 'смена контейнера, '}
-            {clip.needsRemux && 'восстановленная запись (заголовок недостоверен), '}— всё это
-            возможно только при перекодировании. Молча проигнорировать заливку и отдать чистый файл
-            мы не станем.
+            <strong>{t('exp_cant_strong')}</strong>
+            {t('exp_cant_1')}
+            {hasRedaction && t('exp_cant_redaction')}
+            {edit.watermark && t('exp_cant_watermark')}
+            {resized && t('exp_cant_resize')}
+            {target && t('exp_cant_target')}
+            {format !== clipFormat(clip) && t('exp_cant_container')}
+            {clip.needsRemux && t('exp_cant_remux')}
+            {t('exp_cant_2')}
           </Callout>
         )}
       </section>
@@ -468,9 +484,9 @@ export function ExportDialog({
       {!effectiveCopy && (
         <>
           <section>
-            <h3>Картинка</h3>
+            <h3>{t('exp_picture')}</h3>
             <div className="field">
-              <label htmlFor="x-res">Разрешение</label>
+              <label htmlFor="x-res">{t('exp_resolution')}</label>
               <select
                 id="x-res"
                 value={resIdx}
@@ -484,7 +500,7 @@ export function ExportDialog({
               </select>
             </div>
             <div className="field">
-              <label htmlFor="x-fps">Частота</label>
+              <label htmlFor="x-fps">{t('exp_frame_rate')}</label>
               <select
                 id="x-fps"
                 value={String(fps)}
@@ -492,10 +508,10 @@ export function ExportDialog({
                   setFps(e.target.value === 'as-recorded' ? 'as-recorded' : Number(e.target.value))
                 }
               >
-                <option value="as-recorded">как есть</option>
-                <option value="30">30 к/с</option>
-                <option value="25">25 к/с</option>
-                <option value="15">15 к/с</option>
+                <option value="as-recorded">{t('res_as_is')}</option>
+                <option value="30">{t('fps_value', { n: 30 })}</option>
+                <option value="25">{t('fps_value', { n: 25 })}</option>
+                <option value="15">{t('fps_value', { n: 15 })}</option>
               </select>
             </div>
             <label className="check-inline">
@@ -504,41 +520,42 @@ export function ExportDialog({
                 checked={keepAudio}
                 onChange={(e) => setKeepAudio(e.target.checked)}
               />
-              Оставить звук
+              {t('exp_keep_audio')}
               {/* ⚠️ The audio WEIGHT is shown right on the label. On a short clip
                   with a 10 MB target it eats a third to half of the budget, and
                   every competitor hides this (design §6.3). */}
-              {budget && keepAudio && <> — {formatBytes(budget.audioBytes)} из бюджета</>}
+              {budget && keepAudio &&
+                t('exp_audio_of_budget', { size: formatBytes(budget.audioBytes, locale) })}
             </label>
             {keepAudio && (
               <div className="field">
-                <label htmlFor="x-ab">Качество звука</label>
+                <label htmlFor="x-ab">{t('exp_audio_quality')}</label>
                 <select
                   id="x-ab"
                   value={audioKbps}
                   onChange={(e) => setAudioKbps(Number(e.target.value))}
                 >
-                  <option value={128}>128 кбит/с стерео</option>
-                  <option value={96}>96 кбит/с</option>
-                  <option value={64}>64 кбит/с моно</option>
+                  <option value={128}>{t('exp_audio_128')}</option>
+                  <option value={96}>{t('exp_audio_96')}</option>
+                  <option value={64}>{t('exp_audio_64')}</option>
                 </select>
               </div>
             )}
             <p className="muted mono">
-              Длительность: {formatDuration(durationMs)}
-              {trimmed && ` (обрезано из ${formatDuration(clip.durationMs)})`}
+              {t('exp_duration', { dur: formatDuration(durationMs) })}
+              {trimmed && t('exp_trimmed_from', { dur: formatDuration(clip.durationMs) })}
             </p>
           </section>
 
           <section>
-            <h3>Размер файла</h3>
+            <h3>{t('exp_filesize')}</h3>
             <label className="radio-inline">
               <input
                 type="radio"
                 checked={targetId === 'none'}
                 onChange={() => setTargetId('none')}
               />
-              Не ограничивать — качество максимальное
+              {t('exp_no_limit')}
             </label>
             <div className="chips">
               {prefs.sizePresets.map((p) => (
@@ -548,7 +565,7 @@ export function ExportDialog({
                   className={targetId === p.id ? 'chip chip--on' : 'chip'}
                   onClick={() => setTargetId(p.id)}
                 >
-                  {p.label} · {formatBytes(p.bytes)}
+                  {p.label} · {formatBytes(p.bytes, locale)}
                 </button>
               ))}
               <button
@@ -556,22 +573,19 @@ export function ExportDialog({
                 className={targetId === 'custom' ? 'chip chip--on' : 'chip'}
                 onClick={() => setTargetId('custom')}
               >
-                Своё
+                {t('exp_chip_custom')}
               </button>
               {targetId === 'custom' && (
                 <input
                   type="number"
                   min={1}
                   value={customMb}
-                  aria-label="Своя цель, МБ"
+                  aria-label={t('exp_custom_aria')}
                   onChange={(e) => setCustomMb(Math.max(1, Number(e.target.value)))}
                 />
               )}
             </div>
-            <p className="muted">
-              ⓘ Лимиты площадок зашиты в расширение и могут устареть — мы не ходим в сеть их
-              проверять. Их можно поправить в настройках.
-            </p>
+            <p className="muted">{t('exp_limits_note')}</p>
           </section>
         </>
       )}
@@ -579,37 +593,48 @@ export function ExportDialog({
       {/* 🔴 THE BUDGET — computed BEFORE a single frame is encoded (design §6.3). */}
       {budget && budgetInput && (
         <section className={budget.verdict === 'mush' ? 'budget budget--bad' : 'budget'}>
-          <h3>Расчёт бюджета — до кодирования</h3>
+          <h3>{t('exp_budget_h')}</h3>
           <p className="mono">
-            Цель {formatBytes(target!.bytes)} − 3% на контейнер − звук{' '}
-            {formatBytes(budget.audioBytes)} → видео {formatBytes(Math.max(0, budget.videoBytes))}
+            {t('exp_budget_line1', {
+              target: formatBytes(target!.bytes, locale),
+              audio: formatBytes(budget.audioBytes, locale),
+              video: formatBytes(Math.max(0, budget.videoBytes), locale),
+            })}
           </p>
           <p className="mono">
-            ≈ {Math.round(budget.videoBps / 1000)} кбит/с при {res.width}×{res.height} /{' '}
-            {fps === 'as-recorded' ? 30 : fps} к/с → {budget.bpp.toFixed(4)} бит/пиксель
+            {t('exp_budget_line2', {
+              kbps: Math.round(budget.videoBps / 1000),
+              w: res.width,
+              h: res.height,
+              fps: fps === 'as-recorded' ? 30 : fps,
+              bpp: budget.bpp.toFixed(4),
+            })}
           </p>
           <p>
-            Ожидаемое качество: <strong>{VERDICT_COPY[budget.verdict].label}</strong>{' '}
+            {t('exp_expected_quality')}
+            <strong>{t(VERDICT_LABEL_KEY[budget.verdict])}</strong>{' '}
             <span aria-hidden="true">
               {'●'.repeat(budget.dots)}
               {'○'.repeat(5 - budget.dots)}
             </span>
             {' — '}
-            {VERDICT_COPY[budget.verdict].note}
+            {t(VERDICT_NOTE_KEY[budget.verdict])}
           </p>
 
           {blocked && (
-            <Callout tone="warn" title="Это каша — экспорт заблокирован">
-              При такой цели картинка развалится, а текст станет нечитаем. Три минуты CPU ради
-              заведомо мусорного файла — это не свобода выбора, это ловушка. Что реально
-              поможет:
+            <Callout tone="warn" title={t('exp_blocked_title')}>
+              {t('exp_blocked_body')}
               <ul>
                 {suggestionsFor(budgetInput).map((s) => (
                   <li key={s.id}>
-                    {s.label}{' '}
+                    {t(s.labelKey, {
+                      ...(s.fps != null ? { fps: s.fps } : {}),
+                      ...(s.mb != null ? { mb: s.mb } : {}),
+                      ...(s.verdict ? { verdict: t(VERDICT_LABEL_KEY[s.verdict]) } : {}),
+                    })}{' '}
                     {s.toTrim ? (
                       <button type="button" className="ui-btn ui-btn--sm" onClick={onTrim}>
-                        К обрезке
+                        {t('exp_to_trim')}
                       </button>
                     ) : (
                       <button
@@ -617,58 +642,47 @@ export function ExportDialog({
                         className="ui-btn ui-btn--sm"
                         onClick={() => applySuggestion(s.id)}
                       >
-                        Применить
+                        {t('apply')}
                       </button>
                     )}
                   </li>
                 ))}
               </ul>
               <details>
-                <summary>Всё равно экспортировать</summary>
+                <summary>{t('exp_export_anyway')}</summary>
                 <p>
-                  Мы посчитали и говорим прямо: результат будет нечитаем. Если это осознанное
-                  решение —
+                  {t('exp_export_anyway_body')}
                   <button
                     type="button"
                     className="ui-btn ui-btn--sm"
                     onClick={() => setOverridden(true)}
                   >
-                    разблокировать экспорт
+                    {t('exp_unblock')}
                   </button>
                 </p>
               </details>
             </Callout>
           )}
-          <p className="muted">
-            ⓘ Точный размер заранее не знает никто: браузерный энкодер не гарантирует битрейт.
-            Мы подгоняем итерациями (до {prefs.maxPasses} проходов) и показываем каждый шаг.
-          </p>
+          <p className="muted">{t('exp_iter_note', { max: prefs.maxPasses })}</p>
         </section>
       )}
 
       {/* The permanent redaction summary — not a popup, not a blocker (§7.3). */}
       {(fillCount > 0 || hasCosmetic) && (
         <section>
-          <p>🔒 Скрыто заливкой: {fillCount} обл.</p>
+          <p>{t('exp_hidden_fill', { n: fillCount })}</p>
           {hasCosmetic && (
             <p className="warn-text">
-              ⚠ Размыто/пикселизовано (НЕ защита): {edit.regions.length - fillCount} обл. — если
-              там секрет, замените на заливку.
+              {t('exp_cosmetic_summary', { n: edit.regions.length - fillCount })}
             </p>
           )}
         </section>
       )}
 
-      {bigRam && (
-        <Callout tone="warn">
-          Запись больше 1,5 ГБ, а перекодирование собирает результат в памяти. Это может не
-          влезть. Варианты: «Как записано» (мгновенно, без памяти), обрезка, или меньшее
-          разрешение.
-        </Callout>
-      )}
+      {bigRam && <Callout tone="warn">{t('exp_big_ram')}</Callout>}
 
       <section>
-        <h3>Файл</h3>
+        <h3>{t('exp_file')}</h3>
         <p className="mono">
           {filename}.{effectiveCopy ? extensionFor(clip.mimeType) : format}
         </p>
@@ -678,7 +692,7 @@ export function ExportDialog({
             checked={prefs.askWhereToSave}
             onChange={(e) => update({ askWhereToSave: e.target.checked })}
           />
-          Спросить, куда сохранить
+          {t('exp_ask_where')}
         </label>
         <label className="check-inline">
           <input
@@ -686,7 +700,7 @@ export function ExportDialog({
             checked={deleteSource}
             onChange={(e) => setDeleteSource(e.target.checked)}
           />
-          Удалить исходную запись после экспорта
+          {t('exp_delete_after')}
           {/* Default OFF, always: silently deleting the user's data is not a
               feature. But we must OFFER it — the un-redacted original is exactly
               the thing that leaks the password (design §7.6). */}
@@ -695,10 +709,10 @@ export function ExportDialog({
 
       <div className="ed-foot">
         <Button variant="ghost" onClick={onClose}>
-          Отмена
+          {t('cancel')}
         </Button>
         <Button variant="primary" disabled={blocked} onClick={() => void runExport()}>
-          Экспортировать
+          {t('exp_export_btn')}
         </Button>
       </div>
     </div>

@@ -21,7 +21,7 @@ const CONTROL_CHARS = new RegExp('[\\u0000-\\u001F\\u007F]', 'g');
 
 /** ⚠️ Excel: ≤31 chars, none of `: \ / ? * [ ]`, cannot be empty, cannot be
  *  "History". Violating any of these makes the workbook fail to open. */
-export function sanitizeSheetName(raw: string, fallback = 'Таблица'): string {
+export function sanitizeSheetName(raw: string, fallback = 'Table'): string {
   let s = (raw || '')
     .replace(EXCEL_FORBIDDEN, '-')
     .replace(CONTROL_CHARS, '')

@@ -1,7 +1,14 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
-import { activeDraftIdItem, draftsItem, settingsItem, withDraftsLock } from '../utils/storage';
+import {
+  activeDraftIdItem,
+  draftsItem,
+  localeItem,
+  settingsItem,
+  withDraftsLock,
+} from '../utils/storage';
 import { MSG_ACTIVE_TAB, openEditor, sidePanelApi, type ActiveTabInfo } from '../utils/surface';
+import { tAt } from '../utils/i18n';
 import type { Draft } from '../utils/types';
 
 // Background (design §S4, §S5, §8.4). Deliberately almost empty:
@@ -46,28 +53,35 @@ export default defineBackground({
     });
 
     /* ── S4: the ONE context menu (design §1.1, §4.2) ────────────────────*/
-    function createMenus(): void {
+    // Titles follow the runtime UI language (non-React context → tAt at the
+    // persisted locale). The menu is rebuilt when the language changes.
+    async function createMenus(): Promise<void> {
+      const locale = await localeItem.getValue();
       browser.contextMenus?.removeAll(() => {
         browser.contextMenus?.create({
           id: MENU_ADD,
-          title: 'Добавить выделенное в черновик',
+          title: tAt(locale, 'ctx_add_selection'),
           contexts: ['selection'],
         });
         browser.contextMenus?.create({
           id: MENU_ADD_QUOTE,
-          title: '…как цитату',
+          title: tAt(locale, 'ctx_add_quote'),
           contexts: ['selection'],
         });
       });
     }
-    browser.runtime.onInstalled.addListener(createMenus);
-    browser.runtime.onStartup?.addListener(createMenus);
+    browser.runtime.onInstalled.addListener(() => void createMenus());
+    browser.runtime.onStartup?.addListener(() => void createMenus());
+    localeItem.watch(() => void createMenus());
 
     browser.contextMenus?.onClicked.addListener((info, tab) => {
       void (async () => {
         if (info.menuItemId !== MENU_ADD && info.menuItemId !== MENU_ADD_QUOTE) return;
 
-        const settings = await settingsItem.getValue();
+        const [settings, locale] = await Promise.all([
+          settingsItem.getValue(),
+          localeItem.getValue(),
+        ]);
         const asQuote = info.menuItemId === MENU_ADD_QUOTE || settings.contextMenuMode === 'quote';
 
         const selection = info.selectionText ?? '';
@@ -97,10 +111,12 @@ export default defineBackground({
             return;
           }
 
-          // No draft yet → create "Из выделения — <host>" (design §4.2).
+          // No draft yet → create "From selection — <host>" (design §4.2).
           const created: Draft = {
             id: `d-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            title: `Из выделения — ${safeHost(tab?.url)}`,
+            title: tAt(locale, 'draft_from_selection', {
+              host: safeHost(tab?.url, tAt(locale, 'host_fallback')),
+            }),
             body: addition.trimStart(),
             target: settings.defaultTarget,
             createdAt: Date.now(),
@@ -156,11 +172,11 @@ function joinBody(body: string, addition: string): string {
   return body + sep + addition.trimStart();
 }
 
-function safeHost(url?: string): string {
-  if (!url) return 'страница';
+function safeHost(url: string | undefined, fallback: string): string {
+  if (!url) return fallback;
   try {
     return new URL(url).hostname;
   } catch {
-    return 'страница';
+    return fallback;
   }
 }

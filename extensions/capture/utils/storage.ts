@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 import type {
   RecordingSource,
   ScreenshotFormat,
@@ -131,3 +132,15 @@ export const LOGO_BLOB_KEY = 'watermark-logo';
 /** localStorage seed key for flash-free theme (design §11.3, PLAN.md §18c). Same
  *  naming scheme as the family: 'blur-<ext>:theme'. */
 export const THEME_SEED_KEY = 'blur-capture:theme';
+
+/** Runtime UI language. English on a fresh install regardless of the browser
+ *  locale — an in-settings switch, not `chrome.i18n` (see @blur/ui/i18n). Prefs
+ *  live in IndexedDB-adjacent stores, but this pref is a single small string and
+ *  belongs in `local:` beside the theme (design §9.6). */
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+});
+
+/** localStorage seed key for a flash-free first paint in the chosen language.
+ *  Same naming scheme as the theme seed: 'blur-<ext>:locale'. */
+export const LOCALE_SEED_KEY = 'blur-capture:locale';

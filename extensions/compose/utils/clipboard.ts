@@ -49,8 +49,10 @@ export async function copyToClipboard(text: string, html?: string): Promise<Copy
     const fallback = execCommandCopy(text);
     if (fallback) return { ok: true, via: 'exec-command' };
     return {
+      // A raw browser message passes through the UI translator unchanged; our
+      // own fallback is an i18n key ('clipboard_denied').
       ok: false,
-      error: e instanceof Error ? e.message : 'Браузер не дал доступ к буферу обмена',
+      error: e instanceof Error ? e.message : 'clipboard_denied',
     };
   }
 }

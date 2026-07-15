@@ -59,9 +59,9 @@ body {
 .card__head { border-bottom: 1px solid var(--border); padding-bottom: 6px; }
 .url { font-family: var(--mono); word-break: break-all; }
 
-.props { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
-.props dt { color: var(--text-dim); }
-.props dd { margin: 0; }
+.props { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.props dt { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
+.props dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 .hint { color: var(--text-dim); font-size: 12px; }
 

@@ -20,6 +20,7 @@ import {
 } from './resource-timing';
 import { analyzePictureSources, analyzeSrcset, parseSrcset, resolveSlotWidth } from './srcset';
 import type { OverweightThreshold, RequestScope } from './storage';
+import type { TFn } from './i18n';
 
 /**
  * 🔴 THE READER. Everything the card shows comes from here, and it makes ZERO
@@ -47,6 +48,10 @@ export interface InspectOptions {
   requestScope: RequestScope;
   /** Our closed shadow root — where the hidden `sizes` measuring probe lives. */
   measureIn: ShadowRoot | Element;
+  /** Locale-bound translator. The card is rebuilt on every pick, so the model's own
+   *  prose (failure messages, "open disabled" reasons, MSE MIME labels…) is produced
+   *  already-localized. Optional so the reader stays usable without i18n wired. */
+  t?: TFn;
 }
 
 export function readResourceMetadata(el: Element, o: InspectOptions): ResourceCardModel {
@@ -87,10 +92,11 @@ function readImage(img: HTMLImageElement, o: InspectOptions): ResourceCardModel 
       currentSrc,
       sizesAttr,
       analyzePictureSources(img, currentSrc),
+      o.t,
     );
   }
 
-  const failure = imageFailure(img, currentSrc);
+  const failure = imageFailure(img, currentSrc, o.t);
   const base = commonFields(img, currentSrc, entry, entries, o);
 
   return {
@@ -103,7 +109,7 @@ function readImage(img: HTMLImageElement, o: InspectOptions): ResourceCardModel 
     displayedSize: displayed,
     overweight: overweightOf(natural.w, rect.width, dpr, o.overweightThreshold),
     srcset,
-    attributes: attributesOf(img, ['loading', 'decoding', 'fetchpriority', 'sizes']),
+    attributes: attributesOf(img, ['loading', 'decoding', 'fetchpriority', 'sizes'], o.t),
     alt: img.hasAttribute('alt') ? img.alt : undefined,
     failure: failure ?? undefined,
     dataUri: currentSrc.startsWith('data:') ? dataUriOf(currentSrc) : undefined,
@@ -129,18 +135,22 @@ function pictureSrcset(img: HTMLImageElement): string | null {
  * does not tell the page whether it was a 404, CORS, CSP or mixed content — so we
  * say that, and point at the one place that knows (DevTools).
  */
-function imageFailure(img: HTMLImageElement, currentSrc: string): LoadFailure | null {
+function imageFailure(img: HTMLImageElement, currentSrc: string, t?: TFn): LoadFailure | null {
   if (currentSrc === '') return null;
   if (!img.complete) return null;
   if (img.naturalWidth > 0) return null;
   const status = responseStatusOf(findEntry(currentSrc));
   if (status !== null && status >= 400) {
-    return { code: String(status), message: `The server answered ${status}.` };
+    return {
+      code: String(status),
+      message: t ? t('failServerAnswered', { status }) : `The server answered ${status}.`,
+    };
   }
   return {
     code: null,
-    message:
-      'The image did not load. The browser does not tell a page WHY a cross-origin resource failed (404 / CORS / CSP / mixed content all look the same from here). The DevTools panel — Console + Network — will name it.',
+    message: t
+      ? t('failImageGeneric')
+      : 'The image did not load. The browser does not tell a page WHY a cross-origin resource failed (404 / CORS / CSP / mixed content all look the same from here). The DevTools panel — Console + Network — will name it.',
   };
 }
 
@@ -170,10 +180,16 @@ function readMedia(media: HTMLVideoElement | HTMLAudioElement, o: InspectOptions
       ...base,
       kind: isVideo ? 'video' : 'audio',
       variant: 'mse',
-      mime: { value: isVideo ? 'video (MSE stream)' : 'audio (MSE stream)', certainty: 'unknown' },
+      mime: {
+        value: o.t
+          ? o.t(isVideo ? 'mseMimeVideo' : 'mseMimeAudio')
+          : isVideo ? 'video (MSE stream)' : 'audio (MSE stream)',
+        certainty: 'unknown',
+      },
       urlOpenable: false,
-      openDisabledReason:
-        'blob: points at buffers in this tab’s memory — there is no file at that address, on disk or on a server',
+      openDisabledReason: o.t
+        ? o.t('mseOpenReason')
+        : 'blob: points at buffers in this tab’s memory — there is no file at that address, on disk or on a server',
       weight: { kind: 'not-in-buffer' },
       requests: groupByHost(feed),
       requestsHeuristic: true,
@@ -196,14 +212,14 @@ function readMedia(media: HTMLVideoElement | HTMLAudioElement, o: InspectOptions
     ...base,
     kind: isVideo ? 'video' : 'audio',
     variant: variantFor(currentSrc, mediaFailure(media) !== null, 'progressive-video'),
-    mime: mimeFor(currentSrc),
+    mime: mimeFor(currentSrc, o.t),
     // 🔴 Only ever what the AUTHOR declared, marked as a claim. We never print
     // "H.264" from a guess (design §7 №5).
     declaredType: declared ?? undefined,
     naturalSize: isVideo && videoWidth > 0 ? { w: videoWidth, h: media.videoHeight } : undefined,
     displayedSize: { w: Math.round(rect.width), h: Math.round(rect.height), dpr: window.devicePixelRatio || 1 },
-    attributes: attributesOf(media, ['preload', 'autoplay', 'loop', 'muted', 'controls', 'poster', 'crossorigin']),
-    failure: mediaFailure(media) ?? undefined,
+    attributes: attributesOf(media, ['preload', 'autoplay', 'loop', 'muted', 'controls', 'poster', 'crossorigin'], o.t),
+    failure: mediaFailure(media, o.t) ?? undefined,
     video: {
       resolution: isVideo && videoWidth > 0 ? { w: videoWidth, h: media.videoHeight } : undefined,
       duration: Number.isFinite(media.duration) ? media.duration : null,
@@ -236,9 +252,10 @@ function declaredTypeOf(media: HTMLMediaElement): string | null {
   return null;
 }
 
-function mediaFailure(media: HTMLMediaElement): LoadFailure | null {
+function mediaFailure(media: HTMLMediaElement, t?: TFn): LoadFailure | null {
   const err = media.error;
   if (!err) return null;
+  // MEDIA_ERR_* are spec constant names, not prose — kept verbatim in every locale.
   const codes: Record<number, string> = {
     1: 'MEDIA_ERR_ABORTED',
     2: 'MEDIA_ERR_NETWORK',
@@ -247,7 +264,7 @@ function mediaFailure(media: HTMLMediaElement): LoadFailure | null {
   };
   return {
     code: codes[err.code] ?? `code ${err.code}`,
-    message: err.message || 'The browser reported no further detail.',
+    message: err.message || (t ? t('mediaErrNoDetail') : 'The browser reported no further detail.'),
   };
 }
 
@@ -277,11 +294,11 @@ function readIframe(frame: HTMLIFrameElement, o: InspectOptions): ResourceCardMo
     variant: sameOrigin ? 'iframe-same-origin' : 'iframe-cross-origin',
     mime: { value: 'text/html', certainty: 'unknown' },
     displayedSize: { w: Math.round(rect.width), h: Math.round(rect.height), dpr: window.devicePixelRatio || 1 },
-    attributes: attributesOf(frame, ['allow', 'loading', 'sandbox', 'referrerpolicy', 'allowfullscreen']),
+    attributes: attributesOf(frame, ['allow', 'loading', 'sandbox', 'referrerpolicy', 'allowfullscreen'], o.t),
     iframe: {
       src,
       size: { w: Math.round(rect.width), h: Math.round(rect.height) },
-      attributes: attributesOf(frame, ['allow', 'loading', 'sandbox']),
+      attributes: attributesOf(frame, ['allow', 'loading', 'sandbox'], o.t),
       sameOrigin,
     },
   };
@@ -305,7 +322,7 @@ function readGeneric(el: Element, o: InspectOptions): ResourceCardModel {
       ...base,
       kind: 'css-background',
       variant: variantFor(url, false, 'image'),
-      mime: mimeFor(url),
+      mime: mimeFor(url, o.t),
       displayedSize: { w: Math.round(rect.width), h: Math.round(rect.height), dpr: window.devicePixelRatio || 1 },
       attributes: style
         ? { 'background-size': style.backgroundSize, 'background-position': style.backgroundPosition }
@@ -322,8 +339,8 @@ function readGeneric(el: Element, o: InspectOptions): ResourceCardModel {
     variant: 'no-resource',
     mime: { value: '—', certainty: 'unknown' },
     urlOpenable: false,
-    openDisabledReason: 'this element has no resource URL',
-    cssRule: style ? cssPaintDescription(style) : undefined,
+    openDisabledReason: o.t ? o.t('openReasonNoUrl') : 'this element has no resource URL',
+    cssRule: style ? cssPaintDescription(style, o.t) : undefined,
     nestedHint: nested ?? undefined,
     // A custom element with no light-DOM children that still paints is the classic
     // closed-shadow-root case. We state the CONDITION, not a conclusion (§4.7).
@@ -337,10 +354,12 @@ function nestedResourceHint(el: Element): string | null {
   return inner ? elementLabel(inner) : null;
 }
 
-function cssPaintDescription(style: CSSStyleDeclaration): string {
+function cssPaintDescription(style: CSSStyleDeclaration, t?: TFn): string {
+  // The first two branches are CSS declarations (code) — kept verbatim. Only the
+  // "structure, not a resource" fallback is prose, so only it is translated.
   if (style.backgroundImage !== 'none') return `background-image: ${style.backgroundImage}`;
   if (style.backgroundColor !== 'rgba(0, 0, 0, 0)') return `background-color: ${style.backgroundColor}`;
-  return 'no painted background — this element is structure, not a resource';
+  return t ? t('cssNoBackground') : 'no painted background — this element is structure, not a resource';
 }
 
 function firstUrlIn(backgroundImage: string): string | null {
@@ -379,9 +398,9 @@ function commonFields(
     selector: computeSelector(el),
     currentSrc: url,
     urlOpenable: isOpenable(url),
-    openDisabledReason: openDisabledReason(url),
-    mime: mimeFor(url),
-    weight: weightOf(entry),
+    openDisabledReason: openDisabledReason(url, o.t),
+    mime: mimeFor(url, o.t),
+    weight: weightOf(entry, o.t),
     // 🔴 The initiator TYPE is all a page can ever see. WHICH SCRIPT, at which line,
     // exists only in the DevTools HAR — no extension API returns it (design §7 №2).
     initiator: { type: entry?.initiatorType || '—', scriptKnown: false },
@@ -393,9 +412,11 @@ function commonFields(
   };
 }
 
-function mimeFor(url: string): MimeInfo {
+function mimeFor(url: string, t?: TFn): MimeInfo {
   if (!url) return { value: '—', certainty: 'unknown' };
-  if (url.startsWith('blob:')) return { value: 'in-memory buffer (blob:)', certainty: 'unknown' };
+  if (url.startsWith('blob:')) {
+    return { value: t ? t('blobMime') : 'in-memory buffer (blob:)', certainty: 'unknown' };
+  }
   return guessMime(url);
 }
 
@@ -411,12 +432,16 @@ export function isOpenable(url: string): boolean {
   }
 }
 
-function openDisabledReason(url: string): string | undefined {
-  if (!url) return 'this element has no resource URL';
-  if (url.startsWith('blob:')) return 'blob: is a pointer to this tab’s memory — there is nothing at that address to open';
-  if (url.startsWith('data:')) return 'the browser blocks top-level navigation to data: URIs';
+function openDisabledReason(url: string, t?: TFn): string | undefined {
+  if (!url) return t ? t('openReasonNoUrl') : 'this element has no resource URL';
+  if (url.startsWith('blob:')) {
+    return t ? t('openReasonBlob') : 'blob: is a pointer to this tab’s memory — there is nothing at that address to open';
+  }
+  if (url.startsWith('data:')) {
+    return t ? t('openReasonData') : 'the browser blocks top-level navigation to data: URIs';
+  }
   if (isOpenable(url)) return undefined;
-  return 'only http and https URLs can be opened';
+  return t ? t('openReasonHttpOnly') : 'only http and https URLs can be opened';
 }
 
 function dataUriOf(url: string): { prefix: string; length: number; head: string } {
@@ -437,11 +462,12 @@ function variantFor(
   return fallback;
 }
 
-function attributesOf(el: Element, names: string[]): Record<string, string> {
+function attributesOf(el: Element, names: string[], t?: TFn): Record<string, string> {
   const out: Record<string, string> = {};
+  const present = t ? t('attrPresent') : '(present)';
   for (const name of names) {
     const value = el.getAttribute(name);
-    if (value !== null) out[name] = value === '' ? '(present)' : value;
+    if (value !== null) out[name] = value === '' ? present : value;
   }
   return out;
 }

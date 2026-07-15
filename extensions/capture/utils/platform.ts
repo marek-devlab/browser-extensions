@@ -1,4 +1,5 @@
 import { browser } from '#imports';
+import type { MsgKey } from './i18n';
 import type { Pipeline } from './types';
 
 // RUNTIME capability probe (design capture.md §8, §12.1, PLAN.md (Часть II) §1.5).
@@ -27,8 +28,11 @@ export interface Capabilities {
   canRecordMp4: boolean;
   /** File System Access → stream the export to disk without a Blob in RAM. */
   canStreamToDisk: boolean;
-  /** Human-readable reason recording is unavailable, for the honest empty state. */
+  /** Human-readable reason recording is unavailable (English fallback, for the
+   *  non-React service worker). React surfaces translate `reasonKey` instead. */
   reason?: string;
+  /** Catalog key for the reason, so React surfaces (popup) show it translated. */
+  reasonKey?: MsgKey;
 }
 
 function hasOffscreen(): boolean {
@@ -73,7 +77,8 @@ export function capabilities(): Capabilities {
       canStreamToDisk,
       reason: ok
         ? undefined
-        : 'Этот браузер не предоставляет tabCapture/offscreen — запись вкладки недоступна.',
+        : "This browser doesn't provide tabCapture/offscreen — tab recording is unavailable.",
+      reasonKey: ok ? undefined : 'plat_no_tabcapture',
     };
   }
 
@@ -101,9 +106,7 @@ export function capabilities(): Capabilities {
     canStreamToDisk, // false in Firefox: no File System Access (design §10.3).
     reason: ok
       ? undefined
-      : 'Запись экрана в мобильном Firefox невозможна: нет getDisplayMedia и нет окон расширения. Скриншоты работают.',
+      : 'Screen recording is impossible in mobile Firefox: there is no getDisplayMedia and no extension windows. Screenshots work.',
+    reasonKey: ok ? undefined : 'plat_no_firefox_mobile',
   };
 }
-
-/** One-line honest summary for the "not supported" screen. */
-export const NO_RECORDING_TITLE = 'Запись на этой платформе недоступна';

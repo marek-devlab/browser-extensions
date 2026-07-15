@@ -1,4 +1,6 @@
 import { browser } from '#imports';
+import type { Locale } from '@blur/ui';
+import type { TT } from './i18n';
 
 // T1/T2 · NETWORK HALF — REAL (design §0, §4.2, §4.3, §9, §10).
 //
@@ -193,26 +195,18 @@ function requestInit(external?: AbortSignal, accept?: string): RequestInit {
 
 /** Map a thrown fetch/parse error onto a typed, user-visible failure. 🔴 Never
  *  leaks a stack trace or an "Error 0" into the UI (design §5). */
-function toFailure(err: unknown, what: string): NetFailure {
+function toFailure(err: unknown, what: string, t: TT): NetFailure {
   const name = err instanceof Error ? err.name : '';
   if (name === 'TimeoutError') {
-    return { ok: false, kind: 'timeout', message: `${what} не ответил за 8 секунд.` };
+    return { ok: false, kind: 'timeout', message: t('net_timeout', { what }) };
   }
   if (name === 'AbortError') {
-    return { ok: false, kind: 'error', message: 'Запрос отменён.' };
+    return { ok: false, kind: 'error', message: t('net_aborted') };
   }
   if (err instanceof RangeError) {
-    return {
-      ok: false,
-      kind: 'malformed',
-      message: `${what} вернул слишком большой ответ — он отброшен.`,
-    };
+    return { ok: false, kind: 'malformed', message: t('net_tooLarge', { what }) };
   }
-  return {
-    ok: false,
-    kind: 'error',
-    message: `Не удалось связаться с ${what}. Возможно, нет интернета или запрос блокируется.`,
-  };
+  return { ok: false, kind: 'error', message: t('net_generic', { what }) };
 }
 
 function retryAfterOf(res: Response): number | undefined {
@@ -269,15 +263,11 @@ export function parseTrace(text: string): TraceResult | null {
   };
 }
 
-export async function fetchTrace(signal?: AbortSignal): Promise<NetOutcome<TraceResult>> {
+export async function fetchTrace(t: TT, signal?: AbortSignal): Promise<NetOutcome<TraceResult>> {
   // ⚠️ `onLine === false` means "no network interface" — a reliable NO. We use it
   // only to avoid calling into the void; `true` proves nothing (design §4.6).
   if (!navigator.onLine) {
-    return {
-      ok: false,
-      kind: 'offline',
-      message: 'Нет подключения к сети. IP можно узнать только у внешнего сервера.',
-    };
+    return { ok: false, kind: 'offline', message: t('net_offlineTrace') };
   }
   try {
     const res = await fetch(TRACE_URL, requestInit(signal, 'text/plain'));
@@ -285,21 +275,17 @@ export async function fetchTrace(signal?: AbortSignal): Promise<NetOutcome<Trace
       return {
         ok: false,
         kind: res.status === 429 ? 'rate-limited' : 'error',
-        message: `Cloudflare ответил кодом ${res.status}.`,
+        message: t('net_cfStatus', { status: res.status }),
         retryAfterSec: retryAfterOf(res),
       };
     }
     const parsed = parseTrace(await readCapped(res));
     if (!parsed) {
-      return {
-        ok: false,
-        kind: 'malformed',
-        message: 'Cloudflare ответил в неожиданном формате — IP в ответе не найден.',
-      };
+      return { ok: false, kind: 'malformed', message: t('net_cfMalformed') };
     }
     return { ok: true, value: parsed };
   } catch (err) {
-    return toFailure(err, 'Cloudflare');
+    return toFailure(err, 'Cloudflare', t);
   }
 }
 
@@ -352,41 +338,33 @@ export function parseIpinfo(json: unknown): IspResult | null {
  * be public in the bundle and burned within a week (design §14.1). An empty token is
  * a first-class state, not an error: we say "add it in Settings" and make NO request.
  */
-export async function fetchIsp(token: string, signal?: AbortSignal): Promise<NetOutcome<IspResult>> {
+export async function fetchIsp(token: string, t: TT, signal?: AbortSignal): Promise<NetOutcome<IspResult>> {
   if (!navigator.onLine) {
-    return { ok: false, kind: 'offline', message: 'Нет подключения к сети.' };
+    return { ok: false, kind: 'offline', message: t('net_offlineIsp') };
   }
   const trimmed = token.trim();
   if (trimmed === '') {
-    return {
-      ok: false,
-      kind: 'unauthorized',
-      message: 'Нужен ваш токен ipinfo.io — добавьте его в Настройках. Запрос не отправлялся.',
-    };
+    return { ok: false, kind: 'unauthorized', message: t('net_tokenNeeded') };
   }
   try {
     const url = `${IPINFO_URL}?token=${encodeURIComponent(trimmed)}`;
     const res = await fetch(url, requestInit(signal, 'application/json'));
 
     if (res.status === 401 || res.status === 403) {
-      return {
-        ok: false,
-        kind: 'unauthorized',
-        // 🔴 Never silently fall back to another service — that would be an
-        // undisclosed request to a recipient the user never agreed to (design §10).
-        message: 'Токен не принят ipinfo.io. Проверьте его в Настройках.',
-      };
+      // 🔴 Never silently fall back to another service — that would be an
+      // undisclosed request to a recipient the user never agreed to (design §10).
+      return { ok: false, kind: 'unauthorized', message: t('net_ipinfoToken') };
     }
     if (res.status === 429) {
       return {
         ok: false,
         kind: 'rate-limited',
-        message: 'Лимит запросов к ipinfo.io исчерпан.',
+        message: t('net_ipinfoRateLimit'),
         retryAfterSec: retryAfterOf(res),
       };
     }
     if (!res.ok) {
-      return { ok: false, kind: 'error', message: `ipinfo.io ответил кодом ${res.status}.` };
+      return { ok: false, kind: 'error', message: t('net_ipinfoStatus', { status: res.status }) };
     }
 
     const text = await readCapped(res);
@@ -394,19 +372,15 @@ export async function fetchIsp(token: string, signal?: AbortSignal): Promise<Net
     try {
       json = JSON.parse(text);
     } catch {
-      return { ok: false, kind: 'malformed', message: 'ipinfo.io вернул не JSON.' };
+      return { ok: false, kind: 'malformed', message: t('net_ipinfoNotJson') };
     }
     const parsed = parseIpinfo(json);
     if (!parsed) {
-      return {
-        ok: false,
-        kind: 'malformed',
-        message: 'Ответ ipinfo.io не содержит ожидаемых полей.',
-      };
+      return { ok: false, kind: 'malformed', message: t('net_ipinfoNoFields') };
     }
     return { ok: true, value: parsed };
   } catch (err) {
-    return toFailure(err, 'ipinfo.io');
+    return toFailure(err, 'ipinfo.io', t);
   }
 }
 
@@ -457,9 +431,10 @@ export async function revokeIspPermission(): Promise<void> {
 
 /** Country name from an ISO code via `Intl.DisplayNames` — no bundled table, no
  *  network. Falls back to the bare code (which we render regardless). */
-export function countryName(code: string): string | null {
+export function countryName(code: string, locale?: Locale): string | null {
   try {
-    const dn = new Intl.DisplayNames([navigator.language, 'ru', 'en'], { type: 'region' });
+    const prefs = [locale, navigator.language, 'en'].filter(Boolean) as string[];
+    const dn = new Intl.DisplayNames(prefs, { type: 'region' });
     const name = dn.of(code);
     return name && name !== code ? name : null;
   } catch {

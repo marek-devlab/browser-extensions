@@ -1,11 +1,13 @@
 import { defineContentScript, browser } from '#imports';
 import tokensCss from '@blur/ui/tokens.css?inline';
+import type { Locale } from '@blur/ui';
 import type { ResourceCardModel, SrcsetVerdict, InspectorStartMessage } from '../utils/assets-types';
 import { readResourceMetadata, isOpenable } from '../utils/inspect';
 import { startPicker, type PickerChrome, type PickerHandle } from '../utils/element-picker';
 import { bufferState, raiseBuffer, normalizeUrl } from '../utils/resource-timing';
 import { formatDimensions, formatWeight, formatPercent, hostOf, formatDuration } from '../utils/format';
-import { assetsPrefsItem, cardPositionItem, DEFAULT_PREFS, type AssetsPrefs } from '../utils/storage';
+import { assetsPrefsItem, cardPositionItem, localeItem, DEFAULT_PREFS, type AssetsPrefs } from '../utils/storage';
+import { tAt, type TFn } from '../utils/i18n';
 
 // The injected inspector overlay — 🥇 THE CORE PRODUCT SURFACE (design §0 И3, §2).
 //
@@ -63,6 +65,10 @@ interface Overlay {
   prefs: AssetsPrefs;
   overflowed: boolean;
   prevCursor: string;
+  /** The persisted UI locale, read once when the overlay boots. */
+  locale: Locale;
+  /** Locale-bound translator for every string this card renders. */
+  t: TFn;
 }
 
 let overlay: Overlay | null = null;
@@ -130,18 +136,20 @@ const STYLES = `
 .card__head { display: flex; align-items: center; gap: 6px; padding: 8px 10px;
   border-bottom: 1px solid var(--border); cursor: grab; position: sticky; top: 0;
   background: var(--bg); z-index: 1; }
-.card__title { font-weight: 600; flex: 1; font-size: 14px; }
+.card__title { font-weight: 600; flex: 1; min-width: 0; font-size: 14px;
+  overflow-wrap: anywhere; }
 .card__head button { min-width: 44px; min-height: 44px; }
-.card__body { padding: 12px; display: grid; gap: 14px; }
+.card__body { padding: 12px; display: grid; gap: 14px; min-width: 0; }
 .sec > h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-dim); font-weight: 600; }
 .url { font-family: var(--mono); word-break: break-all; font-size: 13px;
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 6px 8px; user-select: all; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.props { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; }
-.props dt { color: var(--text-dim); }
-.props dd { margin: 0; overflow-wrap: anywhere; }
+.props { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 6px 12px; margin: 0; }
+.props dt { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
+.props dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .warn { color: var(--warn-fg); font-weight: 600; }
 .poor { color: var(--poor-fg); font-weight: 600; }
 .callout { border: 1px solid var(--border); border-left: 3px solid var(--accent);
@@ -149,8 +157,8 @@ const STYLES = `
 .callout.warn { border-left-color: var(--warn); color: inherit; font-weight: 400; }
 .callout.poor { border-left-color: var(--poor); color: inherit; font-weight: 400; }
 .callout b { display: block; margin-bottom: 2px; }
-.bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 5px 8px;
-  align-items: center; font-size: 12px; }
+.bars { display: grid; grid-template-columns: minmax(0, max-content) minmax(40px, 1fr) max-content;
+  gap: 5px 8px; align-items: center; font-size: 12px; overflow-wrap: anywhere; }
 .bars .track { background: var(--bg-elev); border-radius: 3px; height: 10px; }
 .bars .fill { height: 10px; background: var(--accent); border-radius: 3px; }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
@@ -201,6 +209,10 @@ async function boot(startMessage?: InspectorStartMessage): Promise<void> {
   (window as unknown as Record<string, unknown>)[ACTIVE_FLAG] = true;
 
   const prefs = await loadPrefs();
+  // Read the persisted UI language (English on a fresh install) and bind a
+  // translator. Every string this closed-shadow card renders goes through `t`.
+  const locale = await loadLocale();
+  const t: TFn = (key, vars) => tAt(locale, key, vars);
   // Raise the cap again with the user's value (the default was already applied
   // synchronously at injection — see main()). The limit is published on the isolated
   // world's global so the popup's counter script reports the REAL cap instead of
@@ -227,20 +239,20 @@ async function boot(startMessage?: InspectorStartMessage): Promise<void> {
 
   const confirm = h('button', {
     class: 'primary',
-    text: 'Inspect this element',
+    text: t('inspectThisElement'),
     attrs: { type: 'button', style: 'display:none' },
   }) as HTMLButtonElement;
   const cancel = h('button', {
-    text: 'Cancel',
-    attrs: { type: 'button', 'aria-label': 'Cancel the element picker' },
+    text: t('cancel'),
+    attrs: { type: 'button', 'aria-label': t('cancelPickerAria') },
   }) as HTMLButtonElement;
   const banner = h('div', { class: 'banner', attrs: { role: 'status' } }, [
-    h('span', { text: 'Point at an element' }),
+    h('span', { text: t('pointAtElement') }),
     h('span', {
       class: 'keys',
       // Keys are listed for the desktop user; the two buttons are what a touch user
       // (Firefox for Android — no hover, no Esc key) actually uses.
-      text: '↑ parent · ↓ child · ← → siblings · [ ] stack · R nearest resource · Enter select · Esc cancel',
+      text: t('pickerKeys'),
     }),
     confirm,
     cancel,
@@ -261,6 +273,7 @@ async function boot(startMessage?: InspectorStartMessage): Promise<void> {
     chrome, card: null, cardObserver: null,
     returnFocusTo: document.activeElement,
     prefs, overflowed: false, prevCursor,
+    locale, t,
   };
   overlay = state;
 
@@ -298,6 +311,7 @@ async function boot(startMessage?: InspectorStartMessage): Promise<void> {
     signal: abort.signal,
     showBreadcrumbs: prefs.showBreadcrumbs,
     autoJumpToResource: prefs.autoJumpToResource,
+    t,
     onPick: (el) => openCard(state, el),
     onCancel: () => teardown(),
   });
@@ -354,6 +368,16 @@ async function loadPrefs(): Promise<AssetsPrefs> {
   }
 }
 
+/** The persisted UI locale, defaulting to English on a fresh install or if storage
+ *  is unreachable (design: English default independent of the browser locale). */
+async function loadLocale(): Promise<Locale> {
+  try {
+    return await localeItem.getValue();
+  } catch {
+    return 'en';
+  }
+}
+
 /** Theme on the SHADOW HOST, never inherited from the page: a dark page under a
  *  light OS must not produce an unreadable card (design §11.3). */
 function applyTheme(host: HTMLElement, theme: AssetsPrefs['theme']): void {
@@ -391,11 +415,12 @@ function openCard(state: Overlay, el: Element): void {
       buffer: bufferState(state.prefs.bufferSize, state.overflowed),
       requestScope: state.prefs.requestScope,
       measureIn: state.root,
+      t: state.t,
     });
   } catch (err) {
     // Degrade honestly, never throw into the page: a cross-origin element or a
     // detached node must produce a card that says so, not a broken overlay.
-    state.chrome.live.textContent = 'This element could not be read.';
+    state.chrome.live.textContent = state.t('couldNotRead');
     model = failureModel(el, err, state);
   }
 
@@ -428,7 +453,7 @@ function failureModel(el: Element, err: unknown, state: Overlay): ResourceCardMo
     selector: '',
     currentSrc: '',
     urlOpenable: false,
-    openDisabledReason: 'no resource URL',
+    openDisabledReason: state.t('openReasonNoUrl'),
     mime: { value: '—', certainty: 'unknown' },
     weight: { kind: 'not-in-buffer' },
     initiator: { type: '—', scriptKnown: false },
@@ -437,7 +462,7 @@ function failureModel(el: Element, err: unknown, state: Overlay): ResourceCardMo
     requestsHeuristic: false,
     redirects: { kind: 'unknown' },
     buffer: bufferState(state.prefs.bufferSize, state.overflowed),
-    cssRule: err instanceof Error ? `could not read this element: ${err.name}` : 'could not read this element',
+    cssRule: err instanceof Error ? state.t('couldNotReadElName', { name: err.name }) : state.t('couldNotReadEl'),
   };
 }
 
@@ -449,16 +474,16 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
       // NOT modal: the page stays usable, because comparing the card against the
       // element on the page is the whole point (design §11.2).
       'aria-modal': 'false',
-      'aria-label': 'Asset Inspector — resource card',
+      'aria-label': state.t('cardAria'),
       tabindex: '-1',
     },
   });
 
-  const title = h('span', { class: 'card__title', text: 'Asset Inspector', attrs: { tabindex: '-1' } });
+  const title = h('span', { class: 'card__title', text: state.t('cardTitle'), attrs: { tabindex: '-1' } });
   const collapse = h('button', {
     class: 'act',
     text: '⌄',
-    attrs: { type: 'button', 'aria-label': 'Collapse the card', 'aria-expanded': 'true' },
+    attrs: { type: 'button', 'aria-label': state.t('collapseCard'), 'aria-expanded': 'true' },
   });
   collapse.addEventListener('click', () => {
     const collapsed = card.getAttribute('data-collapsed') === 'true';
@@ -468,7 +493,7 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
   const close = h('button', {
     class: 'act',
     text: '✕',
-    attrs: { type: 'button', 'aria-label': 'Close the inspector' },
+    attrs: { type: 'button', 'aria-label': state.t('closeInspector') },
   });
   close.addEventListener('click', () => teardown());
   const head = h('div', { class: 'card__head' }, [title, collapse, close]);
@@ -477,20 +502,20 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
   const body = h('div', { class: 'card__body' });
 
   const stale = h('div', { class: 'callout warn', attrs: { 'data-stale': '', hidden: '', role: 'status' } }, [
-    h('b', { text: '⚠️ The element was removed from the page.' }),
-    h('span', { text: 'Everything below is a snapshot taken when you picked it.' }),
+    h('b', { text: state.t('staleTitle') }),
+    h('span', { text: state.t('staleBody') }),
   ]);
   body.append(stale);
 
-  if (m.buffer.overflowed || m.buffer.nearFull) body.append(bufferCallout(m));
+  if (m.buffer.overflowed || m.buffer.nearFull) body.append(bufferCallout(m, state.t));
 
   // Preview + identity + the one verdict this product renders.
   const headline = h('div', { class: 'row' });
-  if (state.prefs.preview) headline.append(canvasPreview(el));
+  if (state.prefs.preview) headline.append(canvasPreview(el, state.t));
   headline.append(
-    h('div', { attrs: { style: 'flex:1;min-width:200px' } }, [
+    h('div', { attrs: { style: 'flex:1;min-width:0' } }, [
       h('div', { text: m.elementLabel }),
-      h('div', { class: 'hint', text: identityLine(m) }),
+      h('div', { class: 'hint', text: identityLine(m, state.t) }),
     ]),
   );
   body.append(headline);
@@ -504,7 +529,7 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
       body.append(...iframeSections(state, m));
       break;
     case 'no-resource':
-      body.append(...noResourceSections(m));
+      body.append(...noResourceSections(m, state.t));
       break;
     case 'data':
       body.append(...dataUriSections(state, m));
@@ -514,12 +539,12 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
       break;
   }
 
-  const again = h('button', { class: 'act', text: 'Inspect another element', attrs: { type: 'button' } });
+  const again = h('button', { class: 'act', text: state.t('inspectAnother'), attrs: { type: 'button' } });
   again.addEventListener('click', () => {
     closeCard(state);
     armPicker(state);
   });
-  body.append(h('div', { class: 'row' }, [again, copyAsJsonButton(m)]));
+  body.append(h('div', { class: 'row' }, [again, copyAsJsonButton(m, state.t)]));
 
   card.append(head, body);
 
@@ -535,22 +560,22 @@ function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLEleme
   return card;
 }
 
-function identityLine(m: ResourceCardModel): string {
+function identityLine(m: ResourceCardModel, t: TFn): string {
   const parts: string[] = [];
-  const kindWord: Record<string, string> = {
-    image: 'Image', video: 'Video', audio: 'Audio', iframe: 'Frame',
-    'css-background': 'CSS background image', none: 'No resource',
+  const kindKey: Record<string, import('../utils/i18n').MsgKey> = {
+    image: 'kindImage', video: 'kindVideo', audio: 'kindAudio', iframe: 'kindFrame',
+    'css-background': 'kindCssBg', none: 'kindNone',
   };
-  parts.push(kindWord[m.kind] ?? m.kind);
+  parts.push(kindKey[m.kind] ? t(kindKey[m.kind]) : m.kind);
   if (m.mime.value !== '—') {
     parts.push(
       m.mime.certainty === 'guessed-extension'
-        ? `${m.mime.value} (by file extension)`
+        ? t('mimeByExt', { mime: m.mime.value })
         : m.mime.value,
     );
   }
-  if (m.declaredType) parts.push(`${m.declaredType} — declared by the markup, not verified`);
-  if (m.failure) parts.push('did not load');
+  if (m.declaredType) parts.push(t('declaredSuffix', { type: m.declaredType }));
+  if (m.failure) parts.push(t('didNotLoad'));
   return parts.join(' · ');
 }
 
@@ -561,13 +586,13 @@ function identityLine(m: ResourceCardModel): string {
  * path that asks for the bytes. That absence is what makes "inspector, not
  * downloader" a property of the code rather than a promise in the listing.
  */
-function canvasPreview(el: Element): HTMLElement {
+function canvasPreview(el: Element, t: TFn): HTMLElement {
   const canvas = document.createElement('canvas');
   canvas.className = 'preview';
   canvas.width = 192;
   canvas.height = 144;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Preview drawn from the element already on the page');
+  canvas.setAttribute('aria-label', t('previewAria'));
   const ctx = canvas.getContext('2d');
   try {
     if (el instanceof HTMLImageElement && el.naturalWidth > 0) {
@@ -575,12 +600,12 @@ function canvasPreview(el: Element): HTMLElement {
     } else if (el instanceof HTMLVideoElement && el.videoWidth > 0) {
       drawContain(ctx, el, el.videoWidth, el.videoHeight);
     } else {
-      placeholder(ctx, 'no frame');
+      placeholder(ctx, t('previewNoFrame'));
     }
   } catch {
     // Protected (EME) content refuses to be drawn. That is an honest fact about the
     // platform, not an error in the inspector (design §4.3).
-    placeholder(ctx, 'frame unavailable: protected content');
+    placeholder(ctx, t('previewProtected'));
   }
   return canvas;
 }
@@ -615,33 +640,31 @@ function section(title: string, ...children: (Node | string)[]): HTMLElement {
 /* ---- URL ---------------------------------------------------------- */
 
 function urlSection(state: Overlay, m: ResourceCardModel): HTMLElement {
-  const url = h('div', { class: 'url', text: m.currentSrc || '(no URL)' });
-  const copy = h('button', { class: 'act primary', text: 'Copy', attrs: { type: 'button' } });
+  const t = state.t;
+  const url = h('div', { class: 'url', text: m.currentSrc || t('noUrl') });
+  const copy = h('button', { class: 'act primary', text: t('copy'), attrs: { type: 'button' } });
   copy.addEventListener('click', () => {
     // Straight from the click handler: gesture + focus are present, so no
     // `clipboardWrite` permission is needed (design §4.4). One fewer manifest line.
-    void copyText(m.currentSrc, copy, 'Copy');
+    void copyText(m.currentSrc, copy, t('copy'), t);
   });
 
-  const children: (Node | string)[] = [url, h('div', { class: 'row' }, [copy, openLink(m)])];
+  const children: (Node | string)[] = [url, h('div', { class: 'row' }, [copy, openLink(m, t)])];
   children.push(
-    h('div', {
-      class: 'hint',
-      text: 'This is what the browser ACTUALLY loaded (currentSrc) — not what the markup asked for.',
-    }),
+    h('div', { class: 'hint', text: t('urlActual') }),
   );
   if (m.markupSrc) {
     children.push(
-      h('div', { class: 'hint', text: `The markup asked for: ${m.markupSrc}` }),
+      h('div', { class: 'hint', text: t('markupAsked', { src: m.markupSrc }) }),
     );
   }
-  return section('URL', ...children);
+  return section(t('secUrl'), ...children);
 }
 
 /** A real <a target="_blank">. Works when the service worker is dead, needs no
  *  permission, and supports middle-click for free (design §4.5). */
-function openLink(m: ResourceCardModel): HTMLElement {
-  const a = h('a', { class: 'act', text: 'Open in a new tab ↗' });
+function openLink(m: ResourceCardModel, t: TFn): HTMLElement {
+  const a = h('a', { class: 'act', text: t('openNewTab') });
   // 🔴 Protocol validated BEFORE the href is assigned. `javascript:` / `vbscript:`
   // inside a page-controlled srcset is the one genuine code-execution vector in this
   // card, and it stops right here (design §9.1).
@@ -662,10 +685,10 @@ function openLink(m: ResourceCardModel): HTMLElement {
 
 function resourceSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
   const out: HTMLElement[] = [];
-  if (m.failure) out.push(failureCallout(m));
-  if (m.variant === 'blob') out.push(blobCallout());
+  if (m.failure) out.push(failureCallout(m, state.t));
+  if (m.variant === 'blob') out.push(blobCallout(state.t));
   out.push(urlSection(state, m));
-  if (m.overweight) out.push(overweightSection(m));
+  if (m.overweight) out.push(overweightSection(m, state.t));
   if (m.srcset && m.srcset.candidates.length > 0) out.push(srcsetSection(state, m));
   out.push(propsSection(state, m));
   out.push(requestsSection(state, m));
@@ -673,37 +696,39 @@ function resourceSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
   return out;
 }
 
-function failureCallout(m: ResourceCardModel): HTMLElement {
+function failureCallout(m: ResourceCardModel, t: TFn): HTMLElement {
   return h('div', { class: 'callout poor', attrs: { role: 'status' } }, [
-    h('b', { text: `This resource did NOT load${m.failure?.code ? ` (${m.failure.code})` : ''}.` }),
+    h('b', {
+      text: m.failure?.code
+        ? t('resNotLoadCode', { code: m.failure.code })
+        : t('resNotLoad'),
+    }),
     h('span', { text: m.failure?.message ?? '' }),
   ]);
 }
 
-function blobCallout(): HTMLElement {
+function blobCallout(t: TFn): HTMLElement {
   return h('div', { class: 'callout' }, [
-    h('b', { text: 'blob: is not a file.' }),
-    h('span', {
-      text: 'It is a pointer to data held in this tab’s memory. Nothing exists at that address — not on a server, not on disk.',
-    }),
+    h('b', { text: t('blobTitle') }),
+    h('span', { text: t('blobBody') }),
   ]);
 }
 
-function bufferCallout(m: ResourceCardModel): HTMLElement {
+function bufferCallout(m: ResourceCardModel, t: TFn): HTMLElement {
   const text = m.buffer.overflowed
-    ? `The request buffer is FULL (${m.buffer.recorded} of ${m.buffer.limit}). The browser has stopped recording — it drops NEW requests, it does not evict old ones, so the late ones on this page are simply missing. Reloading raises the cap for the next load; it cannot bring back what was already dropped.`
-    : `Recorded ${m.buffer.recorded} of ${m.buffer.limit} requests. Past the cap the browser stops recording new ones.`;
+    ? t('bufFull', { recorded: m.buffer.recorded, limit: m.buffer.limit })
+    : t('bufNear', { recorded: m.buffer.recorded, limit: m.buffer.limit });
   return h('div', { class: 'callout warn', attrs: { role: 'status' } }, [
-    h('b', { text: 'The request list may be incomplete.' }),
+    h('b', { text: t('bufIncompleteTitle') }),
     h('span', { text }),
   ]);
 }
 
-function overweightSection(m: ResourceCardModel): HTMLElement {
+function overweightSection(m: ResourceCardModel, t: TFn): HTMLElement {
   const o = m.overweight!;
   const header = h('div', {
     class: o.severity,
-    text: `⚠️ OVERWEIGHT ${o.ratio.toFixed(1)}×`,
+    text: t('overweightHeader', { ratio: o.ratio.toFixed(1) }),
   });
   const max = Math.max(o.naturalWidth, o.neededWidth, o.displayedWidth);
   const bars = h('div', { class: 'bars' });
@@ -716,25 +741,24 @@ function overweightSection(m: ResourceCardModel): HTMLElement {
       h('span', { text: `${px} ${unit}` }),
     );
   };
-  bar('natural', o.naturalWidth, 'px');
-  bar(`needed (DPR ${m.displayedSize?.dpr ?? 1})`, o.neededWidth, 'px');
-  bar('displayed', o.displayedWidth, 'css-px');
+  bar(t('barNatural'), o.naturalWidth, 'px');
+  bar(t('barNeeded', { dpr: m.displayedSize?.dpr ?? 1 }), o.neededWidth, 'px');
+  bar(t('barDisplayed'), o.displayedWidth, 'css-px');
 
   const wasted = 1 - o.neededWidth / o.naturalWidth;
-  const why = m.srcset?.sizesMissing
-    ? 'There is no `sizes` attribute, so the browser assumed the image fills the viewport (100vw) and picked the biggest candidate. That is the most common cause.'
-    : 'Usually one of two things: srcset has no candidate of a fitting size, or `sizes` told the browser the wrong slot width.';
+  const why = m.srcset?.sizesMissing ? t('whyNoSizes') : t('whyGeneric');
   return section(
-    'Overweight',
+    t('secOverweight'),
     header,
     bars,
     // 🔴 Pixels only. We do not know the bytes (§7 №1), and a byte budget is `perf`
     // (§8). "You are wasting 340 KB" would be a lie AND a boundary violation.
-    h('div', { class: 'hint', text: `${formatPercent(wasted)} of the pixels are wasted at the current window size. ${why}` }),
+    h('div', { class: 'hint', text: t('overweightWasted', { percent: formatPercent(wasted), why }) }),
   );
 }
 
 function srcsetSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const t = state.t;
   const sr = m.srcset!;
   const children: (Node | string)[] = [];
 
@@ -743,64 +767,68 @@ function srcsetSection(state: Overlay, m: ResourceCardModel): HTMLElement {
   if (sr.modelDisagrees) {
     children.push(
       h('div', { class: 'callout warn' }, [
-        h('b', { text: '⚠️ The browser loaded something other than the rule predicts.' }),
-        h('span', {
-          text: 'The ✔ row is the FACT (currentSrc). Our recomputation is below it as an explanation — a candidate already in the cache, a reduced-data mode, or rounding can all override the rule.',
-        }),
+        h('b', { text: t('srcsetDisagreeTitle') }),
+        h('span', { text: t('srcsetDisagreeBody') }),
       ]),
     );
   }
 
+  const slotText = sr.sizesMissing
+    ? t('sizesNotSet')
+    : t('sizesSet', {
+        sizes: sr.sizesAttr ?? '—',
+        slot:
+          sr.slotWidthCss === null
+            ? t('slotNotComputable')
+            : t('slotCssPx', { n: Math.round(sr.slotWidthCss) }),
+      });
   children.push(
     h('div', { class: 'hint' }, [
-      h('div', { text: `Viewport ${window.innerWidth} css-px · DPR ${sr.dpr}` }),
-      h('div', {
-        text: sr.sizesMissing
-          ? 'sizes: not set → the browser treats the slot as 100vw'
-          : `sizes: ${sr.sizesAttr ?? '—'} → slot ${sr.slotWidthCss === null ? 'not computable' : `${Math.round(sr.slotWidthCss)} css-px`}`,
-      }),
+      h('div', { text: t('viewportDpr', { vw: window.innerWidth, dpr: sr.dpr }) }),
+      h('div', { text: slotText }),
     ]),
   );
 
-  if (sr.sources.length > 0) children.push(sourcesTable(sr.sources));
-  children.push(candidatesTable(sr.candidates, sr.dpr));
+  if (sr.sources.length > 0) children.push(sourcesTable(sr.sources, t));
+  children.push(candidatesTable(sr.candidates, sr.dpr, t));
   children.push(
-    h('div', {
-      class: 'hint',
-      text: `The browser divides each w-descriptor by the slot width and takes the SMALLEST candidate whose density reaches the DPR (${sr.dpr}).`,
-    }),
+    h('div', { class: 'hint', text: t('srcsetDivides', { dpr: sr.dpr }) }),
   );
   children.push(
-    hint(state, 'srcset-model', 'Only ✔ CHOSEN is a fact — it comes from currentSrc. The densities and the "why" column are our reconstruction of the specification, and the browser is allowed to differ from it.'),
+    hint(state, 'srcset-model', t('srcsetModelHint')),
   );
 
   const details = h('details', sr.candidates.length <= 4 || state.prefs.srcsetExpanded ? { attrs: { open: '' } } : {});
   details.append(
-    h('summary', { text: `What the browser chose from srcset — ${sr.candidates.length} candidates` }),
+    h('summary', {
+      text: t(sr.candidates.length === 1 ? 'srcsetSummaryOne' : 'srcsetSummaryOther', {
+        n: sr.candidates.length,
+      }),
+    }),
     ...children.map((c) => (typeof c === 'string' ? document.createTextNode(c) : c)),
   );
   return h('div', { class: 'sec' }, [details]);
 }
 
-function sourcesTable(sources: NonNullable<ResourceCardModel['srcset']>['sources']): HTMLElement {
+function sourcesTable(sources: NonNullable<ResourceCardModel['srcset']>['sources'], t: TFn): HTMLElement {
   const table = h('table');
   table.append(
-    h('caption', { text: 'Stage 1 — which <source> of the <picture> won' }),
+    h('caption', { text: t('srcsetStage1Caption') }),
     h('thead', {}, [
       h('tr', {}, [
-        h('th', { attrs: { scope: 'col' }, text: 'type' }),
-        h('th', { attrs: { scope: 'col' }, text: 'media' }),
-        h('th', { attrs: { scope: 'col' }, text: 'Verdict' }),
+        h('th', { attrs: { scope: 'col' }, text: t('colType') }),
+        h('th', { attrs: { scope: 'col' }, text: t('colMedia') }),
+        h('th', { attrs: { scope: 'col' }, text: t('colVerdict') }),
       ]),
     ]),
   );
   const tbody = h('tbody');
   for (const s of sources) {
     const verdict = s.won
-      ? '✔ WON'
+      ? t('srcWon')
       : !s.mediaMatches
-        ? '✘ media did not match'
-        : '✘ not reached / format not taken';
+        ? t('srcMediaNoMatch')
+        : t('srcNotReached');
     const row = h('tr', { attrs: { 'data-chosen': String(s.won) } }, [
       h('td', { text: s.type ?? '—' }),
       h('td', { text: s.media ?? '—' }),
@@ -812,23 +840,24 @@ function sourcesTable(sources: NonNullable<ResourceCardModel['srcset']>['sources
   return table;
 }
 
-function candidatesTable(candidates: SrcsetVerdict[], dpr: number): HTMLElement {
+function candidatesTable(candidates: SrcsetVerdict[], dpr: number, t: TFn): HTMLElement {
   const table = h('table');
   table.append(
-    h('caption', { text: `Stage 2 — candidates, and why each won or lost (DPR ${dpr})` }),
+    h('caption', { text: t('srcsetStage2Caption', { dpr }) }),
     h('thead', {}, [
       h('tr', {}, [
-        h('th', { attrs: { scope: 'col' }, text: 'Candidate' }),
-        h('th', { attrs: { scope: 'col' }, text: 'Descriptor' }),
-        h('th', { attrs: { scope: 'col' }, text: 'Density' }),
-        h('th', { attrs: { scope: 'col' }, text: 'Verdict' }),
+        h('th', { attrs: { scope: 'col' }, text: t('colCandidate') }),
+        h('th', { attrs: { scope: 'col' }, text: t('colDescriptor') }),
+        h('th', { attrs: { scope: 'col' }, text: t('colDensity') }),
+        h('th', { attrs: { scope: 'col' }, text: t('colVerdict') }),
       ]),
     ]),
   );
   const tbody = h('tbody');
   for (const v of candidates) {
     // Never colour alone: the verdict is a symbol AND a word (WCAG 1.4.1, §11.2).
-    const verdict = v.chosen ? '✔ CHOSEN' : v.modelWinner ? '● our model would pick this' : `✘ ${v.reason}`;
+    // `v.reason` is already localized in the model (utils/srcset.ts).
+    const verdict = v.chosen ? t('candChosen') : v.modelWinner ? t('candModelWould') : t('candReason', { reason: v.reason });
     tbody.append(
       h('tr', { attrs: { 'data-chosen': String(v.chosen) } }, [
         h('td', { text: fileNameOf(v.candidate.url) }),
@@ -852,149 +881,162 @@ function fileNameOf(url: string): string {
 }
 
 function propsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const t = state.t;
   const dl = h('dl', { class: 'props' });
   const add = (k: string, v: Node | string): void => {
     dl.append(h('dt', { text: k }), h('dd', {}, [typeof v === 'string' ? document.createTextNode(v) : v]));
   };
 
   add(
-    'Type',
+    t('propType'),
     h('span', {}, [
       document.createTextNode(m.mime.value),
       ...(m.mime.certainty === 'guessed-extension'
-        ? [h('span', { class: 'hint', text: '  ⓘ guessed from the file extension — the exact MIME is only in the DevTools panel' })]
+        ? [h('span', { class: 'hint', text: t('mimeGuessedHint') })]
         : []),
     ]),
   );
   if (m.declaredType) {
-    add('Declared format', `${m.declaredType} ⓘ claimed by the markup, not verified`);
+    add(t('propDeclaredFormat'), t('declaredClaimedHint', { type: m.declaredType }));
   }
-  if (m.naturalSize) add('Natural size', formatDimensions(m.naturalSize.w, m.naturalSize.h));
+  if (m.naturalSize) add(t('naturalSizeLabel'), formatDimensions(m.naturalSize.w, m.naturalSize.h));
   if (m.displayedSize) {
     const d = m.displayedSize;
-    add('Displayed', `${formatDimensions(d.w, d.h)} css-px · DPR ${d.dpr} → ${formatDimensions(Math.round(d.w * d.dpr), Math.round(d.h * d.dpr))} device px`);
+    add(
+      t('propDisplayed'),
+      t('displayedValue', {
+        disp: formatDimensions(d.w, d.h),
+        dpr: d.dpr,
+        dev: formatDimensions(Math.round(d.w * d.dpr), Math.round(d.h * d.dpr)),
+      }),
+    );
   }
   if (m.video?.duration !== undefined && m.video.duration !== null) {
-    add('Duration', formatDuration(m.video.duration));
+    add(t('propDuration'), formatDuration(m.video.duration, t));
   }
   if (m.video?.frames) {
-    add('Frames', `${m.video.frames.rendered} rendered · ${m.video.frames.dropped} dropped ⓘ getVideoPlaybackQuality()`);
+    add(t('frames'), t('framesValue', { rendered: m.video.frames.rendered, dropped: m.video.frames.dropped }));
   }
 
   // 🔴 Never a fabricated 0: an unmeasured weight is words, and the words name the
   // reason (design §7 №1, §5.4).
-  const weight = h('span', {}, [document.createTextNode(formatWeight(m.weight, state.prefs.units))]);
+  const weight = h('span', {}, [document.createTextNode(formatWeight(m.weight, state.prefs.units, t))]);
   if (m.weight.kind === 'unmeasured') {
     weight.append(
-      h('span', { class: 'hint', text: `  ⓘ ${m.weight.reason}` }),
-      hint(state, 'tao', 'The server did not send a `Timing-Allow-Origin` header, so the browser hides the size and the timings of that other origin from this page. The exact size is visible in the DevTools panel (HAR `_transferSize`).'),
+      h('span', { class: 'hint', text: t('weightReasonHint', { reason: m.weight.reason }) }),
+      hint(state, 'tao', t('taoHint')),
     );
   }
-  add('Weight', weight);
+  add(t('weightLabel'), weight);
 
-  add('HTTP status', m.status === null ? 'not measured ⓘ cross-origin without Timing-Allow-Origin' : String(m.status));
+  add(t('propHttpStatus'), m.status === null ? t('statusNotMeasured') : String(m.status));
 
   if (m.attributes && Object.keys(m.attributes).length > 0) {
-    add('Attributes', Object.entries(m.attributes).map(([k, v]) => `${k}=${v}`).join(' · '));
+    add(t('propAttributes'), Object.entries(m.attributes).map(([k, v]) => `${k}=${v}`).join(' · '));
   }
-  if (m.alt !== undefined) add('alt', m.alt === '' ? '(empty — decorative)' : `«${m.alt}»`);
-  add('Selector', m.selector || '—');
-  return section('Properties', dl);
+  if (m.alt !== undefined) add(t('propAlt'), m.alt === '' ? t('altEmpty') : t('altValue', { alt: m.alt }));
+  add(t('propSelector'), m.selector || '—');
+  return section(t('secProperties'), dl);
 }
 
 function requestsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const t = state.t;
   const list = h('div', {});
   if (m.requests.length === 0) {
     // 🔴 "0 requests" would be a lie; "no record found" is the truth, with the three
     // reasons it can happen (design §5.3, §7 №9).
     list.append(
-      h('div', { class: 'hint', text: 'No request record found for this URL. It can mean: the page called performance.clearResourceTimings() (SPA frameworks do); the buffer filled up and the browser stopped recording; or it came from the cache before the buffer was raised.' }),
+      h('div', { class: 'hint', text: t('noReqRecord') }),
     );
   } else {
     for (const g of m.requests) {
+      const count = t(g.count === 1 ? 'reqCountOne' : 'reqCountOther', { count: g.count });
+      const origin = g.crossOrigin ? t('reqCrossOrigin') : t('reqSameOrigin');
       list.append(
         h('div', { class: 'row' }, [
           h('span', { text: `● ${g.host}` }),
           h('span', {
             class: 'hint',
-            text: `${g.kind} · ${g.count} request${g.count === 1 ? '' : 's'}${g.crossOrigin ? ' · cross-origin' : ' · same origin'}`,
+            text: t('reqRow', { kind: g.kind, count, origin }),
           }),
         ]),
       );
     }
     list.append(
       h('div', { class: 'row' }, [
-        h('span', { class: 'hint', text: `initiator type: ${m.initiator.type} — which script, at which line, is not available outside DevTools` }),
-        hint(state, 'initiator', 'A page can only see the initiator TYPE (img / css / script / fetch). The actual script and line live in the HAR `_initiator`, which no extension API exposes. Open DevTools → the "Assets" panel → reload the page.'),
+        h('span', { class: 'hint', text: t('initiatorTypeLine', { type: m.initiator.type }) }),
+        hint(state, 'initiator', t('initiatorHint')),
       ]),
     );
   }
   const sec = section(
-    `Requests that loaded it${m.requestsHeuristic ? ' — heuristic' : ''}`,
+    m.requestsHeuristic ? t('secRequestsHeuristic') : t('secRequests'),
     list,
   );
   if (m.requestsHeuristic) {
     sec.append(
-      h('div', { class: 'hint', text: '⚠️ Matched by request type and host, not by fact. With two players on one page these cannot be told apart. Exact attribution exists only in the DevTools panel.' }),
+      h('div', { class: 'hint', text: t('requestsHeuristicNote') }),
     );
   }
   return sec;
 }
 
 function redirectsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const t = state.t;
   // Three genuinely different facts get three different sentences (design §5.7).
   let text: string;
   switch (m.redirects.kind) {
     case 'chain':
-      text = `${m.redirects.steps.length} steps`;
+      text = t(m.redirects.steps.length === 1 ? 'redirectStepOne' : 'redirectStepOther', {
+        n: m.redirects.steps.length,
+      });
       break;
     case 'occurred':
-      text = 'There WAS a redirect (the timings say so). The intermediate URLs are not in Resource Timing at all — only the DevTools panel has them.';
+      text = t('redirectOccurred');
       break;
     case 'none':
-      text = 'No redirect.';
+      text = t('redirectNone');
       break;
     default:
-      text = 'Unknown — this is a cross-origin resource without Timing-Allow-Origin, so the browser will not even tell the page whether a redirect happened. The chain is visible in the DevTools panel.';
+      text = t('redirectUnknown');
   }
-  return section('Redirects', h('div', { class: 'row' }, [
+  return section(t('secRedirects'), h('div', { class: 'row' }, [
     h('span', { class: 'hint', text }),
     ...(m.redirects.kind === 'unknown' || m.redirects.kind === 'occurred'
-      ? [hint(state, 'redirects', 'Resource Timing only ever reports the FINAL URL. The DevTools HAR keeps the 30x records and the `redirectURL` of each hop — that is why the chain is a panel feature.')]
+      ? [hint(state, 'redirects', t('redirectHint'))]
       : []),
   ]));
 }
 
 function mseSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
+  const t = state.t;
   const mse = m.mse!;
   const banner = h('div', { class: 'callout' }, [
-    h('b', { text: 'This video has NO direct URL.' }),
-    h('span', {
-      text: 'The player assembles it in memory from thousands of small segments (Media Source Extensions). There is no single file to point at — that is how adaptive streaming works, and it is a property of the platform, not a limit of this inspector.',
-    }),
+    h('b', { text: t('mseNoUrlTitle') }),
+    h('span', { text: t('mseNoUrlBody') }),
   ]);
 
   const dl = h('dl', { class: 'props' });
-  dl.append(h('dt', { text: 'currentSrc' }), h('dd', { class: 'url', text: mse.blobUrl || '(none)' }));
-  dl.append(h('dt', { text: 'Mechanism' }), h('dd', { text: 'Media Source Extensions (MSE)' }));
+  dl.append(h('dt', { text: t('currentSrc') }), h('dd', { class: 'url', text: mse.blobUrl || t('mseNone') }));
+  dl.append(h('dt', { text: t('mseMechanism') }), h('dd', { text: t('mseMechanismValue') }));
   if (mse.resolution) {
     dl.append(
-      h('dt', { text: 'Resolution' }),
-      h('dd', { text: `${formatDimensions(mse.resolution.w, mse.resolution.h)} — the current quality; the player changes it on the fly` }),
+      h('dt', { text: t('mseResolution') }),
+      h('dd', { text: t('mseResolutionValue', { dim: formatDimensions(mse.resolution.w, mse.resolution.h) }) }),
     );
   }
   if (mse.frames) {
     dl.append(
-      h('dt', { text: 'Frames' }),
-      h('dd', { text: `${mse.frames.rendered} rendered · ${mse.frames.dropped} dropped` }),
+      h('dt', { text: t('frames') }),
+      h('dd', { text: t('mseFramesValue', { rendered: mse.frames.rendered, dropped: mse.frames.dropped }) }),
     );
   }
-  const source = section('Source', dl);
+  const source = section(t('secSource'), dl);
 
   const drm = section(
-    'Content protection',
+    t('secProtection'),
     h('div', {}, [
-      h('div', { text: mse.drmActive ? 'DRM detected: EME is active (video.mediaKeys is set).' : 'No EME detected on this element.' }),
+      h('div', { text: mse.drmActive ? t('drmActive') : t('drmNone') }),
       h('div', {
         class: 'hint',
         // 🔴 We show the FACT (EME active), never a guessed system name. Naming it
@@ -1002,23 +1044,21 @@ function mseSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
         // starts, i.e. a script on every site — a permission we do not ask for
         // (design §2.3, §7 №6). PLAN.md (Часть II) §4.4's "DRM: Widevine" is not achievable and
         // is not printed.
-        text: 'Decryption happens inside the browser’s own content decryption module — a binary component. No extension, and no other JavaScript, ever sees decrypted frames. We do not print the name of the protection system: learning it would require running a script on every site before the player starts, and we do not ask for that permission.',
+        text: t('drmExplain'),
       }),
     ]),
   );
 
   const explain = section(
-    'Why it works this way',
-    h('div', {
-      class: 'hint',
-      text: 'Streaming means thousands of small segments instead of one file, so quality can adapt to the network in real time. The manifest may appear in the request list below as a fact about the page — this inspector never opens it and never parses it.',
-    }),
+    t('secWhyWorks'),
+    h('div', { class: 'hint', text: t('mseWhyExplain') }),
   );
 
   return [banner, source, drm, requestsSection(state, m), explain];
 }
 
 function iframeSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
+  const t = state.t;
   const f = m.iframe!;
   const out: HTMLElement[] = [];
 
@@ -1026,17 +1066,20 @@ function iframeSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
     // The best screen in the product: a dead end turned into a next step (design §4.8).
     out.push(
       h('div', { class: 'callout' }, [
-        h('b', { text: 'We do not look inside this frame.' }),
+        h('b', { text: t('iframeNoLookTitle') }),
         h('span', {
-          text: `It is loaded from ${hostOf(f.src) || 'another origin'}, while the page is ${location.hostname}. The browser isolates origins from each other: neither an extension nor the page’s own scripts can see inside. That is protection, not breakage.`,
+          text: t('iframeNoLookBody', {
+            host: hostOf(f.src) || t('iframeAnotherOrigin'),
+            page: location.hostname,
+          }),
         }),
       ]),
     );
   } else {
     out.push(
       h('div', { class: 'callout' }, [
-        h('b', { text: 'Same-origin frame.' }),
-        h('span', { text: 'This frame shares the page’s origin. Re-run the picker inside it to inspect its elements.' }),
+        h('b', { text: t('iframeSameTitle') }),
+        h('span', { text: t('iframeSameBody') }),
       ]),
     );
   }
@@ -1046,37 +1089,29 @@ function iframeSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
   out.push(requestsSection(state, m));
   if (!f.sameOrigin) {
     out.push(
-      section(
-        'What you can do',
-        h('div', {
-          class: 'hint',
-          text: 'Open the frame URL in a new tab (the button above). There it becomes an ordinary page, and the inspector works exactly as it does everywhere else.',
-        }),
-      ),
+      section(t('secWhatYouCanDo'), h('div', { class: 'hint', text: t('iframeWhatDo') })),
     );
   }
   return out;
 }
 
-function noResourceSections(m: ResourceCardModel): HTMLElement[] {
+function noResourceSections(m: ResourceCardModel, t: TFn): HTMLElement[] {
   const out: HTMLElement[] = [
     h('div', { class: 'callout' }, [
-      h('b', { text: 'This element has NO loaded resource.' }),
-      h('span', { text: `It is painted by CSS: ${m.cssRule ?? 'a style rule'} — code in a stylesheet, not a file.` }),
+      h('b', { text: t('noLoadedResTitle') }),
+      h('span', { text: t('noLoadedResBody', { rule: m.cssRule ?? t('aStyleRule') }) }),
     ]),
   ];
   if (m.nestedHint) {
     out.push(
-      h('div', { class: 'hint', text: `There IS a resource on a nested element: ${m.nestedHint}. Press R in the picker to jump to the nearest one.` }),
+      h('div', { class: 'hint', text: t('nestedResHint', { label: m.nestedHint }) }),
     );
   }
   if (m.closedShadow) {
     out.push(
       h('div', { class: 'callout warn' }, [
-        h('b', { text: 'This element renders content we cannot reach.' }),
-        h('span', {
-          text: 'It is a custom element with nothing in its light DOM, which means its content lives in a CLOSED shadow root. The browser hides those from every script — this extension included. That is the site’s decision, not a limitation of the inspector.',
-        }),
+        h('b', { text: t('closedShadowTitle') }),
+        h('span', { text: t('closedShadowBody') }),
       ]),
     );
   }
@@ -1084,20 +1119,21 @@ function noResourceSections(m: ResourceCardModel): HTMLElement[] {
 }
 
 function dataUriSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
+  const t = state.t;
   const d = m.dataUri!;
   const out: HTMLElement[] = [
     h('div', { class: 'callout' }, [
-      h('b', { text: 'The bytes are embedded in the page.' }),
-      h('span', { text: 'A data: URI carries its own content — no network request was ever made for it, so it does not appear in the request list, and it never will.' }),
+      h('b', { text: t('dataEmbeddedTitle') }),
+      h('span', { text: t('dataEmbeddedBody') }),
     ]),
   ];
   const dl = h('dl', { class: 'props' });
-  dl.append(h('dt', { text: 'Prefix' }), h('dd', { class: 'url', text: d.prefix }));
-  dl.append(h('dt', { text: 'Length' }), h('dd', { text: `${d.length.toLocaleString()} characters` }));
-  dl.append(h('dt', { text: 'Head' }), h('dd', { class: 'url', text: `${d.head}…` }));
-  out.push(section('Embedded data', dl));
+  dl.append(h('dt', { text: t('dataPrefix') }), h('dd', { class: 'url', text: d.prefix }));
+  dl.append(h('dt', { text: t('dataLength') }), h('dd', { text: t('dataLengthValue', { n: d.length.toLocaleString() }) }));
+  dl.append(h('dt', { text: t('dataHead') }), h('dd', { class: 'url', text: `${d.head}…` }));
+  out.push(section(t('secEmbeddedData'), dl));
   out.push(propsSection(state, m));
-  if (m.overweight) out.push(overweightSection(m));
+  if (m.overweight) out.push(overweightSection(m, state.t));
   return out;
 }
 
@@ -1111,16 +1147,17 @@ function dataUriSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
  */
 function hint(state: Overlay, id: string, text: string): HTMLElement {
   if (!state.prefs.hints || state.prefs.hintsDismissed.includes(id)) return h('span');
+  const t = state.t;
   const wrap = h('span');
   const btn = h('button', {
     class: 'hint-btn',
-    text: '[?]',
-    attrs: { type: 'button', 'aria-expanded': 'false', 'aria-label': 'Why is this value missing?' },
+    text: t('hintQ'),
+    attrs: { type: 'button', 'aria-expanded': 'false', 'aria-label': t('hintWhyMissing') },
   });
   const body = h('div', { class: 'hint-body', attrs: { hidden: '' } }, [
     h('div', { text }),
   ]);
-  const dismiss = h('button', { class: 'hint-btn', text: 'Don’t show these hints again', attrs: { type: 'button' } });
+  const dismiss = h('button', { class: 'hint-btn', text: t('hintDontShow'), attrs: { type: 'button' } });
   dismiss.addEventListener('click', () => {
     body.setAttribute('hidden', '');
     btn.setAttribute('aria-expanded', 'false');
@@ -1145,8 +1182,8 @@ function hint(state: Overlay, id: string, text: string): HTMLElement {
  * "save" does not appear here, in an aria-label or in a tooltip — a "Save" button
  * next to a media URL is the screenshot we never want a reviewer to see.
  */
-function copyAsJsonButton(m: ResourceCardModel): HTMLElement {
-  const btn = h('button', { class: 'act', text: 'Copy as JSON', attrs: { type: 'button' } });
+function copyAsJsonButton(m: ResourceCardModel, t: TFn): HTMLElement {
+  const btn = h('button', { class: 'act', text: t('copyAsJson'), attrs: { type: 'button' } });
   btn.addEventListener('click', () => {
     const payload = {
       element: m.elementLabel,
@@ -1178,19 +1215,19 @@ function copyAsJsonButton(m: ResourceCardModel): HTMLElement {
           }
         : null,
     };
-    void copyText(JSON.stringify(payload, null, 2), btn, 'Copy as JSON');
+    void copyText(JSON.stringify(payload, null, 2), btn, t('copyAsJson'), t);
   });
   return btn;
 }
 
-async function copyText(text: string, btn: HTMLElement, restore: string): Promise<void> {
+async function copyText(text: string, btn: HTMLElement, restore: string, t: TFn): Promise<void> {
   const done = (label: string): void => {
     btn.textContent = label;
     setTimeout(() => { btn.textContent = restore; }, 1500);
   };
   try {
     await navigator.clipboard.writeText(text);
-    done('Copied ✓');
+    done(t('copied'));
   } catch {
     // Fallback for an unfocused document / older Firefox: a textarea inside OUR
     // closed shadow root + execCommand. Deprecated, but it needs no permission and
@@ -1207,7 +1244,7 @@ async function copyText(text: string, btn: HTMLElement, restore: string): Promis
       ok = false;
     }
     area.remove();
-    done(ok ? 'Copied ✓' : 'Copy failed');
+    done(ok ? t('copied') : t('copyFailed'));
   }
 }
 

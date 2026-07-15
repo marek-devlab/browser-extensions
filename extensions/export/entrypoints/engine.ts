@@ -18,8 +18,10 @@ import {
   scanPageInventory,
   scanTables,
 } from '../utils/table-extract';
-import { destroyOverlay, el, getHost, overlayExists, showToast, type OverlayTheme } from '../utils/overlay';
-import { prefsItem } from '../utils/storage';
+import { destroyOverlay, el, getHost, overlayExists, setOverlayLocale, showToast, type OverlayTheme } from '../utils/overlay';
+import { localeItem, prefsItem } from '../utils/storage';
+import { tAt } from '../utils/i18n';
+import type { Locale } from '@blur/ui';
 import type { BgRequest, BgResponse, EngineCommand, EngineResponse } from '../utils/messages';
 import type { ExportPrefs, ExtractOptions, TableModel } from '../utils/types';
 
@@ -55,11 +57,16 @@ export default defineUnlistedScript(() => {
   }
 });
 
+// The active UI language, read from the persisted pref at the start of every
+// command (handle) and mirrored to the overlay/picker. Defaults to English until
+// the first read resolves.
+let engineLocale: Locale = 'en';
+
 /** The engine's only channel to privileged APIs. */
 async function ask(req: BgRequest): Promise<BgResponse> {
   try {
     const res = (await browser.runtime.sendMessage(req)) as BgResponse | undefined;
-    return res ?? { ok: false, error: 'Фоновый скрипт не ответил' };
+    return res ?? { ok: false, error: tAt(engineLocale, 'bgNoResponse') };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -84,19 +91,28 @@ function leaveSignal(): AbortSignal {
   return pageLeaving.signal;
 }
 
-function extractOptionsFrom(prefs: ExportPrefs): ExtractOptions {
+function extractOptionsFrom(prefs: ExportPrefs, locale: Locale): ExtractOptions {
   return defaultExtractOptions({
     mergedCells: prefs.mergedCells,
     visibleRowsOnly: prefs.visibleRowsOnly,
     linksInCells: prefs.linksInCells,
     signal: leaveSignal(),
+    // Localized labels the extractor writes into cells/headers of the exported file.
+    checkboxYes: tAt(locale, 'checkboxYes'),
+    checkboxNo: tAt(locale, 'checkboxNo'),
+    columnFallback: tAt(locale, 'columnFallback'),
   });
 }
 
 async function handle(cmd: EngineCommand): Promise<EngineResponse> {
   const prefs = await getPrefs();
+  engineLocale = await localeItem.getValue();
+  setOverlayLocale(engineLocale);
+  const locale = engineLocale;
+  const t = (k: Parameters<typeof tAt>[1], v?: Record<string, string | number>): string =>
+    tAt(locale, k, v);
   const theme = prefs.theme as OverlayTheme;
-  const opts = extractOptionsFrom(prefs);
+  const opts = extractOptionsFrom(prefs, locale);
 
   switch (cmd.type) {
     case 'ping':
@@ -111,21 +127,21 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
       if (!text) {
         // §5.1 — the selection vanished between the click and the injection. Say so;
         // never write an empty file.
-        showToast('Выделение пропало. Выделите текст ещё раз.', { tone: 'warn', theme });
+        showToast(t('selectionGone'), { tone: 'warn', theme });
         return { ok: true, kind: 'done' };
       }
       const name = safeFilename(
-        `${location.hostname}-${document.title || 'stranica'}`,
+        `${location.hostname}-${document.title || t('filenamePageFallback')}`,
         cmd.format,
         prefs.filenameTranslit,
       );
       const res = saveTextParts([text], name, cmd.format === 'md' ? MIME.md! : MIME.txt!);
       if (res.ok) {
-        showToast(`Сохранение запущено: ${res.filename}`, {
+        showToast(t('saveStarted', { filename: res.filename }), {
           theme,
           actions: [
             {
-              label: 'Файл не появился?',
+              label: t('fileDidntAppear'),
               onClick: () => {
                 void ask({
                   type: 'stashAndSave',
@@ -138,12 +154,12 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
           ],
         });
       } else {
-        showToast('Страница запрещает загрузки. Можно сохранить через вкладку расширения.', {
+        showToast(t('pageBlocksDownloads'), {
           tone: 'error',
           theme,
           actions: [
             {
-              label: 'Сохранить через вкладку расширения',
+              label: t('saveViaTab'),
               onClick: () => {
                 void ask({
                   type: 'stashAndSave',
@@ -162,17 +178,17 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
     case 'copySelectionMarkdown': {
       const text = readSelection('md');
       if (!text) {
-        showToast('Выделение пропало. Выделите текст ещё раз.', { tone: 'warn', theme });
+        showToast(t('selectionGone'), { tone: 'warn', theme });
         return { ok: true, kind: 'done' };
       }
       const ok = await copyText(text);
-      if (ok) showToast('Скопировано как Markdown.', { theme });
-      else showManualCopy(text, theme); // §5.6 — we never pretend the copy happened
+      if (ok) showToast(t('copiedMd'), { theme });
+      else showManualCopy(text, theme, locale); // §5.6 — we never pretend the copy happened
       return { ok: true, kind: 'done' };
     }
 
     case 'copyImageUrl':
-      await doCopyImageUrl(cmd.srcUrl, theme);
+      await doCopyImageUrl(cmd.srcUrl, theme, locale);
       return { ok: true, kind: 'done' };
 
     case 'pickImage': {
@@ -182,7 +198,7 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
         (im) => im.naturalWidth >= 64 && im.naturalHeight >= 64 && isSafeAssetUrl(im.currentSrc || im.src),
       );
       if (imgs.length === 0) {
-        showToast('Подходящих картинок не нашлось (мы показываем только от 64×64).', {
+        showToast(t('noImagesFound'), {
           tone: 'warn',
           theme,
         });
@@ -194,16 +210,16 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
         label: `${im.naturalWidth}×${im.naturalHeight}${im.alt ? ` · «${im.alt.slice(0, 40)}»` : ''}`,
         warnings: [],
       }));
-      const got = await pickElements(candidates, { multi: false, theme, title: 'Выберите картинку' });
+      const got = await pickElements(candidates, { multi: false, theme, title: t('pickImageTitle'), locale });
       if (!got?.length) return { ok: true, kind: 'done' };
       const img = imgs[Number(got[0]!.slice(1))]!;
-      showImageActions(img.currentSrc || img.src, prefs.filenameTranslit, theme);
+      showImageActions(img.currentSrc || img.src, prefs.filenameTranslit, theme, locale);
       return { ok: true, kind: 'done' };
     }
 
     case 'saveImage':
       // 🔴 BLOCKER #1 lives here — see `saveImage` in utils/file-writer.ts.
-      await doSaveImage(cmd.srcUrl, prefs.filenameTranslit, theme);
+      await doSaveImage(cmd.srcUrl, prefs.filenameTranslit, theme, locale);
       return { ok: true, kind: 'done' };
 
     case 'exportTable':
@@ -211,10 +227,7 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
       const tables = scanTables(document);
       if (tables.length === 0) {
         // §5.2 — an honest dead end. Not a dialog, and not a lie about why.
-        showToast(
-          'Таблиц не нашлось. Мы читаем только тег <table>: если таблица нарисована через div или Canvas, мы её не видим.',
-          { tone: 'warn', theme },
-        );
+        showToast(t('noTablesFound'), { tone: 'warn', theme });
         return { ok: true, kind: 'done' };
       }
 
@@ -238,21 +251,24 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
       } else {
         const candidates: Candidate[] = models.map((m) => {
           const warnings: string[] = [];
-          if (m.hasMergedCells) warnings.push('⚠ объединённые ячейки');
-          if (m.hasNestedTables) warnings.push('⚠ вложенные таблицы');
-          if (m.looksLikeLayout) warnings.push('⚠ похоже на вёрстку, а не данные');
-          if (m.virtualized) warnings.push('⚠ строки могут подгружаться при прокрутке');
+          if (m.hasMergedCells) warnings.push(t('warnMerged'));
+          if (m.hasNestedTables) warnings.push(t('warnNested'));
+          if (m.looksLikeLayout) warnings.push(t('warnLayout'));
+          if (m.virtualized) warnings.push(t('warnVirtualized'));
           return {
             id: m.id,
             element: elements.get(m.id)!,
-            label: `Таблица · ${m.rows} × ${m.cols}${m.caption ? ` · «${m.caption}»` : ''}`,
+            label: `${t('tabTable')} · ${t('candTableLabel', { rows: m.rows, cols: m.cols })}${
+              m.caption ? ` · «${m.caption}»` : ''
+            }`,
             warnings,
           };
         });
         chosen = await pickElements(candidates, {
           multi,
           theme,
-          title: multi ? 'Выберите таблицы' : 'Выберите таблицу',
+          title: multi ? t('pickTablesTitle') : t('pickTableTitle'),
+          locale,
         });
       }
       if (!chosen?.length) return { ok: true, kind: 'done' };
@@ -262,7 +278,7 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
           model: models.find((m) => m.id === id)!,
           element: elements.get(id)!,
         })),
-        { prefs, ask, extractOptions: opts },
+        { prefs, ask, extractOptions: opts, locale },
       );
       return { ok: true, kind: 'done' };
     }
@@ -273,9 +289,9 @@ async function handle(cmd: EngineCommand): Promise<EngineResponse> {
  * Image actions — shared by the context menu AND the popup/picker path
  * ================================================================== */
 
-async function doCopyImageUrl(srcUrl: string, theme: OverlayTheme): Promise<void> {
+async function doCopyImageUrl(srcUrl: string, theme: OverlayTheme, locale: Locale): Promise<void> {
   if (!isSafeAssetUrl(srcUrl)) {
-    showToast('Этот адрес картинки не поддерживается.', { tone: 'warn', theme });
+    showToast(tAt(locale, 'imgUrlUnsupported'), { tone: 'warn', theme });
     return;
   }
   // ⚠️ `srcUrl` is the `src` ATTRIBUTE; with `srcset` the browser may have loaded a
@@ -283,14 +299,9 @@ async function doCopyImageUrl(srcUrl: string, theme: OverlayTheme): Promise<void
   const { url, viaSrcset } = resolveCurrentSrc(srcUrl);
   const ok = await copyText(url);
   if (ok) {
-    showToast(
-      viaSrcset
-        ? 'Скопирован URL, который реально загрузил браузер (вариант из srcset).'
-        : 'URL картинки скопирован.',
-      { theme },
-    );
+    showToast(tAt(locale, viaSrcset ? 'copiedUrlSrcset' : 'copiedImgUrl'), { theme });
   } else {
-    showManualCopy(url, theme); // §5.6 — never pretend the copy happened
+    showManualCopy(url, theme, locale); // §5.6 — never pretend the copy happened
   }
 }
 
@@ -298,15 +309,16 @@ async function doSaveImage(
   srcUrl: string,
   translit: boolean,
   theme: OverlayTheme,
+  locale: Locale,
 ): Promise<void> {
   const { url } = resolveCurrentSrc(srcUrl);
   const outcome = await saveImage(url, ask, translit);
   if (outcome.result.ok) {
-    showToast(`Сохранение запущено: ${outcome.result.filename}`, { theme });
+    showToast(tAt(locale, 'saveStarted', { filename: outcome.result.filename }), { theme });
     return;
   }
   if (outcome.result.reason === 'bad-url') {
-    showToast('Этот адрес картинки не поддерживается.', { tone: 'warn', theme });
+    showToast(tAt(locale, 'imgUrlUnsupported'), { tone: 'warn', theme });
     return;
   }
   // 🔴 HONEST REFUSAL (design §5.9 / §7.3). We do NOT click an anchor pointing at a
@@ -314,26 +326,26 @@ async function doSaveImage(
   // would NAVIGATE the user's page away instead of saving. That silent navigation
   // is the exact trap this ladder exists to avoid, so we stop and say why.
   showToast(
-    `Браузер не даёт сохранить картинку с домена ${outcome.host ?? 'другого сайта'}: для чужих доменов атрибут download игнорируется, и вместо сохранения произошёл бы переход по ссылке. Мы этого не делаем. CORS этот сервер тоже не разрешил.`,
+    tAt(locale, 'imgRefusal', { host: outcome.host ?? tAt(locale, 'otherSite') }),
     {
       tone: 'warn',
       theme,
       actions: [
-        { label: 'Открыть картинку', onClick: () => void ask({ type: 'openTab', url }) },
-        { label: 'Включить разрешение…', onClick: () => void ask({ type: 'openOptions' }) },
+        { label: tAt(locale, 'openImage'), onClick: () => void ask({ type: 'openTab', url }) },
+        { label: tAt(locale, 'enablePermission'), onClick: () => void ask({ type: 'openOptions' }) },
       ],
     },
   );
 }
 
 /** The three image actions, reachable WITHOUT a context menu (mobile parity). */
-function showImageActions(url: string, translit: boolean, theme: OverlayTheme): void {
+function showImageActions(url: string, translit: boolean, theme: OverlayTheme, locale: Locale): void {
   const h = getHost(theme);
   h.ui.replaceChildren();
   const panel = el('div', 'bx-panel bx-panel--center');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
-  panel.append(el('h2', 'bx-h', 'Картинка'));
+  panel.append(el('h2', 'bx-h', tAt(locale, 'imageWord')));
   panel.append(el('p', 'bx-sub', url));
 
   const foot = el('div', 'bx-foot');
@@ -343,25 +355,25 @@ function showImageActions(url: string, translit: boolean, theme: OverlayTheme): 
     b.addEventListener('click', fn);
     return b;
   };
-  const first = mk('Копировать URL', () => {
+  const first = mk(tAt(locale, 'copyUrl'), () => {
     destroyOverlay();
-    void doCopyImageUrl(url, theme);
+    void doCopyImageUrl(url, theme, locale);
   });
   first.setAttribute('data-autofocus', '');
   foot.append(first);
   foot.append(
-    mk('Открыть в новой вкладке', () => {
+    mk(tAt(locale, 'openInNewTab'), () => {
       destroyOverlay();
       void ask({ type: 'openTab', url });
     }),
   );
   foot.append(
-    mk('Сохранить…', () => {
+    mk(tAt(locale, 'saveDots'), () => {
       destroyOverlay();
-      void doSaveImage(url, translit, theme);
+      void doSaveImage(url, translit, theme, locale);
     }, 'bx-btn--primary'),
   );
-  foot.append(mk('Отмена', () => destroyOverlay()));
+  foot.append(mk(tAt(locale, 'cancel'), () => destroyOverlay()));
   panel.append(foot);
   h.ui.append(panel);
   first.focus();
@@ -369,21 +381,21 @@ function showImageActions(url: string, translit: boolean, theme: OverlayTheme): 
 
 /** §5.6 — the clipboard refused. Give the user the text, selected, and say so. We
  *  do not claim a copy that did not happen. */
-function showManualCopy(text: string, theme: OverlayTheme): void {
+function showManualCopy(text: string, theme: OverlayTheme, locale: Locale): void {
   const h = getHost(theme);
   h.ui.replaceChildren();
   const panel = el('div', 'bx-panel bx-panel--center');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
-  panel.append(el('h2', 'bx-h', 'Не удалось записать в буфер обмена'));
-  panel.append(el('p', 'bx-sub', 'Скопируйте вручную: Ctrl+C (⌘+C). Текст уже выделен.'));
+  panel.append(el('h2', 'bx-h', tAt(locale, 'clipboardFailTitle')));
+  panel.append(el('p', 'bx-sub', tAt(locale, 'clipboardFailBody')));
   const ta = el('textarea', 'bx-ta');
   ta.value = text; // .value, not innerHTML
   ta.readOnly = true;
   ta.setAttribute('data-autofocus', '');
   panel.append(ta);
   const foot = el('div', 'bx-foot');
-  const close = el('button', 'bx-btn bx-btn--primary', 'Закрыть');
+  const close = el('button', 'bx-btn bx-btn--primary', tAt(locale, 'close'));
   close.type = 'button';
   close.addEventListener('click', () => destroyOverlay());
   foot.append(close);

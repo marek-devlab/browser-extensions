@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { browser } from '#imports';
-import { ThemeToggle, Callout } from '@blur/ui';
+import { Callout, LocaleProvider, ThemeToggle, useLocale } from '@blur/ui';
 import {
   collectBrowser,
   collectHardware,
@@ -14,7 +14,8 @@ import {
 import { FieldRow } from '../../utils/field';
 import { ConnectionSection, type ConnectionSnapshot } from '../../utils/connection';
 import { reportToMarkdown, reportToJson, downloadText, networkGroup } from '../../utils/export';
-import { useSettings, useThemeSetter } from '../../utils/settings';
+import { useSettings, useThemeSetter, useWhoamiLocale } from '../../utils/settings';
+import { useT } from '../../utils/i18n';
 
 // FULL REPORT (design §2.6): every field, grouped, with a filter, per-group copy,
 // export to .md/.json, and the "N fields unavailable in your browser" counter that
@@ -22,10 +23,21 @@ import { useSettings, useThemeSetter } from '../../utils/settings';
 // its own tab from the popup. Still 🔴 zero network until the user asks.
 
 export function App() {
+  const { locale } = useWhoamiLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <ReportApp />
+    </LocaleProvider>
+  );
+}
+
+function ReportApp() {
+  const t = useT();
+  const locale = useLocale();
   const { settings, update } = useSettings();
   const { theme, setTheme } = useThemeSetter(settings, update);
   const [filter, setFilter] = useState('');
-  const [async, setAsync] = useState<AsyncDevice | null>(null);
+  const [asyncDev, setAsync] = useState<AsyncDevice | null>(null);
 
   // 🔴 The network values the user fetched in THIS tab, held in component state so
   // the export can include them. They are not persisted anywhere: reload the tab and
@@ -35,20 +47,23 @@ export function App() {
   const [hideIp, setHideIp] = useState(false);
   const onSnapshot = useCallback((snap: ConnectionSnapshot) => setNet(snap), []);
 
-  const [base] = useState(() => [
-    collectBrowser(),
-    collectHardware(),
-    collectScreen(),
-    collectLocale(),
-    collectPrivacy(),
-  ]);
+  const base = useMemo(
+    () => [
+      collectBrowser(t),
+      collectHardware(t),
+      collectScreen(t),
+      collectLocale(t),
+      collectPrivacy(t),
+    ],
+    [t],
+  );
 
   useEffect(() => {
     if (!settings) return;
-    void collectAsync(settings.units).then(setAsync);
-  }, [settings?.units]);
+    void collectAsync(settings.units, t).then(setAsync);
+  }, [settings?.units, t]);
 
-  const groups = useMemo(() => (async ? mergeAsync(base, async) : base), [base, async]);
+  const groups = useMemo(() => (asyncDev ? mergeAsync(base, asyncDev) : base), [base, asyncDev]);
 
   const unavailableCount = useMemo(
     () =>
@@ -63,7 +78,7 @@ export function App() {
     return (
       <main className="report">
         <p role="status" aria-live="polite">
-          <span className="ui-spinner" aria-hidden="true" /> Загрузка…
+          <span className="ui-spinner" aria-hidden="true" /> {t('loading')}
         </p>
       </main>
     );
@@ -75,14 +90,14 @@ export function App() {
     ...g,
     fields: g.fields.filter((f) => {
       if (!showUnavailable && f.field.kind === 'unavailable') return false;
-      if (q && !f.label.toLowerCase().includes(q)) return false;
+      if (q && !t(f.key).toLowerCase().includes(q)) return false;
       return true;
     }),
   }));
 
   const exportOpts = { includeUnavailable: showUnavailable };
   const hasNet = net.trace !== null || net.isp !== null;
-  const netGroup = hasNet && includeNetwork ? networkGroup(net.trace, net.isp, { maskIp: hideIp }) : null;
+  const netGroup = hasNet && includeNetwork ? networkGroup(net.trace, net.isp, locale, { maskIp: hideIp }) : null;
   // The export is exactly what is on screen, plus the network block IF the user
   // fetched it and left it ticked. Nothing is added behind the user's back.
   const exportGroups = netGroup ? [...groups, netGroup] : groups;
@@ -91,10 +106,8 @@ export function App() {
     <main className="report">
       <header className="report__head">
         <div>
-          <h1>Кто я · Полный отчёт</h1>
-          <p className="report__sub">
-            Собран {new Date().toLocaleString()} локально в вашем браузере. Ничего не отправлено.
-          </p>
+          <h1>{t('rep_title')}</h1>
+          <p className="report__sub">{t('rep_sub', { when: new Date().toLocaleString() })}</p>
         </div>
         <div className="report__headctl">
           <ThemeToggle theme={theme} onChange={setTheme} />
@@ -103,7 +116,7 @@ export function App() {
             className="ui-btn ui-btn--sm"
             onClick={() => void browser.runtime.openOptionsPage()}
           >
-            ⚙ Настройки
+            ⚙ {t('settings')}
           </button>
         </div>
       </header>
@@ -112,9 +125,9 @@ export function App() {
         <input
           type="search"
           className="report__filter"
-          placeholder="Фильтр по полю…"
+          placeholder={t('rep_filterPlaceholder')}
           value={filter}
-          aria-label="Фильтр по названию поля"
+          aria-label={t('rep_filterAria')}
           onChange={(e) => setFilter(e.target.value)}
         />
         <label className="report__toggle">
@@ -123,39 +136,36 @@ export function App() {
             checked={showUnavailable}
             onChange={(e) => update({ showUnavailable: e.target.checked })}
           />
-          Показывать недоступные
+          {t('rep_showUnavailable')}
         </label>
       </div>
 
       <div className="report__grid">
-        <nav className="report__nav" aria-label="Разделы отчёта">
+        <nav className="report__nav" aria-label={t('rep_navAria')}>
           <ul>
             {groups.map((g) => (
               <li key={g.id}>
                 <a href={`#${g.id}`}>
-                  <span>{g.title}</span>
+                  <span>{t(g.titleKey)}</span>
                   <span className="report__navcount mono">{g.fields.length}</span>
                 </a>
               </li>
             ))}
           </ul>
           {/* The honest counter (design §2.6): the main limitation, made explainable. */}
-          <p className="report__unavail">
-            ⓘ {unavailableCount} полей недоступны в вашем браузере — у каждого есть объяснение,
-            почему.
-          </p>
+          <p className="report__unavail">{t('rep_unavailCounter', { n: unavailableCount })}</p>
         </nav>
 
         <div className="report__body">
           {visibleGroups.map((g) => (
             <section key={g.id} id={g.id} className="report__section">
-              <h2>{g.title}</h2>
+              <h2>{t(g.titleKey)}</h2>
               <div className="report__fields">
                 {g.fields.length === 0 ? (
-                  <p className="report__empty">Нет полей по текущему фильтру.</p>
+                  <p className="report__empty">{t('rep_empty')}</p>
                 ) : (
                   g.fields.map((f) => (
-                    <FieldRow key={f.label} label={f.label} field={f.field} copyable={f.copyable} />
+                    <FieldRow key={f.key} label={t(f.key)} field={f.field} copyable={f.copyable} />
                   ))
                 )}
               </div>
@@ -163,46 +173,46 @@ export function App() {
           ))}
 
           <section id="network" className="report__section">
-            <h2>Сеть (IP)</h2>
+            <h2>{t('rep_networkTitle')}</h2>
             <ConnectionSection settings={settings} update={update} onSnapshot={onSnapshot} />
           </section>
         </div>
       </div>
 
       <section className="report__export">
-        <h2>Экспорт</h2>
+        <h2>{t('rep_exportTitle')}</h2>
         <div className="report__exportrow">
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => void copy(reportToMarkdown(exportGroups, exportOpts))}
+            onClick={() => void copy(reportToMarkdown(exportGroups, t, exportOpts))}
           >
-            Скопировать Markdown
+            {t('rep_copyMd')}
           </button>
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => void copy(reportToJson(exportGroups, exportOpts))}
+            onClick={() => void copy(reportToJson(exportGroups, t, exportOpts))}
           >
-            Скопировать JSON
-          </button>
-          <button
-            type="button"
-            className="ui-btn ui-btn--sm"
-            onClick={() =>
-              downloadText('whoami.md', reportToMarkdown(exportGroups, exportOpts), 'text/markdown')
-            }
-          >
-            Скачать .md
+            {t('rep_copyJson')}
           </button>
           <button
             type="button"
             className="ui-btn ui-btn--sm"
             onClick={() =>
-              downloadText('whoami.json', reportToJson(exportGroups, exportOpts), 'application/json')
+              downloadText('whoami.md', reportToMarkdown(exportGroups, t, exportOpts), 'text/markdown')
             }
           >
-            Скачать .json
+            {t('rep_downloadMd')}
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn--sm"
+            onClick={() =>
+              downloadText('whoami.json', reportToJson(exportGroups, t, exportOpts), 'application/json')
+            }
+          >
+            {t('rep_downloadJson')}
           </button>
         </div>
 
@@ -217,8 +227,8 @@ export function App() {
               disabled={!hasNet}
               onChange={(e) => setIncludeNetwork(e.target.checked)}
             />
-            Включить сетевые данные (IP, страна, ISP)
-            {!hasNet && <small> — нечего включать: сетевой запрос не выполнялся</small>}
+            {t('rep_includeNetwork')}
+            {!hasNet && <small>{t('rep_includeNetworkNone')}</small>}
           </label>
           <label className={hasNet && includeNetwork ? 'report__toggle' : 'report__toggle report__toggle--off'}>
             <input
@@ -227,15 +237,11 @@ export function App() {
               disabled={!hasNet || !includeNetwork}
               onChange={(e) => setHideIp(e.target.checked)}
             />
-            Скрыть IP (заменить на <span dir="ltr">203.0.113.x</span>) — для баг-репортов и поддержки
+            {t('rep_hideIp', { sample: '203.0.113.x' })}
           </label>
         </div>
 
-        <Callout tone="info">
-          Отчёт собирается в этом окне и никуда не отправляется — экспорт делает файл через
-          <span dir="ltr"> Blob + &lt;a download&gt;</span>, без разрешения на загрузки. 🔴 Токен
-          ipinfo.io в экспорт и в буфер обмена не попадает никогда.
-        </Callout>
+        <Callout tone="info">{t('rep_exportCallout')}</Callout>
       </section>
     </main>
   );
@@ -253,16 +259,16 @@ async function copy(text: string): Promise<void> {
 
 function mergeAsync(groups: FieldGroup[], a: AsyncDevice): FieldGroup[] {
   const patch: Record<string, Partial<Record<string, FieldGroup['fields'][number]['field']>>> = {
-    browser: { Архитектура: a.architecture, 'Версия ОС': a.osVersion, 'Модель устройства': a.model },
-    hardware: { 'Хранилище для сайтов': a.storageQuota },
-    privacy: { 'GPU (WebGPU)': a.webgpu },
+    browser: { lbl_architecture: a.architecture, lbl_osVersion: a.osVersion, lbl_deviceModel: a.model },
+    hardware: { lbl_siteStorage: a.storageQuota },
+    privacy: { lbl_gpuWebgpu: a.webgpu },
   };
   return groups.map((g) => {
     const p = patch[g.id];
     if (!p) return g;
     return {
       ...g,
-      fields: g.fields.map((f) => (p[f.label] ? { ...f, field: p[f.label]! } : f)),
+      fields: g.fields.map((f) => (p[f.key] ? { ...f, field: p[f.key]! } : f)),
     };
   });
 }

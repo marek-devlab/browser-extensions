@@ -31,7 +31,7 @@ browser.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     try {
       switch (msg.type) {
         case 'offscreen:start': {
-          if (session) return { ok: false, code: 'busy', error: 'Запись уже идёт.' };
+          if (session) return { ok: false, code: 'busy', error: 'A recording is already in progress.' };
           // 🔴 The streamId was minted seconds ago in the service worker and is
           // spent RIGHT HERE, immediately (design §1.5, §10.2). No caching, no
           // "let me set the UI up first" — that is exactly what expires it.

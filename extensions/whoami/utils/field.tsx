@@ -1,4 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
+import { useT, type MsgKey } from './i18n';
 
 // 🔴 THE FIELD MODEL (design §7, §5). Every fact in this product is a `Field`, not
 // a `string`. The type makes it IMPOSSIBLE to render an empty cell: a field is
@@ -53,59 +54,60 @@ export function fromMaybe(
 }
 
 // The CLOSED reason catalog (design §2.8). 🔴 No free text at runtime — a fixed
-// enum of chip + explanation. Copy is RU-primary (the product's audience). Each
-// entry says WHY the value is missing and, crucially, that it is not a bug.
-interface ReasonCopy {
-  chip: string;
-  title: string;
-  body: string;
+// enum of chip + explanation, now resolved through the i18n catalog so every reason
+// follows the selected locale. This map is the only place ReasonCode meets its copy
+// keys; both FieldRow and the export layer read the copy through it.
+interface ReasonKeys {
+  chip: MsgKey;
+  title: MsgKey;
+  body: MsgKey;
 }
 
-export const REASONS: Record<ReasonCode, ReasonCopy> = {
+export const REASON_KEYS: Record<ReasonCode, ReasonKeys> = {
   'not-implemented': {
-    chip: 'Недоступно в этом браузере',
-    title: 'API не реализован',
-    body: 'Это API не реализовано в вашем браузере (обычно Firefox или Safari). Значение узнать невозможно — это не ошибка расширения и не сбой настройки.',
+    chip: 'reason_notImplemented_chip',
+    title: 'reason_notImplemented_title',
+    body: 'reason_notImplemented_body',
   },
   'chromium-only': {
-    chip: 'Только в Chromium',
-    title: 'Только Chromium',
-    body: 'Это API есть лишь в браузерах на Chromium (Chrome, Edge, Opera). Firefox и Safari его не реализовали — во многом именно потому, что оно помогает отслеживать пользователей. Отсутствие значения здесь — норма.',
+    chip: 'reason_chromiumOnly_chip',
+    title: 'reason_chromiumOnly_title',
+    body: 'reason_chromiumOnly_body',
   },
   'mobile-only': {
-    chip: 'Только на мобильных',
-    title: 'Только на мобильных',
-    body: 'Это поле физически относится к телефону (модель устройства, тип сотовой сети). На настольном браузере его не существует.',
+    chip: 'reason_mobileOnly_chip',
+    title: 'reason_mobileOnly_title',
+    body: 'reason_mobileOnly_body',
   },
   'empty-by-design': {
-    chip: 'Браузер отдаёт пусто',
-    title: 'Пустая строка — намеренно',
-    body: '⚠️ Chrome намеренно возвращает пустую строку для этого поля (например, точную модель GPU). Это не ошибка, и мы 🔴 не подставляем вместо неё соседнее значение.',
+    chip: 'reason_emptyByDesign_chip',
+    title: 'reason_emptyByDesign_title',
+    body: 'reason_emptyByDesign_body',
   },
   'blocked-by-privacy': {
-    chip: 'Скрыто настройкой приватности',
-    title: 'Замаскировано приватностью',
-    body: 'Значение скрыто вашей настройкой приватности (Firefox privacy.resistFingerprinting или ETP strict). Браузер намеренно не отдаёт его — и это хорошо.',
+    chip: 'reason_blockedByPrivacy_chip',
+    title: 'reason_blockedByPrivacy_title',
+    body: 'reason_blockedByPrivacy_body',
   },
   'removed-by-vendor': {
-    chip: 'Убрано из браузера',
-    title: 'Удалено вендором',
-    body: 'Это поле убрано из браузера (например, doNotTrack удалён из Chrome). Его больше нельзя прочитать.',
+    chip: 'reason_removedByVendor_chip',
+    title: 'reason_removedByVendor_title',
+    body: 'reason_removedByVendor_body',
   },
   'not-requested': {
-    chip: 'Не запрошено',
-    title: 'Ещё не запрашивалось',
-    body: 'Это сетевое поле. Оно неизвестно локально и запрашивается только по вашему явному клику — до этого момента расширение не отправило ни одного запроса.',
+    chip: 'reason_notRequested_chip',
+    title: 'reason_notRequested_title',
+    body: 'reason_notRequested_body',
   },
   'permission-denied': {
-    chip: 'Доступ не выдан',
-    title: 'Разрешение отклонено',
-    body: 'Вы не выдали доступ к внешнему сервису. IP никуда не ушёл. Остальное работает как работало.',
+    chip: 'reason_permissionDenied_chip',
+    title: 'reason_permissionDenied_title',
+    body: 'reason_permissionDenied_body',
   },
   'request-failed': {
-    chip: 'Запрос не удался',
-    title: 'Запрос не удался',
-    body: 'Внешний сервер не ответил (нет сети, таймаут, лимит запросов или блокировка). Данные об устройстве от этого не зависят и остаются на месте.',
+    chip: 'reason_requestFailed_chip',
+    title: 'reason_requestFailed_title',
+    body: 'reason_requestFailed_body',
   },
   // ⚠️ Added when the network half became real: a third party can answer 200 OK and
   // still have no value for a given field (Cloudflare never returns an ISP; ipinfo
@@ -113,14 +115,14 @@ export const REASONS: Record<ReasonCode, ReasonCopy> = {
   // recipient having nothing to say, and we say exactly that. 🔴 We never fill the
   // gap from another source without a fresh disclosure.
   'provider-omitted': {
-    chip: 'Сервис не вернул это поле',
-    title: 'Ответ получен, поля в нём нет',
-    body: 'Внешний сервис ответил, но это поле в его ответе отсутствует. Например, Cloudflare принципиально не отдаёт название провайдера, а ipinfo.io не всегда знает обратное DNS-имя. Мы 🔴 не подставляем сюда значение из другого источника — это был бы незаявленный запрос.',
+    chip: 'reason_providerOmitted_chip',
+    title: 'reason_providerOmitted_title',
+    body: 'reason_providerOmitted_body',
   },
   'unsupported-here': {
-    chip: 'Недоступно в этом контексте',
-    title: 'Недоступно в этом контексте',
-    body: 'API есть, но недоступно в текущем контексте (не защищённое соединение, приватное окно и т. п.).',
+    chip: 'reason_unsupportedHere_chip',
+    title: 'reason_unsupportedHere_title',
+    body: 'reason_unsupportedHere_body',
   },
 };
 
@@ -144,10 +146,13 @@ export function FieldRow({
   field: Field;
   copyable?: boolean;
 }) {
+  const t = useT();
   const popId = useId().replace(/:/g, '_');
 
   if (field.kind === 'unavailable') {
-    const r = REASONS[field.reason];
+    const keys = REASON_KEYS[field.reason];
+    const chip = t(keys.chip);
+    const title = t(keys.title);
     return (
       <div className="frow" data-kind="unavailable">
         <span className="frow__label">{label}</span>
@@ -156,13 +161,13 @@ export function FieldRow({
             type="button"
             className="chip"
             popoverTarget={popId}
-            aria-label={`${r.chip}: ${r.title}`}
+            aria-label={`${chip}: ${title}`}
           >
-            ⓘ {r.chip}
+            ⓘ {chip}
           </button>
           <div id={popId} popover="auto" className="popover" role="note">
-            <p className="popover__title">{r.title}</p>
-            <p className="popover__body">{r.body}</p>
+            <p className="popover__title">{title}</p>
+            <p className="popover__body">{t(keys.body)}</p>
           </div>
         </span>
         {/* No copy button: there is nothing to copy, and that is honest. */}
@@ -185,8 +190,8 @@ export function FieldRow({
               type="button"
               className="approx"
               popoverTarget={field.note ? popId : undefined}
-              aria-label="Приблизительное значение"
-              title={field.note ? undefined : 'Приблизительно'}
+              aria-label={t('approxAria')}
+              title={field.note ? undefined : t('approxTitle')}
             >
               ~
             </button>
@@ -211,13 +216,14 @@ export function FieldRow({
  *  focus-visible and labelled (design §11). Uses the async Clipboard API; a real
  *  failure surfaces rather than faking success. */
 export function CopyIcon({ value, label }: { value: string; label: string }): ReactNode {
+  const t = useT();
   const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle');
   return (
     <button
       type="button"
       className="frow__copy copybtn"
       aria-live="polite"
-      aria-label={`Скопировать значение поля «${label}»`}
+      aria-label={t('copyFieldAria', { label })}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);

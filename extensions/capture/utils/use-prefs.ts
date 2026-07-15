@@ -40,9 +40,7 @@ export function usePrefs(): {
         await prefsItem.setValue({ ...cur, ...patch });
         setError(null);
       } catch {
-        setError(
-          'Не удалось сохранить настройки.',
-        );
+        setError('save-failed');
       }
     })();
   }

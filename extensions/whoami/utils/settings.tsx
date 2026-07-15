@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { applyTheme, cacheTheme } from '@blur/ui';
+import { applyTheme, cacheTheme, useLocaleController, type Locale } from '@blur/ui';
 import {
   DEFAULT_SETTINGS,
+  localeItem,
   normalizeSettings,
   settingsItem,
   type Theme,
@@ -18,6 +19,23 @@ import { revokeIspPermission } from './network';
 // the synchronous localStorage seed in step for the NEXT open.
 
 export const THEME_SEED_KEY = 'blur-whoami:theme';
+/** Same seed-key convention as the theme, with a `:locale` suffix — a synchronous
+ *  localStorage seed so the NEXT open renders in the chosen language flash-free. */
+export const LOCALE_SEED_KEY = 'blur-whoami:locale';
+
+/**
+ * The runtime UI language, wired to the persisted `localeItem`. Each React root
+ * calls this and wraps its tree in `<LocaleProvider locale={locale}>`. The initial
+ * value is the synchronous seed (English on a fresh install), then the async read
+ * reconciles.
+ */
+export function useWhoamiLocale(): { locale: Locale; setLocale: (l: Locale) => void } {
+  return useLocaleController({
+    key: LOCALE_SEED_KEY,
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+}
 
 export function useSettings(): {
   settings: WhoamiSettings | null;

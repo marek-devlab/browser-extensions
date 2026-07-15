@@ -1,3 +1,4 @@
+import { useT, type MsgKey } from '../utils/i18n';
 import type { ActionId } from '../utils/editor-actions';
 import type { Template } from '../utils/types';
 
@@ -12,26 +13,36 @@ import type { Template } from '../utils/types';
 interface ToolButton {
   id: ActionId | 'emoji';
   glyph: string;
-  label: string;
+  /** i18n key for the tooltip/aria label. */
+  label: MsgKey;
   /** Kept in the always-visible set on a ~320px panel. */
   primary: boolean;
 }
 
 const BUTTONS: ToolButton[] = [
-  { id: 'bold', glyph: 'B', label: 'Жирный (Ctrl+B)', primary: true },
-  { id: 'italic', glyph: 'I', label: 'Курсив (Ctrl+I)', primary: false },
-  { id: 'strike', glyph: 'S̶', label: 'Зачёркнутый (Ctrl+Shift+X)', primary: false },
-  { id: 'code', glyph: '<>', label: 'Код (Ctrl+E)', primary: true },
-  { id: 'codeBlock', glyph: '{}', label: 'Блок кода (Ctrl+Shift+E)', primary: false },
-  { id: 'bullet', glyph: '•', label: 'Список (Ctrl+Shift+8)', primary: false },
-  { id: 'ordered', glyph: '1.', label: 'Нумерованный список (Ctrl+Shift+7)', primary: false },
-  { id: 'task', glyph: '☑', label: 'Задача — [ ] (Ctrl+Shift+C)', primary: true },
-  { id: 'details', glyph: '⌄', label: '<details> (Ctrl+Shift+D)', primary: true },
-  { id: 'table', glyph: '▦', label: 'Таблица (Ctrl+Shift+T)', primary: false },
-  { id: 'link', glyph: '🔗', label: 'Ссылка (Ctrl+K)', primary: false },
-  { id: 'quote', glyph: '❝', label: 'Цитата (Ctrl+Shift+.)', primary: false },
-  { id: 'emoji', glyph: '😊', label: 'Эмодзи (Ctrl+Shift+J)', primary: true },
+  { id: 'bold', glyph: 'B', label: 'tb_bold', primary: true },
+  { id: 'italic', glyph: 'I', label: 'tb_italic', primary: false },
+  { id: 'strike', glyph: 'S̶', label: 'tb_strike', primary: false },
+  { id: 'code', glyph: '<>', label: 'tb_code', primary: true },
+  { id: 'codeBlock', glyph: '{}', label: 'tb_codeBlock', primary: false },
+  { id: 'bullet', glyph: '•', label: 'tb_bullet', primary: false },
+  { id: 'ordered', glyph: '1.', label: 'tb_ordered', primary: false },
+  { id: 'task', glyph: '☑', label: 'tb_task', primary: true },
+  { id: 'details', glyph: '⌄', label: 'tb_details', primary: true },
+  { id: 'table', glyph: '▦', label: 'tb_table', primary: false },
+  { id: 'link', glyph: '🔗', label: 'tb_link', primary: false },
+  { id: 'quote', glyph: '❝', label: 'tb_quote', primary: false },
+  { id: 'emoji', glyph: '😊', label: 'tb_emoji', primary: true },
 ];
+
+/** Built-in template id → its translated menu name (user templates keep .name). */
+const TEMPLATE_NAME_KEY: Record<string, MsgKey> = {
+  bug: 'tpl_bug',
+  'bug-short': 'tpl_bug_short',
+  feature: 'tpl_feature',
+  mr: 'tpl_mr',
+  postmortem: 'tpl_postmortem',
+};
 
 export function Toolbar({
   onAction,
@@ -48,6 +59,7 @@ export function Toolbar({
   templates: Template[];
   narrow: boolean;
 }) {
+  const t = useT();
   const visible = narrow ? BUTTONS.filter((b) => b.primary) : BUTTONS;
   const overflow = narrow ? BUTTONS.filter((b) => !b.primary) : [];
 
@@ -57,14 +69,14 @@ export function Toolbar({
   };
 
   return (
-    <div className="cw-toolbar" role="toolbar" aria-label="Форматирование">
+    <div className="cw-toolbar" role="toolbar" aria-label={t('toolbar_aria')}>
       {visible.map((b) => (
         <button
           key={b.id}
           type="button"
           className="cw-tool"
-          title={b.label}
-          aria-label={b.label}
+          title={t(b.label)}
+          aria-label={t(b.label)}
           aria-haspopup={b.id === 'emoji' ? 'dialog' : undefined}
           onClick={() => dispatch(b)}
         >
@@ -78,8 +90,8 @@ export function Toolbar({
             type="button"
             className="cw-tool"
             popoverTarget="cw-toolbar-more"
-            title="Ещё инструменты"
-            aria-label="Ещё инструменты"
+            title={t('toolbar_more')}
+            aria-label={t('toolbar_more')}
           >
             ⋯
           </button>
@@ -87,7 +99,7 @@ export function Toolbar({
           <div id="cw-toolbar-more" popover="auto" className="cw-popover">
             {overflow.map((b) => (
               <button key={b.id} type="button" className="cw-menu-item" onClick={() => dispatch(b)}>
-                <span className="cw-tool cw-tool--inline" aria-hidden="true">{b.glyph}</span> {b.label}
+                <span className="cw-tool cw-tool--inline" aria-hidden="true">{b.glyph}</span> {t(b.label)}
               </button>
             ))}
           </div>
@@ -100,10 +112,10 @@ export function Toolbar({
         type="button"
         className="cw-tool cw-tool--text"
         popoverTarget="cw-templates"
-        title="Шаблоны"
-        aria-label="Шаблоны"
+        title={t('templates')}
+        aria-label={t('templates')}
       >
-        📋 <span className="cw-tool__text">Шаблоны</span>
+        📋 <span className="cw-tool__text">{t('templates')}</span>
       </button>
       <TemplateMenu templates={templates} onPick={onTemplate} />
 
@@ -111,13 +123,19 @@ export function Toolbar({
         type="button"
         className="cw-tool cw-tool--text"
         onClick={onEnvironment}
-        title="Вставить окружение (браузер, ОС, экран, URL)"
-        aria-label="Вставить окружение"
+        title={t('environment_insert_title')}
+        aria-label={t('environment_insert_aria')}
       >
-        ⧉ <span className="cw-tool__text">Окружение</span>
+        ⧉ <span className="cw-tool__text">{t('environment')}</span>
       </button>
     </div>
   );
+}
+
+/** The name shown in menus — translated for built-ins, verbatim for user ones. */
+export function templateLabel(t: ReturnType<typeof useT>, tpl: Template): string {
+  const key = tpl.builtin ? TEMPLATE_NAME_KEY[tpl.id] : undefined;
+  return key ? t(key) : tpl.name;
 }
 
 function TemplateMenu({
@@ -127,25 +145,29 @@ function TemplateMenu({
   templates: Template[];
   onPick: (t: Template, mode: 'append' | 'replace') => void;
 }) {
+  const t = useT();
   return (
     <div id="cw-templates" popover="auto" className="cw-popover">
-      <p className="cw-hint">Шаблон вставляется в конец. Чтобы заменить весь черновик — «Заменить».</p>
-      {templates.map((t) => (
-        <div key={t.id} className="cw-menu-row">
-          <button type="button" className="cw-menu-item" onClick={() => onPick(t, 'append')}>
-            {t.name}
-          </button>
-          <button
-            type="button"
-            className="cw-tool cw-tool--inline"
-            title={`Заменить черновик шаблоном «${t.name}»`}
-            aria-label={`Заменить черновик шаблоном ${t.name}`}
-            onClick={() => onPick(t, 'replace')}
-          >
-            ⤾
-          </button>
-        </div>
-      ))}
+      <p className="cw-hint">{t('templates_hint')}</p>
+      {templates.map((tpl) => {
+        const name = templateLabel(t, tpl);
+        return (
+          <div key={tpl.id} className="cw-menu-row">
+            <button type="button" className="cw-menu-item" onClick={() => onPick(tpl, 'append')}>
+              {name}
+            </button>
+            <button
+              type="button"
+              className="cw-tool cw-tool--inline"
+              title={t('template_replace_with', { name })}
+              aria-label={t('template_replace_with', { name })}
+              onClick={() => onPick(tpl, 'replace')}
+            >
+              ⤾
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ThemeToggle } from '@blur/ui';
+import { LocaleProvider, ThemeToggle, useLocaleController } from '@blur/ui';
 import { usePrefs } from '../../utils/prefs';
 import { useDocument } from '../../utils/document';
+import { localeItem } from '../../utils/storage';
+import { useT } from '../../utils/i18n';
 import { useHashRoute, type ToolRoute } from '../../utils/router';
 import { DataTab } from './tabs/DataTab';
 import { JwtTab } from './tabs/JwtTab';
@@ -19,14 +21,39 @@ import { SettingsTab } from './tabs/SettingsTab';
 // it — but the JWT tab is deliberately cut off from it: the token has its own,
 // non-persisted state inside JwtTab and can never reach `local:document` (§7.2).
 
-const TABS: { id: ToolRoute; label: string }[] = [
-  { id: 'data', label: 'Данные' },
-  { id: 'jwt', label: 'JWT' },
-  { id: 'schema', label: 'Схема' },
-  { id: 'settings', label: 'Настройки' },
-];
+const TAB_IDS: ToolRoute[] = ['data', 'jwt', 'schema', 'settings'];
+const TAB_LABEL_KEYS = {
+  data: 'tab.data',
+  jwt: 'tab.jwt',
+  schema: 'tab.schema',
+  settings: 'tab.settings',
+} as const;
 
+// The tool page owns the persisted locale and wraps everything in a
+// LocaleProvider, so `useT()` works in every tab. The seed key reuses the
+// extension's theme-seed prefix (`blur-devdata:`) so the FIRST paint is already
+// in the right language (no English flash before async storage resolves).
 export function App() {
+  const { locale, setLocale } = useLocaleController({
+    key: 'blur-devdata:locale',
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <Tool locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function Tool({
+  locale,
+  setLocale,
+}: {
+  locale: import('@blur/ui').Locale;
+  setLocale: (l: import('@blur/ui').Locale) => void;
+}) {
+  const t = useT();
   const prefsApi = usePrefs();
   const { prefs, update } = prefsApi;
   const doc = useDocument(prefs);
@@ -43,8 +70,8 @@ export function App() {
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (target?.isContentEditable) return;
       const idx = ['1', '2', '3', '4'].indexOf(e.key);
-      const tab = TABS[idx];
-      if (idx >= 0 && tab) navigate(tab.id);
+      const tab = TAB_IDS[idx];
+      if (idx >= 0 && tab) navigate(tab);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -91,24 +118,24 @@ export function App() {
           <h1>Data Format Toolkit</h1>
         </div>
 
-        <nav className="tabs" role="tablist" aria-label="Инструмент">
-          {TABS.map((t) => {
-            const active = route === t.id;
+        <nav className="tabs" role="tablist" aria-label={t('tab.toolAria')}>
+          {TAB_IDS.map((id) => {
+            const active = route === id;
             return (
               <button
-                key={t.id}
+                key={id}
                 type="button"
                 role="tab"
-                id={`tab-${t.id}`}
+                id={`tab-${id}`}
                 // aria-controls only on the ACTIVE tab (a fix carried over from
                 // `blur`, design §9.3).
-                aria-controls={active ? `panel-${t.id}` : undefined}
+                aria-controls={active ? `panel-${id}` : undefined}
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 className={active ? 'tab tab--active' : 'tab'}
-                onClick={() => navigate(t.id)}
+                onClick={() => navigate(id)}
               >
-                {t.label}
+                {t(TAB_LABEL_KEYS[id])}
               </button>
             );
           })}
@@ -130,7 +157,9 @@ export function App() {
             the token, the secret and the key from memory. */}
         {route === 'jwt' && <JwtTab initialToken={jwtToken} />}
         {route === 'schema' && <SchemaTab prefs={prefs} doc={doc} onOpenData={openData} />}
-        {route === 'settings' && <SettingsTab {...prefsApi} />}
+        {route === 'settings' && (
+          <SettingsTab {...prefsApi} locale={locale} setLocale={setLocale} />
+        )}
       </main>
     </div>
   );

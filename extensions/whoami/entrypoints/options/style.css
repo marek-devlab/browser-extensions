@@ -44,6 +44,7 @@
 .opts__rowlabel {
   color: var(--text-dim);
   font-size: 13px;
+  min-width: 0;
 }
 
 .opts__check {
@@ -123,6 +124,14 @@
   gap: 12px;
   padding: 5px 0;
   font-size: 13px;
+  flex-wrap: wrap;
+}
+
+/* The consent status text (+ host-access suffix) is longer in RU/ET; let it take a
+   line of its own and wrap instead of shoving the Revoke button out of the row. */
+.opts__consentrow span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .opts__never {

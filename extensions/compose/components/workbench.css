@@ -55,7 +55,7 @@
   font-size: 12px;
 }
 .cw-header__spacer { flex: 1 1 auto; }
-.cw-save { font-size: 10px; color: var(--text-dim); min-width: 84px; text-align: right; }
+.cw-save { font-size: 10px; color: var(--text-dim); min-width: 84px; text-align: right; word-break: break-word; }
 
 /* ── Toolbar ────────────────────────────────────────────────────────────── */
 .cw-toolbar {
@@ -199,7 +199,9 @@
   color: var(--text-dim);
   flex-wrap: wrap;
 }
-.cw-counter__compat { flex: 1 1 auto; text-align: left; }
+/* min-width:0 so the (longer in RU/ET) compatibility note can shrink and wrap
+ * inside the flex row instead of forcing the narrow panel to overflow. */
+.cw-counter__compat { flex: 1 1 auto; min-width: 0; text-align: left; }
 
 .cw-linklike {
   appearance: none;
@@ -283,7 +285,9 @@
 
 /* ── Copy bar + toast ───────────────────────────────────────────────────── */
 .cw-copybar { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
-.cw-copybar .ui-btn { flex: 1 1 auto; min-height: 40px; }
+/* min-width:0 lets a long copy verb ("Kopeeri GitHubi jaoks") wrap inside the
+ * button rather than widen the bar past the narrow panel. */
+.cw-copybar .ui-btn { flex: 1 1 auto; min-width: 0; min-height: 40px; }
 
 .cw-toast {
   position: fixed;

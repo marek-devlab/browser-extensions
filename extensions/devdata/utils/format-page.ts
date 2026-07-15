@@ -1,4 +1,6 @@
 import { browser } from 'wxt/browser';
+import type { Locale } from '@blur/ui';
+import { tAt } from './i18n';
 
 // Putting the viewer on someone else's page — the only part of this extension
 // that touches a page at all (design §4.3, §8).
@@ -72,7 +74,10 @@ async function inject(tabId: number): Promise<void> {
 }
 
 /** Run the one-shot in-page formatter on `tabId`. */
-export async function formatActiveTab(tabId: number): Promise<FormatPageResult> {
+export async function formatActiveTab(
+  tabId: number,
+  locale: Locale,
+): Promise<FormatPageResult> {
   try {
     // Already there? Re-injecting would stack message listeners.
     let present = false;
@@ -93,12 +98,12 @@ export async function formatActiveTab(tabId: number): Promise<FormatPageResult> 
 
     if (reply?.status === 'formatted') return { status: 'formatted' };
     if (reply?.status === 'not-json') {
-      return { status: 'not-json', contentType: reply.contentType ?? 'неизвестен' };
+      return {
+        status: 'not-json',
+        contentType: reply.contentType ?? tAt(locale, 'page.unknownType'),
+      };
     }
-    return {
-      status: 'error',
-      message: 'Скрипт на странице не ответил. Перезагрузите вкладку и попробуйте снова.',
-    };
+    return { status: 'error', message: tAt(locale, 'page.noResponse') };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // chrome://, about:, the Web Store — injection is physically impossible, and

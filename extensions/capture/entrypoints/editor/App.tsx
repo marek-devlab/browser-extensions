@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Callout, ThemeToggle, type Theme } from '@blur/ui';
 import { getClip } from '../../utils/db';
+import { useT } from '../../utils/i18n';
 import { usePrefs } from '../../utils/use-prefs';
+import { CaptureLocaleProvider } from '../../utils/use-locale';
 import { useCaptureTheme } from '../../utils/use-theme';
 import type { Clip } from '../../utils/types';
 import { Library } from './Library';
@@ -29,6 +31,15 @@ function parseHash(): { tab: Tab; id?: string } {
 }
 
 export function App() {
+  return (
+    <CaptureLocaleProvider>
+      <Studio />
+    </CaptureLocaleProvider>
+  );
+}
+
+function Studio() {
+  const t = useT();
   const { theme, setTheme } = useCaptureTheme();
   const { prefs, update } = usePrefs();
   const [route, setRoute] = useState(parseHash);
@@ -84,7 +95,7 @@ export function App() {
             className={route.tab === 'library' ? 'tab tab--on' : 'tab'}
             onClick={() => go('library')}
           >
-            Библиотека
+            {t('tab_library')}
           </button>
           {clip && (
             <button
@@ -94,7 +105,7 @@ export function App() {
               className={editorTabActive ? 'tab tab--on' : 'tab'}
               onClick={() => go(clip.kind === 'screenshot' ? 'screenshot' : 'editor')}
             >
-              Редактор
+              {t('tab_editor')}
             </button>
           )}
           {clip?.kind === 'video' && (
@@ -105,7 +116,7 @@ export function App() {
               className={route.tab === 'export' ? 'tab tab--on' : 'tab'}
               onClick={() => go('export')}
             >
-              Экспорт
+              {t('tab_export')}
             </button>
           )}
           <button
@@ -115,7 +126,7 @@ export function App() {
             className={route.tab === 'settings' ? 'tab tab--on' : 'tab'}
             onClick={() => go('settings')}
           >
-            Настройки
+            {t('tab_settings')}
           </button>
         </nav>
         {theme && <ThemeToggle theme={theme} onChange={(t: Theme) => setTheme(t)} />}
@@ -124,26 +135,24 @@ export function App() {
       {/* One-time PROMINENT IN-UI DISCLOSURE (design §9.1, PLAN.md (Часть II) §9 — mandatory
           from 2026-08-01, and mandatory in the INTERFACE, not just the listing). */}
       {!prefs.disclosureAccepted && (
-        <Callout tone="info" title="Что записывается и где это лежит">
-          Capture Studio записывает видео и звук выбранной вкладки (и микрофон — только если
-          вы его включили) и хранит записи локально, в профиле браузера (IndexedDB). Ничего
-          никуда не отправляется: у расширения нет ни одного сетевого запроса — это запрещено
-          его собственным CSP (<code>connect-src &apos;none&apos;</code>). Удаление
-          расширения удалит и записи.{' '}
+        <Callout tone="info" title={t('disc_title')}>
+          {t('disc_body_1')}
+          <code>connect-src &apos;none&apos;</code>
+          {t('disc_body_2')}
           <button
             type="button"
             className="ui-btn ui-btn--sm"
             onClick={() => update({ disclosureAccepted: true })}
           >
-            Понятно
+            {t('disc_ok')}
           </button>
         </Callout>
       )}
 
       <main className="studio-body">
         {missing && route.id && (
-          <Callout tone="warn" title="Запись не найдена">
-            Её удалили, или данные не сохранились. Откройте библиотеку.
+          <Callout tone="warn" title={t('missing_title')}>
+            {t('missing_body')}
           </Callout>
         )}
         {route.tab === 'library' && <Library onOpen={open} />}

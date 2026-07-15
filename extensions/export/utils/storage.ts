@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 import type { ExportPrefs } from './types';
 
 // Storage layout.
@@ -50,4 +51,12 @@ export const prefsItem = storage.defineItem<ExportPrefs>('local:prefs', {
       linksInCells: old.linksInCells ?? 'text',
     }),
   },
+});
+
+// Runtime UI language (English default). Kept in `local:` alongside the other prefs
+// — Design §3's "sync — never" applies to the whole extension. Read synchronously
+// off the localStorage seed for a flash-free first paint (see @blur/ui/i18n); the
+// non-React on-page overlay and the background read it via `localeItem.getValue()`.
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
 });

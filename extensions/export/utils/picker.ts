@@ -11,6 +11,7 @@
 // mobile story: Firefox for Android has no `contextMenus` and no right-click, so
 // every capability must be reachable from the popup → this picker.
 
+import type { Locale } from '@blur/ui';
 import {
   button,
   createRing,
@@ -22,6 +23,7 @@ import {
   type OverlayTheme,
   type Ring,
 } from './overlay';
+import { tAt } from './i18n';
 
 export interface Candidate {
   id: string;
@@ -35,6 +37,7 @@ export interface PickOptions {
   multi: boolean;
   theme: OverlayTheme;
   title: string;
+  locale: Locale;
 }
 
 export function pickElements(
@@ -90,18 +93,18 @@ export function pickElements(
     const foot = el('div', 'bx-foot');
     if (opts.multi) {
       foot.append(
-        button('Выбрать все', () => {
+        button(tAt(opts.locale, 'selectAll'), () => {
           for (const c of candidates) selected.add(c.id);
           render();
         }, 'bx-btn--ghost'),
       );
       foot.append(
-        button('Экспортировать выбранные', () => {
+        button(tAt(opts.locale, 'exportSelected'), () => {
           if (selected.size) finish([...selected]);
         }, 'bx-btn--primary'),
       );
     }
-    foot.append(button('Отмена', () => finish(null), 'bx-btn--ghost'));
+    foot.append(button(tAt(opts.locale, 'cancel'), () => finish(null), 'bx-btn--ghost'));
     panel.append(foot);
 
     h.ui.append(panel);
@@ -173,10 +176,19 @@ export function pickElements(
       });
       const c = candidates[active];
       const hint = opts.multi
-        ? 'Пробел — отметить · A — все · Enter — экспорт · Esc — отмена'
-        : 'Tab / ↑↓ — следующая · 1–9 — по номеру · Enter — выбрать · Esc — отмена';
-      const counter = opts.multi ? `Выбрано ${selected.size} из ${candidates.length}. ` : '';
-      const desc = c ? `${active + 1} из ${candidates.length}: ${c.label}. ${c.warnings.join('. ')}` : '';
+        ? tAt(opts.locale, 'pickHintMulti')
+        : tAt(opts.locale, 'pickHintSingle');
+      const counter = opts.multi
+        ? tAt(opts.locale, 'pickCounter', { n: selected.size, total: candidates.length })
+        : '';
+      const desc = c
+        ? tAt(opts.locale, 'pickDesc', {
+            i: active + 1,
+            total: candidates.length,
+            label: c.label,
+            warnings: c.warnings.join('. '),
+          })
+        : '';
       status.textContent = `${opts.title}. ${counter}${desc} ${hint}`;
     }
 

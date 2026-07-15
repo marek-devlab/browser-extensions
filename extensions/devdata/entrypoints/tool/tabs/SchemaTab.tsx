@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Callout, Spinner } from '@blur/ui';
+import { Badge, Button, Callout, Spinner, useLocale } from '@blur/ui';
 import { validateSchema, type SchemaValidation } from '../../../utils/schema';
 import { isCancelled, type RunningJob } from '../../../utils/worker/client';
 import { EXAMPLE_SCHEMA } from '../../../utils/examples';
 import { MAX_SCHEMA_BYTES, saveSchema, schemaItem } from '../../../utils/storage';
 import { formatBytes, type DocApi } from '../../../utils/document';
+import { useT } from '../../../utils/i18n';
 import type { DevdataPrefs } from '../../../utils/storage';
 
 // The Schema tab (design §2.8, §4.5). Two inputs (document + schema) do not fit
@@ -24,6 +25,8 @@ export function SchemaTab({
   doc: DocApi;
   onOpenData: (path?: string) => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [schemaText, setSchemaText] = useState('');
   const [result, setResult] = useState<SchemaValidation | 'loading' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,9 +63,12 @@ export function SchemaTab({
         void saveSchema(schemaText, prefs.restore).then((outcome) => {
           setSaveNote(
             outcome.status === 'skipped-too-big'
-              ? `Схема ${formatBytes(outcome.bytes)} — больше ${formatBytes(MAX_SCHEMA_BYTES)} мы не сохраняем.`
+              ? t('schema.saveTooBig', {
+                  size: formatBytes(outcome.bytes, locale),
+                  max: formatBytes(MAX_SCHEMA_BYTES, locale),
+                })
               : outcome.status === 'failed'
-                ? `Схема не сохранена: ${outcome.message}`
+                ? t('schema.saveFailed', { message: outcome.message })
                 : null,
           );
         });
@@ -77,16 +83,16 @@ export function SchemaTab({
         setError(err instanceof Error ? err.message : String(err));
       },
     );
-  }, [ready, prefs, schemaText]);
+  }, [ready, prefs, schemaText, locale, t]);
 
   if (!ready) {
     return (
       <div className="schema">
-        <Callout tone="info" title="Нет документа">
-          Схема проверяет документ из таба «Данные», а он ещё не открыт.
+        <Callout tone="info" title={t('schema.noDocTitle')}>
+          {t('schema.noDocBody')}
           <div className="row row--gap">
             <Button variant="primary" onClick={() => onOpenData()}>
-              Открыть данные
+              {t('schema.openData')}
             </Button>
           </div>
         </Callout>
@@ -98,24 +104,29 @@ export function SchemaTab({
     <div className="schema">
       <div className="schema__head">
         <span>
-          Документ: <strong>{ready.name ?? 'без имени'}</strong>{' '}
-          <span className="fine">({formatBytes(ready.bytes)})</span>
+          {t('schema.documentLabel')}
+          <strong>{ready.name ?? t('schema.noName')}</strong>{' '}
+          <span className="fine">({formatBytes(ready.bytes, locale)})</span>
         </span>
         <span className="grow" />
         <span className="fine">
-          Драфт: <strong>{prefs?.schemaDraft ?? '2020-12'}</strong> · format:{' '}
-          <strong>{prefs?.schemaFormats ? 'проверяется' : 'не проверяется'}</strong> — меняется в
-          Настройках
+          {t('schema.draftLabel')}
+          <strong>{prefs?.schemaDraft ?? '2020-12'}</strong>
+          {' · format: '}
+          <strong>
+            {prefs?.schemaFormats ? t('schema.formatChecked') : t('schema.formatNotChecked')}
+          </strong>
+          {t('schema.changedInSettings')}
         </span>
       </div>
 
       <div className="schema__grid">
         <section className="schema__cell">
           <div className="schema__cellhead">
-            <h3 className="ui-section-heading">Схема</h3>
+            <h3 className="ui-section-heading">{t('tab.schema')}</h3>
             <span className="grow" />
-            <Button onClick={() => fileInput.current?.click()}>Файл…</Button>
-            <Button onClick={() => setSchemaText(EXAMPLE_SCHEMA)}>Пример</Button>
+            <Button onClick={() => fileInput.current?.click()}>{t('schema.fileBtn')}</Button>
+            <Button onClick={() => setSchemaText(EXAMPLE_SCHEMA)}>{t('schema.exampleBtn')}</Button>
             <input
               ref={fileInput}
               type="file"
@@ -129,7 +140,9 @@ export function SchemaTab({
                   setSchemaText(await file.text());
                 } catch (err) {
                   setError(
-                    `Файл схемы не прочитан: ${err instanceof Error ? err.message : String(err)}`,
+                    t('schema.fileReadFail', {
+                      message: err instanceof Error ? err.message : String(err),
+                    }),
                   );
                 }
               }}
@@ -140,7 +153,7 @@ export function SchemaTab({
             value={schemaText}
             spellCheck={false}
             aria-label="JSON Schema"
-            placeholder="Вставьте JSON Schema"
+            placeholder={t('schema.inputPlaceholder')}
             onChange={(e) => setSchemaText(e.target.value)}
           />
           <Button
@@ -148,54 +161,54 @@ export function SchemaTab({
             onClick={run}
             disabled={result === 'loading' || schemaText.trim() === ''}
           >
-            Проверить
+            {t('schema.validateBtn')}
           </Button>
           {saveNote !== null && <p className="fine">{saveNote}</p>}
         </section>
 
         <section className="schema__cell">
           <div className="schema__cellhead">
-            <h3 className="ui-section-heading">Результат</h3>
+            <h3 className="ui-section-heading">{t('schema.resultHeading')}</h3>
             <span className="grow" />
             {result !== null &&
               result !== 'loading' &&
               (result.valid ? (
-                <Badge severity="ok">✓ Соответствует</Badge>
+                <Badge severity="ok">{t('schema.conforms')}</Badge>
               ) : (
-                <Badge severity="poor">✗ ошибок: {result.errors.length}</Badge>
+                <Badge severity="poor">
+                  {t('schema.errorsCount', { count: result.errors.length })}
+                </Badge>
               ))}
           </div>
 
           <div aria-live="polite">
             {result === null && error === null && (
-              <Callout tone="info">
-                Вставьте схему и нажмите «Проверить». Документ берётся из таба «Данные».
-              </Callout>
+              <Callout tone="info">{t('schema.intro')}</Callout>
             )}
 
             {error !== null && (
-              <Callout tone="poor" title="Валидация не выполнена">
+              <Callout tone="poor" title={t('schema.validationFailedTitle')}>
                 {error}
                 <div className="row row--gap">
-                  <Button onClick={run}>Повторить</Button>
+                  <Button onClick={run}>{t('common.retry')}</Button>
                 </div>
               </Callout>
             )}
 
             {result === 'loading' && (
               <div className="loading">
-                <Spinner label="Валидируем в фоновом потоке…" />
+                <Spinner label={t('schema.validatingSpinner')} />
                 <p className="fine">
-                  Таймаут 5 с → поток будет прерван. Это защита от катастрофического бэктрекинга в
-                  <span className="mono"> pattern</span>: остановить зациклившийся regex иначе
-                  нельзя.
+                  {t('schema.timeoutNote1')}
+                  <span className="mono">pattern</span>
+                  {t('schema.timeoutNote2')}
                 </p>
-                <Button onClick={() => job.current?.cancel()}>Отменить</Button>
+                <Button onClick={() => job.current?.cancel()}>{t('data.cancelParse')}</Button>
               </div>
             )}
 
             {result !== null && result !== 'loading' && result.valid && (
-              <Callout tone="ok" title="✓ Документ соответствует схеме">
+              <Callout tone="ok" title={t('schema.conformsTitle')}>
                 <ul className="warns__list">
                   {result.notes.map((n) => (
                     <li key={n}>{n}</li>
@@ -210,12 +223,14 @@ export function SchemaTab({
                   {result.errors.map((e, i) => (
                     <li key={i} className="serror">
                       <div className="serror__head">
-                        <Badge severity="poor">ОШИБКА</Badge>
+                        <Badge severity="poor">{t('schema.errorBadge')}</Badge>
                         <code className="mono">{e.instancePath}</code>
                       </div>
                       <p className="serror__msg">{e.message}</p>
-                      <p className="fine mono">схема: {e.schemaPath}</p>
-                      <Button onClick={() => onOpenData(e.instancePath)}>Показать в данных</Button>
+                      <p className="fine mono">{t('schema.schemaPathLabel', { path: e.schemaPath })}</p>
+                      <Button onClick={() => onOpenData(e.instancePath)}>
+                        {t('schema.showInData')}
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -231,11 +246,15 @@ export function SchemaTab({
       </div>
 
       <Callout tone="warn">
-        ⚠ Валидатор: <span className="mono">@cfworker/json-schema</span>. Он не выполняет код (CSP
-        MV3 запрещает <span className="mono">eval</span> и <span className="mono">new Function</span>,
-        поэтому AJV здесь физически невозможен), а значит НЕ поддерживает:{' '}
-        <span className="mono">$ref</span> на внешние URL (сети у расширения нет вообще — такая
-        схема отклоняется с явной ошибкой, а не молча пропускается) и custom keywords.
+        {t('schema.validatorNote1')}
+        <span className="mono">@cfworker/json-schema</span>
+        {t('schema.validatorNote2')}
+        <span className="mono">eval</span>
+        {t('schema.validatorNote3')}
+        <span className="mono">new Function</span>
+        {t('schema.validatorNote4')}
+        <span className="mono">$ref</span>
+        {t('schema.validatorNote5')}
       </Callout>
     </div>
   );

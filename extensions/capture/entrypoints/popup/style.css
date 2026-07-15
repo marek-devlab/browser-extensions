@@ -144,10 +144,23 @@ select {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+  /* RU/ET button labels ("● Open recorder window") are longer than EN. Let the
+     pair wrap to two rows in the 320px popup instead of clipping. */
+  flex-wrap: wrap;
 }
 
 .actions .ui-btn {
-  flex: 1;
+  /* min-width:0 so a long label can shrink/wrap rather than force overflow. */
+  flex: 1 1 130px;
+  min-width: 0;
+  text-align: center;
+}
+
+/* A long localised field label must be able to wrap beside its control rather
+   than push the select off the edge. */
+.field label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .shortcuts {

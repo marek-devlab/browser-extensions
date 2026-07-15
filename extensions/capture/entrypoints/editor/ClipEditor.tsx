@@ -3,8 +3,15 @@ import { Button, Callout, Spinner } from '@blur/ui';
 import { clipBlob } from '../../utils/db';
 import { newRegionId, patchEdit, useEdit } from '../../utils/edit-store';
 import { formatDuration } from '../../utils/format';
+import { useT, type MsgKey } from '../../utils/i18n';
 import { usePrefs } from '../../utils/use-prefs';
 import type { Clip, RedactionMode, RedactionRegion } from '../../utils/types';
+
+const LABEL_KEY: Record<RedactionMode, MsgKey> = {
+  fill: 'label_fill',
+  blur: 'label_blur',
+  pixelate: 'label_pixelate',
+};
 
 // CLIP EDITOR (design capture.md §2.6). Real video, real trim, real redaction
 // rectangles over the real frame.
@@ -26,6 +33,7 @@ import type { Clip, RedactionMode, RedactionRegion } from '../../utils/types';
 // clip — covering too much is safe, covering too little is not (§7.5).
 
 export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => void }) {
+  const t = useT();
   const edit = useEdit(clip.id, clip.durationMs);
   const { prefs } = usePrefs();
   const [url, setUrl] = useState<string | null>(null);
@@ -86,7 +94,7 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
     <div className="editor-grid">
       <div className="editor-main">
         {err && (
-          <Callout tone="warn" title="Не удалось открыть запись">
+          <Callout tone="warn" title={t('ed_open_fail')}>
             {err}
           </Callout>
         )}
@@ -140,7 +148,7 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
                 className="preview-video"
               />
             ) : (
-              <Spinner label="Открываем запись…" />
+              <Spinner label={t('ed_open_spin')} />
             )}
             {[...edit.regions, ...(drawing ? [drawing] : [])].map((r) => (
               <div
@@ -153,14 +161,14 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
                   height: `${r.h * 100}%`,
                 }}
               >
-                {r.mode !== 'fill' && 'косметика'}
+                {r.mode !== 'fill' && t('cosmetic_tag')}
               </div>
             ))}
           </div>
           <p className="muted">
-            Тяните мышью по кадру, чтобы добавить область «{LABEL[mode]}». Прямоугольник{' '}
-            <strong>неподвижен</strong>: если содержимое под ним прокручивается, секрет из-под
-            него выедет — проверьте предпросмотром весь интервал.
+            {t('ed_draw_hint_1', { label: t(LABEL_KEY[mode]) })}
+            <strong>{t('ed_draw_hint_strong')}</strong>
+            {t('ed_draw_hint_2')}
           </p>
         </div>
 
@@ -179,7 +187,7 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
           </div>
           <div className="trim-inputs">
             <label>
-              ◀ начало
+              {t('tl_start')}
               <input
                 type="range"
                 min={0}
@@ -191,7 +199,7 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
               />
             </label>
             <label>
-              конец ▶
+              {t('tl_end')}
               <input
                 type="range"
                 min={0}
@@ -204,42 +212,49 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
             </label>
           </div>
           <p className="muted mono">
-            {formatDuration(edit.trimInMs)} → {formatDuration(edit.trimOutMs)} · после обрезки{' '}
-            {formatDuration(trimmed)} (было {formatDuration(duration)})
+            {t('ed_trim_summary', {
+              in: formatDuration(edit.trimInMs),
+              out: formatDuration(edit.trimOutMs),
+              trimmed: formatDuration(trimmed),
+              dur: formatDuration(duration),
+            })}
           </p>
         </div>
       </div>
 
       <aside className="editor-side">
-        <h3>Слои</h3>
+        <h3>{t('ed_layers')}</h3>
         <ul className="layers">
-          {fills.length > 0 && <li>🔒 Заливка ×{fills.length}</li>}
+          {fills.length > 0 && <li>{t('ed_layer_fill', { n: fills.length })}</li>}
           {cosmetic.length > 0 && (
-            <li className="warn-text">⚠ Косметика ×{cosmetic.length} — не защита</li>
+            <li className="warn-text">{t('ed_layer_cosmetic', { n: cosmetic.length })}</li>
           )}
-          {edit.watermark && <li>💧 Watermark</li>}
-          {edit.regions.length === 0 && !edit.watermark && <li className="muted">Пусто</li>}
+          {edit.watermark && <li>{t('ed_layer_watermark')}</li>}
+          {edit.regions.length === 0 && !edit.watermark && (
+            <li className="muted">{t('ed_layer_empty')}</li>
+          )}
         </ul>
 
         {/* GROUP 1 — the ONLY protection group. */}
         <div className="tool-group">
-          <h4>🔒 Скрыть данные</h4>
+          <h4>{t('ed_hide_group')}</h4>
           <label className="radio-inline">
             <input type="radio" checked={mode === 'fill'} onChange={() => setMode('fill')} />
-            Заливка
+            {t('label_fill')}
           </label>
           <p className="muted">
-            Пиксели под прямоугольником <strong>удаляются</strong> и заменяются сплошным
-            цветом. Восстановить их из файла невозможно.
+            {t('ed_fill_desc_1')}
+            <strong>{t('ed_fill_desc_strong')}</strong>
+            {t('ed_fill_desc_2')}
           </p>
         </div>
 
         {/* GROUP 2 — physically separate, with a warning that cannot be collapsed. */}
         <div className="tool-group tool-group--cosmetic">
-          <h4>⚠ Косметика — НЕ защита</h4>
+          <h4>{t('ed_cosmetic_group')}</h4>
           <label className="radio-inline">
             <input type="radio" checked={mode === 'blur'} onChange={() => setMode('blur')} />
-            Блюр
+            {t('label_blur')}
           </label>
           <label className="radio-inline">
             <input
@@ -247,34 +262,28 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
               checked={mode === 'pixelate'}
               onChange={() => setMode('pixelate')}
             />
-            Пикселизация
+            {t('label_pixelate')}
           </label>
           <Callout tone="warn">
-            <strong>Блюр и пикселизация обратимы.</strong> Unredacter и Depix восстанавливают
-            текст из размытого и пикселизованного изображения — включая пароли, ключи и номера
-            карт. Это не теория: их авторы делали это публично. Для секретов берите заливку.
+            <strong>{t('ed_cosmetic_warn_strong')}</strong> {t('ed_cosmetic_warn_body')}
             <details>
-              <summary>Почему?</summary>
-              Bishop Fox (Unredacter, 2022) брутфорсом подбирает исходный текст под
-              пикселизацией; Depix делает то же по шаблонам. Блюр — это свёртка, обратимая при
-              известном ядре и малом алфавите (моноширинный текст на ровном фоне — идеальный
-              случай для атаки). Прямая рекомендация авторов: «Never use text pixelation to
-              redact sensitive information».
+              <summary>{t('ed_why')}</summary>
+              {t('ed_cosmetic_why_body')}
             </details>
           </Callout>
         </div>
 
         {edit.regions.length > 0 && (
           <div className="tool-group">
-            <h4>Области</h4>
+            <h4>{t('ed_areas')}</h4>
             {edit.regions.map((r) => (
               <div key={r.id} className="region-row">
-                <span>{LABEL[r.mode]}</span>
+                <span>{t(LABEL_KEY[r.mode])}</span>
                 {r.mode === 'fill' && (
                   <input
                     type="color"
                     value={r.fill ?? '#000000'}
-                    aria-label="Цвет заливки"
+                    aria-label={t('ed_fill_color_aria')}
                     onChange={(e) =>
                       patchEdit({
                         regions: edit.regions.map((x) =>
@@ -291,7 +300,7 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
                     patchEdit({ regions: edit.regions.filter((x) => x.id !== r.id) })
                   }
                 >
-                  Удалить
+                  {t('delete')}
                 </button>
               </div>
             ))}
@@ -299,12 +308,8 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
         )}
 
         <div className="tool-group">
-          <h4>💧 Watermark</h4>
-          <p className="muted">
-            Накладывается при экспорте — так его можно поменять или снять, не переснимая.
-            Живого оверлея во время записи нет намеренно: он сжёг бы CPU ровно тогда, когда
-            его не хватает энкодеру, и испортил бы сам материал (design §4.5).
-          </p>
+          <h4>{t('ed_layer_watermark')}</h4>
+          <p className="muted">{t('ed_wm_desc')}</p>
           <label className="check-inline">
             <input
               type="checkbox"
@@ -322,13 +327,13 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
                 })
               }
             />
-            Наложить watermark
+            {t('ed_wm_apply')}
           </label>
           {edit.watermark && (
             <input
               type="text"
               value={edit.watermark.text}
-              aria-label="Текст watermark"
+              aria-label={t('ed_wm_text_aria')}
               onChange={(e) =>
                 patchEdit({
                   watermark: { ...edit.watermark!, text: e.target.value },
@@ -339,15 +344,9 @@ export function ClipEditor({ clip, onExport }: { clip: Clip; onExport: () => voi
         </div>
 
         <Button variant="primary" onClick={onExport}>
-          Экспорт →
+          {t('ed_export_btn')}
         </Button>
       </aside>
     </div>
   );
 }
-
-const LABEL: Record<RedactionMode, string> = {
-  fill: 'Заливка',
-  blur: 'Блюр',
-  pixelate: 'Пикселизация',
-};

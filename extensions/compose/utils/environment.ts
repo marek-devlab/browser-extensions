@@ -9,6 +9,8 @@
 // — they exist for the length of one preview dialog and then live in the user's
 // own draft. And there is no network lookup of any kind (no IP, no geo).
 
+import type { MsgKey } from './i18n';
+
 export interface EnvFacts {
   browser: string;
   os: string;
@@ -33,6 +35,8 @@ interface UADataLike {
 export async function collectEnv(opts: {
   includeFullUA: boolean;
   url?: string;
+  /** Localized word for "window" in the screen line (defaults to English). */
+  window?: string;
 }): Promise<EnvFacts> {
   const nav = navigator as Navigator & { userAgentData?: UADataLike };
   const uaData = nav.userAgentData;
@@ -67,7 +71,8 @@ export async function collectEnv(opts: {
   if (!os) os = guessOsFromUA(nav.userAgent);
 
   const dpr = window.devicePixelRatio || 1;
-  const screenText = `${screen.width}×${screen.height}${dpr !== 1 ? ` @${dpr}x` : ''}, окно ${window.innerWidth}×${window.innerHeight}`;
+  const win = opts.window ?? 'window';
+  const screenText = `${screen.width}×${screen.height}${dpr !== 1 ? ` @${dpr}x` : ''}, ${win} ${window.innerWidth}×${window.innerHeight}`;
 
   return {
     browser: browser || '—',
@@ -80,16 +85,20 @@ export async function collectEnv(opts: {
   };
 }
 
-/** The markdown table that gets inserted into the draft (design §2.9). */
-export function envToMarkdown(env: EnvFacts): string {
+type Translate = (key: MsgKey, vars?: Record<string, string | number>) => string;
+
+/** The markdown table that gets inserted into the draft (design §2.9). The row
+ *  LABELS follow the UI language; the VALUES are the user's own environment. */
+export function envToMarkdown(env: EnvFacts, t?: Translate): string {
+  const label = (key: MsgKey, fallback: string) => (t ? t(key) : fallback);
   const rows: [string, string][] = [
-    ['Браузер', env.browser],
-    ['ОС', env.os],
-    ['Экран', env.screen],
-    ['Часовой пояс', env.timezone],
-    ['Язык', env.language],
+    [label('env_row_browser', 'Browser'), env.browser],
+    [label('env_row_os', 'OS'), env.os],
+    [label('env_row_screen', 'Screen'), env.screen],
+    [label('env_row_timezone', 'Time zone'), env.timezone],
+    [label('env_row_language', 'Language'), env.language],
   ];
-  if (env.url) rows.push(['URL страницы', env.url]);
+  if (env.url) rows.push([label('env_row_url', 'Page URL'), env.url]);
   if (env.userAgent) rows.push(['User-Agent', '`' + env.userAgent + '`']);
 
   const escapeCell = (s: string) => s.replace(/\|/g, '\\|');

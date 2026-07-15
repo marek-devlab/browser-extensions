@@ -15,8 +15,9 @@ import {
   translitExample,
   type SlugOptions,
 } from '../utils/translit';
-import { LIMITS, targetInfo } from '../utils/targets';
+import { LIMITS } from '../utils/targets';
 import { countText, type Counts } from '../utils/counter';
+import { useT, type MsgKey } from '../utils/i18n';
 import type { Settings, Target, TranslitStandard } from '../utils/types';
 
 // The ToolDrawer (design §1.3, §2.5–2.7). ONE drawer, three tabs, always ABOVE
@@ -31,11 +32,16 @@ import type { Settings, Target, TranslitStandard } from '../utils/types';
 
 export type DrawerTab = 'find' | 'translit' | 'stats';
 
-const TABS: { id: DrawerTab; label: string; glyph: string }[] = [
-  { id: 'find', label: 'Найти и заменить', glyph: '🔎' },
-  { id: 'translit', label: 'Транслитерация', glyph: '⇄' },
-  { id: 'stats', label: 'Статистика', glyph: '📊' },
+const TABS: { id: DrawerTab; label: MsgKey; glyph: string }[] = [
+  { id: 'find', label: 'tab_find', glyph: '🔎' },
+  { id: 'translit', label: 'tab_translit', glyph: '⇄' },
+  { id: 'stats', label: 'tab_stats', glyph: '📊' },
 ];
+
+/** Standard id → its translated label key (drop the hyphen: gost-b → gostb). */
+function stdLabelKey(id: TranslitStandard): MsgKey {
+  return `translit_${id.replace('-', '')}_label` as MsgKey;
+}
 
 export interface DrawerProps {
   tab: DrawerTab;
@@ -55,29 +61,30 @@ export interface DrawerProps {
 
 export function ToolDrawer(props: DrawerProps) {
   const { tab, onTab } = props;
+  const t = useT();
 
   const onKeyNav = (e: React.KeyboardEvent) => {
-    const i = TABS.findIndex((t) => t.id === tab);
+    const i = TABS.findIndex((tb) => tb.id === tab);
     if (e.key === 'ArrowRight') onTab(TABS[(i + 1) % TABS.length].id);
     if (e.key === 'ArrowLeft') onTab(TABS[(i - 1 + TABS.length) % TABS.length].id);
   };
 
   return (
-    <section id="cw-drawer" className="cw-drawer" aria-label="Инструменты редактора">
-      <div className="cw-tablist" role="tablist" aria-label="Инструменты" onKeyDown={onKeyNav}>
-        {TABS.map((t) => (
+    <section id="cw-drawer" className="cw-drawer" aria-label={t('drawer_aria')}>
+      <div className="cw-tablist" role="tablist" aria-label={t('drawer_tools')} onKeyDown={onKeyNav}>
+        {TABS.map((tb) => (
           <button
-            key={t.id}
+            key={tb.id}
             role="tab"
             type="button"
-            id={`cw-tab-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={tab === t.id ? `cw-panel-${t.id}` : undefined}
-            tabIndex={tab === t.id ? 0 : -1}
-            className={tab === t.id ? 'cw-tab cw-tab--active' : 'cw-tab'}
-            onClick={() => onTab(t.id)}
+            id={`cw-tab-${tb.id}`}
+            aria-selected={tab === tb.id}
+            aria-controls={tab === tb.id ? `cw-panel-${tb.id}` : undefined}
+            tabIndex={tab === tb.id ? 0 : -1}
+            className={tab === tb.id ? 'cw-tab cw-tab--active' : 'cw-tab'}
+            onClick={() => onTab(tb.id)}
           >
-            {t.glyph} {t.label}
+            {tb.glyph} {t(tb.label)}
           </button>
         ))}
       </div>
@@ -105,6 +112,7 @@ function FindReplace({
   onScrollTo,
   onReplaceAll,
 }: DrawerProps) {
+  const t = useT();
   const [pattern, setPattern] = useState('');
   const [replacement, setReplacement] = useState('');
   const [useRegex, setUseRegex] = useState(true);
@@ -133,7 +141,7 @@ function FindReplace({
       return;
     }
     setBusy(true);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void runRegex(
         { pattern, flags, text: body, replacement, regex: useRegex },
         settings.regexTimeoutMs,
@@ -144,7 +152,7 @@ function FindReplace({
         onMatches(o.status === 'ok' ? o.result.matches : [], 0);
       });
     }, 150);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pattern, replacement, flags, useRegex, body, settings.regexTimeoutMs, retry]);
 
@@ -161,12 +169,12 @@ function FindReplace({
   const replaceOne = () => {
     const m = matches[current];
     if (!m) return;
-    onReplaceAll(applyReplacements(body, [m]), 'до замены');
+    onReplaceAll(applyReplacements(body, [m]), t('snap_before_replace'));
   };
 
   const replaceAll = () => {
     if (matches.length === 0) return;
-    onReplaceAll(applyReplacements(body, matches), `до «Заменить всё» (${matches.length})`);
+    onReplaceAll(applyReplacements(body, matches), t('snap_before_replace_all', { n: matches.length }));
   };
 
   const lineOf = (offset: number) => body.slice(0, offset).split('\n').length;
@@ -174,25 +182,25 @@ function FindReplace({
   return (
     <div className="cw-find">
       <label className="cw-field">
-        Найти
+        {t('find_label')}
         <input
           ref={findRef}
           className="cw-input mono"
           value={pattern}
           onChange={(e) => setPattern(e.target.value)}
-          aria-label="Шаблон поиска"
+          aria-label={t('find_pattern_aria')}
           aria-invalid={outcome?.status === 'invalid'}
           aria-describedby={outcome?.status === 'invalid' ? 'cw-regex-error' : undefined}
-          placeholder={useRegex ? '(\\d{4})-(\\d{2})-(\\d{2})' : 'текст'}
+          placeholder={useRegex ? '(\\d{4})-(\\d{2})-(\\d{2})' : t('find_placeholder_text')}
         />
       </label>
       <label className="cw-field">
-        Заменить
+        {t('replace_label')}
         <input
           className="cw-input mono"
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
-          aria-label="Замена"
+          aria-label={t('find_replace_aria')}
           placeholder="$3.$2.$1"
         />
       </label>
@@ -204,7 +212,7 @@ function FindReplace({
         </label>
         {useRegex && (
           <>
-            <span>Флаги:</span>
+            <span>{t('find_flags')}</span>
             {['g', 'i', 'm', 's', 'u', 'v'].map((f) => (
               <label key={f}>
                 <input
@@ -221,42 +229,40 @@ function FindReplace({
         )}
       </div>
 
-      {busy && <Spinner label="Поиск в отдельном потоке…" />}
+      {busy && <Spinner label={t('find_searching')} />}
 
       {!busy && outcome?.status === 'ok' && (
         <>
           <p role="status">
             <Badge severity={matches.length > 0 ? 'ok' : 'info'}>
-              {matches.length} совпадений
+              {t('find_matches', { n: matches.length })}
             </Badge>
             {outcome.result.groupNames.length > 0 && (
-              <span className="cw-hint"> группы: {outcome.result.groupNames.join(', ')}</span>
+              <span className="cw-hint"> {t('find_groups', { names: outcome.result.groupNames.join(', ') })}</span>
             )}
-            {outcome.result.truncated && (
-              <span className="cw-hint"> · показаны первые 5000 — уточните шаблон</span>
-            )}
+            {outcome.result.truncated && <span className="cw-hint"> · {t('find_truncated')}</span>}
           </p>
 
           {matches.length > 0 && replacement !== '' && (
             <>
-              <p className="cw-hint">Предпросмотр замен (применится {matches.length}):</p>
+              <p className="cw-hint">{t('find_preview_intro', { n: matches.length })}</p>
               <ul className="cw-preview-list mono">
                 {matches.slice(0, 5).map((m, i) => (
                   <li key={i}>
-                    стр. {lineOf(m.start)} · {body.slice(m.start, m.end)} → {m.replaced}
+                    {t('find_line_prefix')} {lineOf(m.start)} · {body.slice(m.start, m.end)} → {m.replaced}
                   </li>
                 ))}
-                {matches.length > 5 && <li>…ещё {matches.length - 5}</li>}
+                {matches.length > 5 && <li>{t('find_more', { n: matches.length - 5 })}</li>}
               </ul>
             </>
           )}
 
           <div className="cw-actions">
-            <Button onClick={() => step(-1)} disabled={matches.length === 0}>◀ Пред</Button>
-            <Button onClick={() => step(1)} disabled={matches.length === 0}>След ▶</Button>
-            <Button onClick={replaceOne} disabled={matches.length === 0}>Заменить</Button>
+            <Button onClick={() => step(-1)} disabled={matches.length === 0}>{t('btn_prev')}</Button>
+            <Button onClick={() => step(1)} disabled={matches.length === 0}>{t('btn_next')}</Button>
+            <Button onClick={replaceOne} disabled={matches.length === 0}>{t('btn_replace')}</Button>
             <Button variant="primary" onClick={replaceAll} disabled={matches.length === 0}>
-              Заменить всё ({matches.length})
+              {t('btn_replace_all', { n: matches.length })}
             </Button>
           </div>
         </>
@@ -264,12 +270,10 @@ function FindReplace({
 
       {!busy && outcome?.status === 'invalid' && (
         <div role="alert" className="cw-invalid" id="cw-regex-error">
-          <p>⚠️ {outcome.message}</p>
-          <p className="cw-hint">
-            Хотите искать эти символы буквально? Снимите галку «Regex».
-          </p>
+          <p>⚠️ {t(outcome.message as MsgKey)}</p>
+          <p className="cw-hint">{t('find_literal_hint')}</p>
           <details>
-            <summary>Оригинал ошибки браузера</summary>
+            <summary>{t('find_error_original')}</summary>
             <pre className="mono">{outcome.original}</pre>
           </details>
         </div>
@@ -277,27 +281,23 @@ function FindReplace({
 
       {!busy && outcome?.status === 'timeout' && (
         <div role="alert" className="cw-invalid">
-          <p>⚠️ Поиск остановлен — {outcome.timeoutMs} мс</p>
-          <p className="cw-hint">
-            Этот шаблон слишком долго ищет в вашем тексте. Обычно так ведут себя вложенные
-            повторы вроде (a+)+ — они перебирают комбинации экспоненциально. Поиск выполнялся в
-            отдельном потоке и был прерван, поэтому редактор не завис и черновик не пострадал.
-          </p>
+          <p>⚠️ {t('find_timeout', { ms: outcome.timeoutMs })}</p>
+          <p className="cw-hint">{t('find_timeout_body')}</p>
           <ul className="cw-hint">
-            <li>убрать вложенный квантификатор: (a+)+ → a+</li>
-            <li>уточнить шаблон вместо .*</li>
-            <li>увеличить таймаут в настройках (до 2000 мс)</li>
+            <li>{t('find_timeout_li1')}</li>
+            <li>{t('find_timeout_li2')}</li>
+            <li>{t('find_timeout_li3')}</li>
           </ul>
           <div className="cw-actions">
-            <Button onClick={() => findRef.current?.focus()}>Изменить шаблон</Button>
-            <Button onClick={() => setRetry((n) => n + 1)}>Повторить</Button>
+            <Button onClick={() => findRef.current?.focus()}>{t('btn_edit_pattern')}</Button>
+            <Button onClick={() => setRetry((n) => n + 1)}>{t('btn_retry')}</Button>
           </div>
         </div>
       )}
 
       {!busy && outcome?.status === 'error' && (
         <div role="alert" className="cw-invalid">
-          <p>⚠️ {outcome.message}</p>
+          <p>⚠️ {t(outcome.message as MsgKey)}</p>
         </div>
       )}
     </div>
@@ -307,6 +307,7 @@ function FindReplace({
 /* ── Transliteration (design §2.6) ─────────────────────────────────────────*/
 
 function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: DrawerProps) {
+  const t = useT();
   const [standard, setStandard] = useState<TranslitStandard>(settings.translitStandard);
   const hasSelection = selection.end > selection.start;
   const [scope, setScope] = useState<'selection' | 'draft'>(hasSelection ? 'selection' : 'draft');
@@ -340,7 +341,7 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
     if (scope === 'selection' && hasSelection) {
       onReplaceRange(selection.start, selection.end, result);
     } else {
-      onReplaceAll(result, 'до транслитерации всего черновика');
+      onReplaceAll(result, t('snap_before_translit_draft'));
     }
   };
 
@@ -352,7 +353,7 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
   return (
     <div className="cw-translit">
       <div className="cw-field">
-        Источник:
+        {t('translit_source')}
         <label>
           <input
             type="radio"
@@ -361,7 +362,7 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
             disabled={!hasSelection}
             onChange={() => setScope('selection')}
           />{' '}
-          Выделение ({countText(body.slice(selection.start, selection.end)).graphemes} симв.)
+          {t('translit_selection', { n: countText(body.slice(selection.start, selection.end)).graphemes })}
         </label>
         <label>
           <input
@@ -370,20 +371,20 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
             checked={scope === 'draft'}
             onChange={() => setScope('draft')}
           />{' '}
-          Весь черновик
+          {t('translit_whole')}
         </label>
       </div>
 
       <div className="cw-field">
-        Язык:
-        <select value={settings.translitLang} disabled aria-label="Язык источника">
-          <option value="ru">Русский</option>
+        {t('translit_lang_label')}
+        <select value={settings.translitLang} disabled aria-label={t('translit_lang_aria')}>
+          <option value="ru">{t('translit_lang_ru')}</option>
         </select>
-        <span className="cw-hint">Украинский и белорусский — в следующей версии.</span>
+        <span className="cw-hint">{t('translit_lang_next')}</span>
       </div>
 
       <fieldset className="cw-std">
-        <legend>Стандарт (пример — на вашем тексте):</legend>
+        <legend>{t('translit_std_legend')}</legend>
         {TRANSLIT_STANDARDS.map((s) => (
           <label key={s.id} className="cw-std__row">
             <input
@@ -393,27 +394,24 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
               onChange={() => setStandard(s.id)}
             />
             <span>
-              {s.label}
-              {s.reversible ? ' (обратимо)' : ''}
+              {t(stdLabelKey(s.id))}
+              {s.reversible ? ` ${t('translit_reversible')}` : ''}
             </span>
             <span className="mono cw-std__ex">{translitExample(s.id, sample, slug)}</span>
           </label>
         ))}
       </fieldset>
 
-      <p className="cw-hint">
-        ⓘ Стандарты дают РАЗНЫЙ результат. Паспортный — то, что напишут в загранпаспорте. Slug — то,
-        что примет git и якорь в Markdown. Настройки slug (разделитель, длина) — в Настройках.
-      </p>
+      <p className="cw-hint">{t('translit_explain')}</p>
 
-      <p className="cw-hint">Результат:</p>
+      <p className="cw-hint">{t('translit_result')}</p>
       <div className="cw-result mono">{result || '—'}</div>
 
       <div className="cw-actions">
         <Button variant="primary" onClick={apply} disabled={result === ''}>
-          {scope === 'selection' && hasSelection ? 'Заменить выделение' : 'Заменить черновик'}
+          {scope === 'selection' && hasSelection ? t('btn_replace_selection') : t('btn_replace_draft')}
         </Button>
-        <Button onClick={insertBeside} disabled={result === ''}>Вставить рядом</Button>
+        <Button onClick={insertBeside} disabled={result === ''}>{t('btn_insert_beside')}</Button>
         <Button
           onClick={() => {
             void navigator.clipboard
@@ -423,7 +421,7 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
           }}
           disabled={result === ''}
         >
-          {copied ? 'Скопировано' : 'Копировать'}
+          {copied ? t('btn_copied') : t('btn_copy')}
         </Button>
       </div>
     </div>
@@ -433,16 +431,17 @@ function Translit({ body, selection, settings, onReplaceAll, onReplaceRange }: D
 /* ── Stats (design §2.7) ───────────────────────────────────────────────────*/
 
 function Stats({ body, selection, counts, settings, target }: DrawerProps) {
+  const t = useT();
   const selText = body.slice(selection.start, selection.end);
   const sel = selText ? countText(selText) : null;
 
-  const rows: [string, string, number, number | undefined][] = [
-    ['Символы (графемы)', 'то, что видит человек', counts.graphemes, sel?.graphemes],
-    ['UTF-16 code units', 'то, что считает JS', counts.utf16, sel?.utf16],
-    ['Байты (UTF-8)', 'лимиты БД и HTTP', counts.bytes, sel?.bytes],
-    ['Слова', '', counts.words, sel?.words],
-    ['Строки', '', counts.lines, sel?.lines],
-    ['Абзацы', '', counts.paragraphs, sel?.paragraphs],
+  const rows: [MsgKey, MsgKey | null, number, number | undefined][] = [
+    ['stat_graphemes', 'stat_graphemes_note', counts.graphemes, sel?.graphemes],
+    ['stat_utf16', 'stat_utf16_note', counts.utf16, sel?.utf16],
+    ['stat_bytes', 'stat_bytes_note', counts.bytes, sel?.bytes],
+    ['stat_words', null, counts.words, sel?.words],
+    ['stat_lines', null, counts.lines, sel?.lines],
+    ['stat_paragraphs', null, counts.paragraphs, sel?.paragraphs],
   ];
 
   const longestLine = useMemo(
@@ -462,42 +461,43 @@ function Stats({ body, selection, counts, settings, target }: DrawerProps) {
     return settings.counterLimits[limitPrefKey(l.id)] ?? true;
   });
 
+  const unitLabel = (unit: string) => (unit === 'utf16' ? 'UTF-16' : t(`unit_${unit}` as MsgKey));
+
   return (
     <div className="cw-stats">
       <table className="cw-stats__table">
         <thead>
           <tr>
-            <th scope="col">Метрика</th>
-            <th scope="col">Весь черновик</th>
-            <th scope="col">Выделение</th>
+            <th scope="col">{t('stats_metric')}</th>
+            <th scope="col">{t('stats_whole')}</th>
+            <th scope="col">{t('stats_selection')}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([label, note, all, s]) => (
             <tr key={label}>
               <td>
-                {label}
-                {note && <span className="cw-hint"> — {note}</span>}
+                {t(label)}
+                {note && <span className="cw-hint"> — {t(note)}</span>}
               </td>
               <td className="mono">{all}</td>
               <td className="mono">{s ?? '—'}</td>
             </tr>
           ))}
           <tr>
-            <td>Время чтения</td>
-            <td className="mono">~{counts.readingMinutes} мин</td>
+            <td>{t('stat_reading')}</td>
+            <td className="mono">~{counts.readingMinutes} {t('unit_min_short')}</td>
             <td />
           </tr>
         </tbody>
       </table>
 
       <p className="cw-hint">
-        ⚠️ «👍» — это 1 символ, но 2 UTF-16 и 4 байта. «🇺🇦» — 1 символ, 4 UTF-16. Поэтому чисел
-        несколько, а не одно.
-        {counts.approximate && ' В этом браузере нет Intl.Segmenter — графемы посчитаны приблизительно.'}
+        {t('stats_emoji_note')}
+        {counts.approximate && t('stats_approx_note')}
       </p>
 
-      <p className="cw-hint">Лимиты (каждый — в своих единицах, поэтому «312/280» без единиц было бы враньём):</p>
+      <p className="cw-hint">{t('stats_limits_intro')}</p>
       <ul className="cw-limits">
         {limits.map((l) => {
           const used =
@@ -513,7 +513,7 @@ function Stats({ body, selection, counts, settings, target }: DrawerProps) {
           return (
             <li key={l.id} className="cw-limit">
               <span>
-                {l.label} ({l.max} {UNIT_LABEL[l.unit]})
+                {t(`limit_${l.id}` as MsgKey)} ({l.max} {unitLabel(l.unit)})
               </span>
               <span className="cw-bar" aria-hidden="true">
                 <span
@@ -522,25 +522,20 @@ function Stats({ body, selection, counts, settings, target }: DrawerProps) {
                 />
               </span>
               <span className="mono">
-                {used}/{l.max} {over ? '✗ превышен' : '✓'}
+                {used}/{l.max} {over ? t('limit_over') : '✓'}
               </span>
             </li>
           );
         })}
       </ul>
       {settings.limitsFollowTarget && (
-        <p className="cw-hint">Показаны только лимиты площадки «{targetInfo(target).label}».</p>
+        <p className="cw-hint">
+          {t('stats_limits_target', { label: t(`target_${target}` as MsgKey) })}
+        </p>
       )}
     </div>
   );
 }
-
-const UNIT_LABEL: Record<string, string> = {
-  graphemes: 'графем',
-  utf16: 'UTF-16',
-  bytes: 'байт',
-  codepoints: 'code points',
-};
 
 function limitPrefKey(id: string): string {
   if (id === 'commitTitle' || id === 'commitBody') return 'commit';

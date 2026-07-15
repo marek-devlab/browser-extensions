@@ -343,11 +343,11 @@ export async function deleteClip(id: string): Promise<void> {
 export async function clipBlob(clip: Clip): Promise<Blob> {
   if (clip.blobKey) {
     const b = await getBlob(clip.blobKey);
-    if (!b) throw new Error('Данные записи не найдены на диске.');
+    if (!b) throw new Error('Recording data not found on disk.');
     return b;
   }
   if (clip.sessionId) return assembleBlob(clip.sessionId, clip.mimeType);
-  throw new Error('Клип без данных.');
+  throw new Error('Clip has no data.');
 }
 
 // ── Loose blobs (screenshots, imported files, watermark logo) ───────────────
@@ -404,7 +404,7 @@ export function manifestToClip(m: SessionManifest, opts?: { needsRemux?: boolean
   return {
     id: m.id,
     kind: 'video',
-    title: m.host ? `${m.host} · ${new Date(m.startedAt).toLocaleString('ru')}` : 'Запись экрана',
+    title: m.host ? `${m.host} · ${new Date(m.startedAt).toLocaleString('en')}` : 'Screen recording',
     host: m.host,
     createdAt: m.startedAt,
     durationMs: m.durationMs,

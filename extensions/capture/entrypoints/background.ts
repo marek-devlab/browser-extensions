@@ -237,7 +237,7 @@ export default defineBackground({
       if (!caps.canRecord) {
         // 🔴 A platform that cannot record gets an explicit, honest refusal — not
         // a dead button, not a spinner that never resolves (design §8, §12.1).
-        return { ok: false, code: 'unsupported', error: caps.reason ?? 'Запись недоступна.' };
+        return { ok: false, code: 'unsupported', error: caps.reason ?? 'Recording is unavailable.' };
       }
 
       const live = await getLive();
@@ -248,7 +248,7 @@ export default defineBackground({
         return {
           ok: false,
           code: 'busy',
-          error: `Уже идёт запись${live?.host ? ` — ${live.host}` : ''}.`,
+          error: `A recording is already in progress${live?.host ? ` — ${live.host}` : ''}.`,
         };
       }
       // A stale record left by a dead owner must not block a new recording.
@@ -284,15 +284,15 @@ export default defineBackground({
           const granted = await browser.permissions.request({
             permissions: ['desktopCapture'],
           });
-          if (!granted) return { ok: false, code: 'denied', error: 'Доступ к экрану не выдан.' };
+          if (!granted) return { ok: false, code: 'denied', error: 'Screen access was not granted.' };
           streamId = await getDesktopStreamId(tab);
         } else {
-          if (tab?.id == null) return { ok: false, error: 'Нет активной вкладки.' };
+          if (tab?.id == null) return { ok: false, error: 'No active tab.' };
           streamId = await getTabStreamId(tab.id);
         }
       } catch (err) {
         if (err instanceof Error && err.message === 'CANCELLED') {
-          return { ok: false, code: 'denied', error: 'Выбор источника отменён.' };
+          return { ok: false, code: 'denied', error: 'Source selection was cancelled.' };
         }
         throw err;
       }
@@ -311,7 +311,7 @@ export default defineBackground({
       if (!reply?.ok) {
         await closeOffscreen();
         await setBadge('error');
-        return reply ?? { ok: false, error: 'Offscreen-документ не ответил.' };
+        return reply ?? { ok: false, error: 'The offscreen document did not respond.' };
       }
 
       // ONLY NOW the window: the stream is already live, so the cost of creating
@@ -351,7 +351,8 @@ export default defineBackground({
         await setBadge('error');
         return {
           ok: false,
-          error: 'Владелец записи не отвечает. Запись прервана; записанное сохранено — откройте Библиотеку.',
+          error:
+            'The recording owner is not responding. The recording was interrupted; what was recorded is saved — open the Library.',
         };
       }
       return reply;
@@ -373,7 +374,7 @@ export default defineBackground({
     // ── SCREENSHOT (design §4.2, §5.14) ──────────────────────────────────────
     async function screenshot(): Promise<Reply> {
       if (!caps.canScreenshot) {
-        return { ok: false, code: 'unsupported', error: 'Снимок вкладки недоступен.' };
+        return { ok: false, code: 'unsupported', error: 'Tab screenshot is unavailable.' };
       }
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       let blob: Blob;
@@ -393,7 +394,7 @@ export default defineBackground({
       await putClip({
         id,
         kind: 'screenshot',
-        title: `Скриншот · ${safeHost(tab?.url) || 'вкладка'}`,
+        title: `Screenshot · ${safeHost(tab?.url) || 'tab'}`,
         host: safeHost(tab?.url),
         createdAt: Date.now(),
         durationMs: 0,
@@ -441,7 +442,7 @@ export default defineBackground({
           };
         }
       ).chrome?.offscreen;
-      if (!api) throw new Error('chrome.offscreen недоступен.');
+      if (!api) throw new Error('chrome.offscreen is not available.');
       await api.createDocument({
         url: 'offscreen.html',
         reasons: ['USER_MEDIA'],

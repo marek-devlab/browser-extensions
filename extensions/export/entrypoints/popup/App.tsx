@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { Button, Callout, EmptyState, ErrorState, Spinner, ThemeToggle } from '@blur/ui';
+import { Button, Callout, EmptyState, ErrorState, LocaleProvider, Spinner, ThemeToggle, useLocale, useLocaleController } from '@blur/ui';
 import { useExportTheme } from '../../utils/theme';
 import { NoPageAccess, runOnActiveTab } from '../../utils/inject';
+import { localeItem } from '../../utils/storage';
+import { localeTag, useT } from '../../utils/i18n';
 import type { EngineCommand } from '../../utils/messages';
 import type { PageInventory, TableModel } from '../../utils/types';
 
@@ -23,6 +25,23 @@ import type { PageInventory, TableModel } from '../../utils/types';
 const hasContextMenus = Boolean(browser.contextMenus?.create);
 
 export function App() {
+  // Locale seed key reuses the theme prefix (`blur-export:`) so a switch is
+  // flash-free on the next open, exactly like the theme (see @blur/ui/i18n).
+  const { locale } = useLocaleController({
+    key: 'blur-export:locale',
+    read: () => localeItem.getValue(),
+    write: (l) => localeItem.setValue(l),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <AppBody />
+    </LocaleProvider>
+  );
+}
+
+function AppBody() {
+  const t = useT();
+  const tag = localeTag(useLocale());
   const { theme, setTheme } = useExportTheme();
   const [inv, setInv] = useState<PageInventory | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,13 +54,9 @@ export function App() {
       if (res.ok && res.kind === 'scan') setInv(res.inventory);
       else if (!res.ok) setError(res.error);
     } catch (e) {
-      setError(
-        e instanceof NoPageAccess
-          ? e.message
-          : 'Не удалось прочитать страницу. Перезагрузите её и попробуйте снова.',
-      );
+      setError(e instanceof NoPageAccess ? e.message : t('scanError'));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void scan();
@@ -66,7 +81,7 @@ export function App() {
     <div className="popup">
       <header className="head">
         <div className="head__top">
-          <h1>💾 Экспорт контента</h1>
+          <h1>💾 {t('popupTitle')}</h1>
           <ThemeToggle theme={theme ?? 'auto'} onChange={setTheme} />
         </div>
         <span className="host mono" title={inv?.host}>
@@ -77,28 +92,25 @@ export function App() {
       {error ? (
         <ErrorState message={error} retry={() => void scan()} />
       ) : !inv ? (
-        <Spinner label="Читаю страницу…" />
+        <Spinner label={t('reading')} />
       ) : nothing ? (
         <EmptyState
-          title="На этой странице нечего экспортировать"
-          hint={
-            <>
-              Выделите текст{hasContextMenus ? ' и нажмите правой кнопкой' : ' и откройте это меню снова'},
-              или откройте страницу с таблицей. Таблицы, которые страница рисует не тегом
-              &lt;table&gt; (div-«таблицы», Canvas), мы не видим — это честное ограничение,
-              а не поломка.
-            </>
-          }
+          title={t('nothingTitle')}
+          hint={t('nothingHint', {
+            action: hasContextMenus ? t('actionRightClick') : t('actionOpenMenu'),
+          })}
         />
       ) : (
         <>
           {inv.selection && (
             <section>
-              <h2>Выделение</h2>
+              <h2>{t('selectionHeading')}</h2>
               <p className="line">
-                {inv.selection.chars.toLocaleString('ru-RU')} символов,{' '}
-                {inv.selection.paragraphs}{' '}
-                {inv.selection.paragraphs === 1 ? 'абзац' : 'абзаца'}
+                {t('selectionLine', {
+                  chars: inv.selection.chars.toLocaleString(tag),
+                  paragraphs: inv.selection.paragraphs,
+                  unit: inv.selection.paragraphs === 1 ? t('paragraphOne') : t('paragraphOther'),
+                })}
               </p>
               <div className="btnrow">
                 <Button
@@ -120,39 +132,36 @@ export function App() {
                   disabled={busy}
                   onClick={() => void act({ type: 'copySelectionMarkdown' })}
                 >
-                  Копировать как MD
+                  {t('copyAsMd')}
                 </Button>
               </div>
             </section>
           )}
 
           <section>
-            <h2>Таблицы · {inv.tables.length}</h2>
+            <h2>{t('tables')} · {inv.tables.length}</h2>
             {inv.tables.length === 0 ? (
-              <p className="line dim">
-                Тегов &lt;table&gt; на странице нет. Данные, нарисованные через div или
-                Canvas, мы не видим.
-              </p>
+              <p className="line dim">{t('noTablesInline')}</p>
             ) : (
               <ul className="tables">
-                {inv.tables.map((t, i) => (
-                  <li key={t.id} className="tbl">
+                {inv.tables.map((tbl, i) => (
+                  <li key={tbl.id} className="tbl">
                     <button
                       className="tbl__btn"
                       disabled={busy}
-                      onClick={() => void act({ type: 'exportTable', tableId: t.id })}
+                      onClick={() => void act({ type: 'exportTable', tableId: tbl.id })}
                     >
                       <span className="tbl__num">{i + 1}</span>
-                      <span className="tbl__name">{t.caption ?? 'без названия'}</span>
+                      <span className="tbl__name">{tbl.caption ?? t('untitled')}</span>
                       <span className="tbl__dim mono">
-                        {t.rows} × {t.cols}
+                        {tbl.rows} × {tbl.cols}
                       </span>
                       <span className="tbl__arrow" aria-hidden="true">
                         →
                       </span>
                     </button>
-                    {warningsOf(t).length > 0 && (
-                      <p className="tbl__warn">{warningsOf(t).join(' · ')}</p>
+                    {warningsOf(tbl, t).length > 0 && (
+                      <p className="tbl__warn">{warningsOf(tbl, t).join(' · ')}</p>
                     )}
                   </li>
                 ))}
@@ -164,72 +173,59 @@ export function App() {
                 disabled={busy || inv.tables.length === 0}
                 onClick={() => void act({ type: 'exportTable' })}
               >
-                Выбрать на странице
+                {t('pickOnPage')}
               </Button>
               <Button
                 variant="ghost"
                 disabled={busy || inv.tables.length < 2}
                 onClick={() => void act({ type: 'exportAllTables' })}
               >
-                Все таблицы →
+                {t('allTables')} →
               </Button>
             </div>
           </section>
 
           <section>
-            <h2>Картинки · {inv.images.total}</h2>
-            <p className="line">крупнее 200×200: {inv.images.largerThan200}</p>
+            <h2>{t('images')} · {inv.images.total}</h2>
+            <p className="line">{t('largerThan200', { n: inv.images.largerThan200 })}</p>
             <div className="btnrow">
               <Button
                 variant="ghost"
                 disabled={busy || inv.images.total === 0}
                 onClick={() => void act({ type: 'pickImage' })}
               >
-                Выбрать картинку на странице
+                {t('pickImageOnPage')}
               </Button>
             </div>
             {!hasContextMenus && (
-              <p className="line dim">
-                На этом устройстве контекстного меню нет — все действия с картинками
-                (копировать URL, открыть, сохранить) доступны отсюда.
-              </p>
+              <p className="line dim">{t('noCtxImagesNote')}</p>
             )}
           </section>
 
           {inv.crossOriginFrames > 0 && (
-            <Callout
-              tone="warn"
-              title={`⚠ ${inv.crossOriginFrames} встроенных фрейма (iframe) с чужого домена`}
-            >
-              Их содержимое прочитать нельзя — для этого нужен доступ к чужим сайтам, а
-              мы его не просим. Откройте фрейм как обычную страницу, и всё заработает.
+            <Callout tone="warn" title={t('crossOriginTitle', { n: inv.crossOriginFrames })}>
+              {t('crossOriginBody')}
             </Callout>
           )}
           {inv.closedShadowHosts > 0 && (
-            <Callout
-              tone="info"
-              title={`⚠ ${inv.closedShadowHosts} компонент(а) со скрытым (closed) содержимым`}
-            >
-              Closed shadow DOM недостижим ни для кого, включая нас. Это ограничение
-              платформы, и мы его называем.
+            <Callout tone="info" title={t('closedShadowTitle', { n: inv.closedShadowHosts })}>
+              {t('closedShadowBody')}
             </Callout>
           )}
         </>
       )}
 
-      <footer className="foot">
-        Ничего не уходит в сеть. Файл собирается у вас в браузере.
-      </footer>
+      <footer className="foot">{t('footer')}</footer>
     </div>
   );
 }
 
 /** Warnings as TEXT, never colour alone (WCAG 1.4.1 — PLAN.md §18a). */
-function warningsOf(t: TableModel): string[] {
+function warningsOf(tbl: TableModel, t: ReturnType<typeof useT>): string[] {
   const w: string[] = [];
-  if (t.hasMergedCells > 0) w.push('⚠ объединённые ячейки');
-  if (t.hasNestedTables > 0) w.push('⚠ вложенные таблицы');
-  if (t.looksLikeLayout) w.push('⚠ похоже на вёрстку, а не данные');
-  if (t.virtualized) w.push('⚠ строки могут подгружаться при прокрутке');
+  if (tbl.hasMergedCells > 0) w.push(t('warnMerged'));
+  if (tbl.hasNestedTables > 0) w.push(t('warnNested'));
+  if (tbl.looksLikeLayout) w.push(t('warnLayout'));
+  if (tbl.virtualized) w.push(t('warnVirtualized'));
   return w;
 }

@@ -30,7 +30,7 @@ export async function getTabStreamId(tabId: number): Promise<string> {
     }
   ).tabCapture;
   if (!api?.getMediaStreamId) {
-    throw new Error('tabCapture недоступен в этом браузере.');
+    throw new Error('tabCapture is not available in this browser.');
   }
   return new Promise<string>((resolve, reject) => {
     try {
@@ -40,7 +40,7 @@ export async function getTabStreamId(tabId: number): Promise<string> {
         ).chrome?.runtime?.lastError;
         if (err) reject(new Error(err.message ?? 'getMediaStreamId failed'));
         else if (id) resolve(id);
-        else reject(new Error('tabCapture не вернул streamId.'));
+        else reject(new Error('tabCapture did not return a streamId.'));
       });
       // Chrome also returns a promise; whichever settles first wins.
       if (maybe && typeof (maybe as Promise<string>).then === 'function') {
@@ -69,7 +69,7 @@ export async function getDesktopStreamId(tab: unknown): Promise<string> {
       };
     }
   ).chrome?.desktopCapture;
-  if (!api) throw new Error('desktopCapture недоступен.');
+  if (!api) throw new Error('desktopCapture is not available.');
   return new Promise<string>((resolve, reject) => {
     api.chooseDesktopMedia(['screen', 'window', 'tab'], tab, (id: string) => {
       // An empty id means the user dismissed the picker. That is a CANCEL, not an
@@ -106,8 +106,8 @@ export async function openChromeStream(
     // The overwhelmingly likely cause is an EXPIRED streamId (design §10.2), and
     // "Unknown error" is exactly the message we promised never to show.
     throw new Error(
-      `Не удалось начать запись — идентификатор потока истёк или доступ отозван. Нажмите на иконку и сразу «Записать». (${
-        err instanceof Error ? err.name : 'ошибка'
+      `Couldn't start recording — the stream id expired or access was revoked. Click the icon and “Record” right away. (${
+        err instanceof Error ? err.name : 'error'
       })`,
     );
   }
@@ -343,11 +343,11 @@ export function shotCooldownLeft(): number {
 export async function captureScreenshot(windowId?: number): Promise<Blob> {
   const left = shotCooldownLeft();
   if (left > 0) {
-    throw new Error(`Скриншоты ограничены двумя в секунду. Подождите ${left} мс.`);
+    throw new Error(`Screenshots are limited to two per second. Wait ${left} ms.`);
   }
   lastShotAt = Date.now();
   const dataUrl = await browser.tabs.captureVisibleTab(windowId as number, { format: 'png' });
-  if (!dataUrl) throw new Error('Не удалось снять эту вкладку.');
+  if (!dataUrl) throw new Error('Couldn’t capture this tab.');
   return dataUrlToBlob(dataUrl);
 }
 

@@ -203,13 +203,33 @@ const MANUAL_REVEAL_ATTR = 'data-bx-manual-revealed';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
+  // Blur must reach content inside cross-origin iframes, not just the top
+  // document. Ad networks (and many embeds) serve their images from <iframe>s,
+  // and a top-frame-only script leaves every one of those sharp — the exact gap
+  // where "some images aren't blurred" on a media-heavy page. `allFrames` runs
+  // the engine in every frame the existing <all_urls> grant already covers (no
+  // new permission), and `matchAboutBlank` additionally reaches about:blank /
+  // srcdoc ad frames that inherit their parent's origin. Tab-level orchestration
+  // (stats, the popup health ping) stays TOP-ONLY — see `isTopFrame` in main().
+  allFrames: true,
+  matchAboutBlank: true,
   // BLOCK-FIRST (PLAN.md §3.1): the pre-blur stylesheet must land before first
   // paint or unblurred content flashes (FOUC), because JS always runs after the
-  // first render. document_start is mandatory, not an optimization.
+  // first render. document_start is mandatory, not an optimization — and it holds
+  // per frame: each iframe pre-blurs before ITS first paint.
   runAt: 'document_start',
   cssInjectionMode: 'ui',
   async main(ctx) {
     const hostname = location.hostname;
+
+    // Blur runs in EVERY frame (allFrames above), but the tab-level orchestration
+    // must speak from ONE frame only: reporting counts to the background/popup and
+    // answering the popup's "whatIsApplied" health ping. If an ad iframe did
+    // either, it would overwrite the popup's counts with its own and answer the
+    // health check in the top frame's place. Everything gated on `isTopFrame`
+    // below is that orchestration; the masking itself is unconditional per frame.
+    // Reference comparison to `window.top` is allowed cross-origin (no throw).
+    const isTopFrame = window === window.top;
 
     let engine: DomRuleEngine | undefined;
     let textBlurrer: TextBlurrer | undefined;
@@ -288,6 +308,11 @@ export default defineContentScript({
     }
 
     function report(): void {
+      // Only the top frame speaks for the tab (see `isTopFrame`). Sub-frames blur
+      // their own content but never report, or the popup's counts would become
+      // whatever the last ad iframe happened to send (with its own hostname and a
+      // -1 tab id). Counts therefore stay top-frame-only, exactly as before.
+      if (!isTopFrame) return;
       // Coalesce the many onStatsChange / onCount ticks into one message.
       if (reportScheduled) return;
       reportScheduled = true;
@@ -706,6 +731,11 @@ export default defineContentScript({
       sendResponse: (response: AppliedInfo) => void,
     ) => {
       if (message?.type === 'whatIsApplied') {
+        // Only the top frame answers the health ping. With allFrames the message
+        // reaches every frame; a sub-frame responding would let the popup read an
+        // ad iframe's state as the whole tab's state. Sub-frames fall through and
+        // return undefined, so the top frame's response is the one the popup sees.
+        if (!isTopFrame) return;
         // Answer from the RECONCILED state, never by re-reading storage: a stale
         // script must not be able to look healthy by reporting what it SHOULD be
         // doing instead of what it IS doing. (A stale script never gets here at

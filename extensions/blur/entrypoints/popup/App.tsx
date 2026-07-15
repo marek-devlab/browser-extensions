@@ -6,6 +6,8 @@ import { clampMaskOpacity, isAllowlisted, resolveBlurSettings, safeMaskColor } f
 import { useSettings } from '../../utils/use-settings';
 import { useStorageItem } from '../../utils/use-storage-item';
 import { siteConfigsItem } from '../../utils/storage';
+import { useT, type MsgKey } from '../../utils/i18n';
+import type { TFunction } from '@blur/ui';
 import {
   BLUR_PRESETS,
   presetForRadius,
@@ -16,21 +18,31 @@ import {
   type BlurOverrideKey,
 } from '../../utils/features';
 
+/** The `t` returned by `useT`, threaded into the module-level helpers below. */
+type T = TFunction<MsgKey>;
+
+/** Blur-strength preset name → translation key for its label. */
+const PRESET_KEYS: Record<PresetName, MsgKey> = {
+  light: 'preset_light',
+  medium: 'preset_medium',
+  heavy: 'preset_heavy',
+};
+
 function emptyStats(tabId: number, hostname: string): BlurTabStats {
   return { tabId, hostname, imagesBlurred: 0, videosBlurred: 0, textMatchesBlurred: 0 };
 }
 
-const BLUR_TARGETS: { key: BlurOverrideKey; label: string }[] = [
-  { key: 'images', label: 'Images' },
-  { key: 'video', label: 'Video' },
-  { key: 'posters', label: 'Thumbnails & posters' },
-  { key: 'text', label: 'Text' },
+const BLUR_TARGETS: { key: BlurOverrideKey; labelKey: MsgKey }[] = [
+  { key: 'images', labelKey: 'target_images' },
+  { key: 'video', labelKey: 'target_video' },
+  { key: 'posters', labelKey: 'target_posters' },
+  { key: 'text', labelKey: 'target_text' },
 ];
 
-const REVEAL_MODES: { value: RevealMode; label: string }[] = [
-  { value: 'hover', label: 'On hover' },
-  { value: 'click', label: 'On click' },
-  { value: 'never', label: 'Never' },
+const REVEAL_MODES: { value: RevealMode; labelKey: MsgKey }[] = [
+  { value: 'hover', labelKey: 'reveal_hover' },
+  { value: 'click', labelKey: 'reveal_click' },
+  { value: 'never', labelKey: 'reveal_never' },
 ];
 
 /**
@@ -39,9 +51,9 @@ const REVEAL_MODES: { value: RevealMode; label: string }[] = [
  * style is selected gets its own editable strength row below, so neither style
  * is a second-class citizen that has to send the user to Settings to be tuned.
  */
-const MASK_STYLES: { value: MaskStyle; label: string }[] = [
-  { value: 'blur', label: 'Blur' },
-  { value: 'solid', label: 'Solid' },
+const MASK_STYLES: { value: MaskStyle; labelKey: MsgKey }[] = [
+  { value: 'blur', labelKey: 'mask_blur' },
+  { value: 'solid', labelKey: 'mask_solid' },
 ];
 
 /**
@@ -53,18 +65,18 @@ const MASK_STYLES: { value: MaskStyle; label: string }[] = [
  * changes is how much of the PAGE's background shows through the fill. A number
  * cannot tell that lie; a word would.
  */
-const OPACITY_PRESETS: { pct: number; hint: string }[] = [
-  { pct: 60, hint: 'blends into the page background' },
-  { pct: 80, hint: 'mostly opaque' },
-  { pct: 100, hint: 'fully opaque' },
+const OPACITY_PRESETS: { pct: number; hintKey: MsgKey }[] = [
+  { pct: 60, hintKey: 'opacity_hint_60' },
+  { pct: 80, hintKey: 'opacity_hint_80' },
+  { pct: 100, hintKey: 'opacity_hint_100' },
 ];
 
 /** Ready-made fills, matching the Settings swatches so the two agree. */
-const MASK_SWATCHES: { color: string; label: string }[] = [
-  { color: '#1f2430', label: 'Slate (default)' },
-  { color: '#000000', label: 'Black' },
-  { color: '#6b7280', label: 'Grey' },
-  { color: '#f2f3f5', label: 'Paper' },
+const MASK_SWATCHES: { color: string; labelKey: MsgKey }[] = [
+  { color: '#1f2430', labelKey: 'swatch_slate' },
+  { color: '#000000', labelKey: 'swatch_black' },
+  { color: '#6b7280', labelKey: 'swatch_grey' },
+  { color: '#f2f3f5', labelKey: 'swatch_paper' },
 ];
 
 /** Stored 0.5–1 float -> the whole percent the slider and presets speak in. */
@@ -88,45 +100,49 @@ function toPct(v: number): number {
  * the popup can edit therefore names itself, its site value and a one-tap way back
  * to global — and renders NOTHING at all in the common no-override case.
  */
-const FIELD_LABELS: Partial<Record<keyof BlurSettings, string>> = {
-  images: 'Images',
-  video: 'Video',
-  posters: 'Thumbnails & posters',
-  text: 'Text',
-  maskStyle: 'Mask style',
-  radius: 'Blur radius',
-  maskOpacity: 'Fill opacity',
-  maskColor: 'Fill colour',
-  reveal: 'Show blurred content',
-  rehideOnBlur: 'Re-hide when I switch away',
-  showLabels: 'Labels',
-  textPatterns: 'Text patterns',
+const FIELD_LABELS: Partial<Record<keyof BlurSettings, MsgKey>> = {
+  images: 'field_images',
+  video: 'field_video',
+  posters: 'field_posters',
+  text: 'field_text',
+  maskStyle: 'field_maskStyle',
+  radius: 'field_radius',
+  maskOpacity: 'field_maskOpacity',
+  maskColor: 'field_maskColor',
+  reveal: 'field_reveal',
+  rehideOnBlur: 'field_rehideOnBlur',
+  showLabels: 'field_showLabels',
+  textPatterns: 'field_textPatterns',
 };
 
 /** Say what a stored value IS, in the words the control beside it uses. */
-function describeBlurValue(field: keyof BlurSettings, v: unknown): string {
+function describeBlurValue(field: keyof BlurSettings, v: unknown, t: T): string {
   switch (field) {
     case 'maskStyle':
-      return v === 'solid' ? 'Solid' : 'Blur';
+      return v === 'solid' ? t('value_solid') : t('value_blur');
     case 'radius':
       return `${String(v)}px`;
     case 'maskOpacity':
       return `${toPct(Number(v))}%`;
     case 'maskColor':
       return safeMaskColor(v);
-    case 'reveal':
-      return REVEAL_MODES.find((m) => m.value === v)?.label ?? String(v);
-    case 'textPatterns':
-      return `${Array.isArray(v) ? v.length : 0} pattern${Array.isArray(v) && v.length === 1 ? '' : 's'}`;
+    case 'reveal': {
+      const mode = REVEAL_MODES.find((m) => m.value === v);
+      return mode ? t(mode.labelKey) : String(v);
+    }
+    case 'textPatterns': {
+      const n = Array.isArray(v) ? v.length : 0;
+      return t(n === 1 ? 'patterns_one' : 'patterns_other', { n });
+    }
     default:
-      return v ? 'On' : 'Off';
+      return v ? t('value_on') : t('value_off');
   }
 }
 
 /** "Video", "Video and Mask style", "Video, Mask style and Blur radius". */
-function formatList(items: string[]): string {
+function formatList(items: string[], t: T): string {
   if (items.length <= 1) return items[0] ?? '';
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  return `${items.slice(0, -1).join(', ')} ${t('list_and')} ${items[items.length - 1]}`;
 }
 
 /**
@@ -155,6 +171,7 @@ function OverrideMark({
   mode: 'global' | 'site';
   onInherit: () => void;
 }): JSX.Element {
+  const t = useT();
   return (
     <p className={mode === 'site' ? 'ovr ovr-inherit' : 'ovr'}>
       <span className="ovr-icon" aria-hidden="true">
@@ -163,22 +180,29 @@ function OverrideMark({
       <span className="ovr-txt">
         {mode === 'site' ? (
           <>
-            <strong>{label}</strong> overrides global (<strong>{globalValue}</strong>).
+            <strong>{label}</strong>
+            {t('ovr_overrides_global_pre')}
+            <strong>{globalValue}</strong>
+            {t('ovr_overrides_global_post')}
           </>
         ) : (
           <>
-            <strong>{label}</strong> is overridden on this site — {hostname} uses{' '}
-            <strong>{siteValue}</strong>.
+            <strong>{label}</strong>
+            {t('ovr_global_1')}
+            {hostname}
+            {t('ovr_global_2')}
+            <strong>{siteValue}</strong>
+            {t('ovr_global_3')}
           </>
         )}
       </span>
       <button
         type="button"
         className="ovr-btn"
-        aria-label={`Use the global ${label} setting on ${hostname}`}
+        aria-label={t('ovr_use_global_aria', { label, host: hostname })}
         onClick={onInherit}
       >
-        Use global
+        {t('ovr_use_global')}
       </button>
     </p>
   );
@@ -255,6 +279,7 @@ function useActiveTab(): { hostname: string; tabId: number } {
 }
 
 export function App(): JSX.Element {
+  const t = useT();
   const { settings, update, loaded, error } = useSettings();
   const { value: siteConfigs, setValue: setSiteConfigs } = useStorageItem(siteConfigsItem);
   const { hostname, tabId } = useActiveTab();
@@ -345,10 +370,13 @@ export function App(): JSX.Element {
    * every case and is what the user needs anyway.
    */
   const ownFieldLabels = [
-    ...(siteConfig?.enabled !== undefined ? ['Blur on this site'] : []),
+    ...(siteConfig?.enabled !== undefined ? [t('field_blur_on_site')] : []),
     ...(Object.keys(FIELD_LABELS) as (keyof BlurSettings)[])
       .filter((k) => siteConfig?.blur?.[k] !== undefined)
-      .map((k) => FIELD_LABELS[k] ?? k),
+      .map((k) => {
+        const key = FIELD_LABELS[k];
+        return key ? t(key) : k;
+      }),
   ];
   const siteHasOverride = hasSiteOverride(siteConfig);
 
@@ -373,12 +401,13 @@ export function App(): JSX.Element {
   function mark(field: keyof BlurSettings, mode: Scope = scope): JSX.Element | null {
     const siteValue = siteConfig?.blur?.[field];
     if (!hasHost || siteValue === undefined) return null;
+    const labelKey = FIELD_LABELS[field];
     return (
       <OverrideMark
-        label={FIELD_LABELS[field] ?? field}
+        label={labelKey ? t(labelKey) : field}
         hostname={hostname}
-        siteValue={describeBlurValue(field, siteValue)}
-        globalValue={describeBlurValue(field, settings.blur[field])}
+        siteValue={describeBlurValue(field, siteValue, t)}
+        globalValue={describeBlurValue(field, settings.blur[field], t)}
         mode={mode === 'site' ? 'site' : 'global'}
         onInherit={() => inheritBlurField(field)}
       />
@@ -442,7 +471,7 @@ export function App(): JSX.Element {
     setBlurField({ maskColor: color });
   }
 
-  if (!loaded) return <main className="popup">Loading…</main>;
+  if (!loaded) return <main className="popup">{t('loading')}</main>;
 
   const activePreset = presetForRadius(radius);
   const solidMask = shown.maskStyle === 'solid';
@@ -470,9 +499,8 @@ export function App(): JSX.Element {
     <main className="popup">
       {staleScript && (
         <div className="stale" role="alert">
-          <strong>This page is out of date.</strong> It was loaded before the extension
-          was updated, so it kept the old settings and ignores changes made here —
-          including the mask style. Reload the page to fix it.
+          <strong>{t('stale_strong')}</strong>
+          {t('stale_body')}
           <button
             type="button"
             className="stale-btn"
@@ -480,16 +508,19 @@ export function App(): JSX.Element {
               void browser.tabs.reload(tabId).then(() => window.close());
             }}
           >
-            Reload this page
+            {t('stale_reload')}
           </button>
         </div>
       )}
       {maskMismatch && !staleScript && (
         <div className="stale" role="alert">
-          <strong>The page is showing {appliedInfo.maskStyle === 'solid' ? 'a solid mask' : 'blur'}</strong>{' '}
-          but your settings say{' '}
-          {effective.maskStyle === 'solid' ? 'solid' : 'blur'}. Reload the page; if it
-          persists, this is a bug worth reporting.
+          <strong>
+            {t('mismatch_showing')}
+            {appliedInfo.maskStyle === 'solid' ? t('value_a_solid_mask') : t('value_blur_lc')}
+          </strong>{' '}
+          {t('mismatch_but')}{' '}
+          {effective.maskStyle === 'solid' ? t('value_solid_lc') : t('value_blur_lc')}
+          {t('mismatch_post')}
           <button
             type="button"
             className="stale-btn"
@@ -497,19 +528,21 @@ export function App(): JSX.Element {
               void browser.tabs.reload(tabId).then(() => window.close());
             }}
           >
-            Reload this page
+            {t('stale_reload')}
           </button>
         </div>
       )}
       <header className="row master">
         <div>
-          <div className="host">Content Blur</div>
-          <div className="sub">{settings.enabled ? 'Enabled' : 'Disabled everywhere'}</div>
+          <div className="host">{t('app_name')}</div>
+          <div className="sub">
+            {settings.enabled ? t('status_enabled') : t('status_disabled_everywhere')}
+          </div>
         </div>
         <label className="switch">
           <input
             type="checkbox"
-            aria-label="Enable Content Blur globally"
+            aria-label={t('aria_enable_global')}
             checked={settings.enabled}
             onChange={(e) => update({ enabled: e.target.checked })}
           />
@@ -526,19 +559,19 @@ export function App(): JSX.Element {
 
       <section className="row site">
         <div>
-          <div className="host">{hasHost ? hostname : 'This page'}</div>
+          <div className="host">{hasHost ? hostname : t('this_page')}</div>
           <div className="sub">
             {!settings.enabled
-              ? 'Global switch is off'
+              ? t('status_global_off')
               : siteEnabled
-                ? 'Active on this site'
-                : 'Paused on this site'}
+                ? t('status_active_site')
+                : t('status_paused_site')}
           </div>
         </div>
         <label className="switch">
           <input
             type="checkbox"
-            aria-label={`Blur on ${hasHost ? hostname : 'this site'}`}
+            aria-label={t('aria_blur_on', { target: hasHost ? hostname : t('this_site_lc') })}
             checked={siteEnabled}
             disabled={!settings.enabled || !hasHost}
             onChange={toggleSite}
@@ -554,10 +587,10 @@ export function App(): JSX.Element {
           marker rather than being left as the one invisible case. */}
       {hasHost && siteConfig?.enabled !== undefined && (
         <OverrideMark
-          label="Blur on this site"
+          label={t('field_blur_on_site')}
           hostname={hostname}
-          siteValue={siteConfig.enabled ? 'On' : 'Off'}
-          globalValue={settings.enabled ? 'On' : 'Off'}
+          siteValue={siteConfig.enabled ? t('value_on') : t('value_off')}
+          globalValue={settings.enabled ? t('value_on') : t('value_off')}
           mode="global"
           onInherit={() =>
             setSiteConfigs((prev) => setSiteOverride(prev, hostname, { enabled: undefined }))
@@ -573,32 +606,32 @@ export function App(): JSX.Element {
         <section className="stats" aria-live="polite">
           <div className="stat">
             <span className="num">{tabStats.imagesBlurred}</span>
-            <span className="lbl">Images &amp; thumbnails</span>
+            <span className="lbl">{t('stat_images')}</span>
           </div>
           <div className="stat">
             <span className="num">{tabStats.videosBlurred}</span>
-            <span className="lbl">Videos</span>
+            <span className="lbl">{t('stat_videos')}</span>
           </div>
           <div className="stat">
             <span className="num">{tabStats.textMatchesBlurred}</span>
-            <span className="lbl">Text</span>
+            <span className="lbl">{t('stat_text')}</span>
           </div>
         </section>
       ) : (
         // chrome://, about:, the New Tab page etc. have no host to run on — a real
         // empty state, never a 0/0/0 grid that reads as broken.
         <p className="empty" role="status">
-          Content Blur can’t run on this page.
+          {t('empty_no_run')}
         </p>
       )}
 
       <section className="group">
         <div className="scope-row">
-          <h2>Blur</h2>
+          <h2>{t('heading_blur')}</h2>
           <div
             className="scope"
             role="tablist"
-            aria-label="Settings apply to"
+            aria-label={t('aria_scope')}
             onKeyDown={onScopeKey}
           >
             <button
@@ -614,7 +647,7 @@ export function App(): JSX.Element {
               className={scope === 'global' ? 'seg on' : 'seg'}
               onClick={() => setScope('global')}
             >
-              Global
+              {t('scope_global')}
             </button>
             <button
               type="button"
@@ -630,7 +663,7 @@ export function App(): JSX.Element {
               disabled={!hasHost}
               onClick={() => setScope('site')}
             >
-              This site
+              {t('scope_site')}
             </button>
           </div>
         </div>
@@ -653,30 +686,32 @@ export function App(): JSX.Element {
               ⚠
             </span>
             <span className="ovr-txt">
-              <strong>{hostname}</strong> has its own{' '}
-              <strong>{formatList(ownFieldLabels)}</strong>. Changes on this tab won’t reach
-              it.
+              <strong>{hostname}</strong>
+              {t('ovr_sum_1')}
+              <strong>{formatList(ownFieldLabels, t)}</strong>
+              {t('ovr_sum_2')}
             </span>
             <button
               type="button"
               className="ovr-btn"
-              aria-label={`Clear this site's overrides and use global settings on ${hostname}`}
+              aria-label={t('ovr_sum_btn_aria', { host: hostname })}
               onClick={clearSite}
             >
-              Use global settings on this site
+              {t('ovr_sum_btn')}
             </button>
           </p>
         )}
 
         {editingSite && (
           <p className="note" role="status">
-            Editing overrides for <strong>{hostname}</strong>. Marked settings are this
-            site’s own; everything else follows global.
+            {t('edit_note_1')}
+            <strong>{hostname}</strong>
+            {t('edit_note_2')}
             {siteHasOverride && (
               <>
                 {' '}
                 <button type="button" className="linkbtn" onClick={clearSite}>
-                  Clear this site’s overrides
+                  {t('edit_note_clear')}
                 </button>
               </>
             )}
@@ -684,7 +719,7 @@ export function App(): JSX.Element {
         )}
 
         <div className="toggles">
-          {BLUR_TARGETS.map(({ key, label }) => (
+          {BLUR_TARGETS.map(({ key, labelKey }) => (
             // The four categories share one wrapping row, so — unlike every other
             // control here — a marker underneath cannot sit against the control it
             // is about. The chip therefore carries the flag itself and the marker
@@ -701,11 +736,18 @@ export function App(): JSX.Element {
             >
               <input
                 type="checkbox"
-                aria-label={`Blur ${label.toLowerCase()}${editingSite ? ` on ${hostname}` : ''}`}
+                aria-label={
+                  editingSite
+                    ? t('aria_blur_category_site', {
+                        category: t(labelKey).toLowerCase(),
+                        host: hostname,
+                      })
+                    : t('aria_blur_category', { category: t(labelKey).toLowerCase() })
+                }
                 checked={shown[key]}
                 onChange={(e) => setBlurField({ [key]: e.target.checked } as Partial<BlurSettings>)}
               />
-              {label}
+              {t(labelKey)}
             </label>
           ))}
         </div>
@@ -713,14 +755,11 @@ export function App(): JSX.Element {
           <Fragment key={key}>{mark(key)}</Fragment>
         ))}
         {shown.text && (
-          <p className="note">
-            Blurred text stays in the DOM and accessibility tree — screen readers still read it and
-            Ctrl+F still finds it. It is softened visually, not hidden.
-          </p>
+          <p className="note">{t('note_text_blur')}</p>
         )}
 
         <div className="field">
-          <span id="mask-label">Mask style</span>
+          <span id="mask-label">{t('field_maskStyle')}</span>
           <div className="mask-styles" role="group" aria-labelledby="mask-label">
             {MASK_STYLES.map((m) => (
               <button
@@ -728,10 +767,14 @@ export function App(): JSX.Element {
                 type="button"
                 className={shown.maskStyle === m.value ? 'seg on' : 'seg'}
                 aria-pressed={shown.maskStyle === m.value}
-                aria-label={`${m.label} mask${editingSite ? ` on ${hostname}` : ''}`}
+                aria-label={
+                  editingSite
+                    ? t('aria_mask_site', { style: t(m.labelKey), host: hostname })
+                    : t('aria_mask', { style: t(m.labelKey) })
+                }
                 onClick={() => setBlurField({ maskStyle: m.value })}
               >
-                {m.label}
+                {t(m.labelKey)}
               </button>
             ))}
           </div>
@@ -748,7 +791,7 @@ export function App(): JSX.Element {
         {solidMask ? (
           <>
             <div className="field">
-              <span id="opacity-label">Fill opacity</span>
+              <span id="opacity-label">{t('field_maskOpacity')}</span>
               <div className="presets" role="group" aria-labelledby="opacity-label">
                 {OPACITY_PRESETS.map((p) => (
                   <button
@@ -756,7 +799,7 @@ export function App(): JSX.Element {
                     type="button"
                     className={opacityPct === p.pct ? 'seg on' : 'seg'}
                     aria-pressed={opacityPct === p.pct}
-                    aria-label={`Fill opacity ${p.pct}% — ${p.hint}`}
+                    aria-label={t('aria_opacity_preset', { pct: p.pct, hint: t(p.hintKey) })}
                     onClick={() => applyOpacityPreset(p.pct)}
                   >
                     {p.pct}%
@@ -766,21 +809,25 @@ export function App(): JSX.Element {
             </div>
 
             <label className="field">
-              <span>Opacity: {opacityPct}%</span>
+              <span>{t('opacity_label', { pct: opacityPct })}</span>
               <input
                 type="range"
                 min={50}
                 max={100}
                 step={5}
                 value={opacityPct}
-                aria-label={`Fill opacity, as a percentage${editingSite ? ` on ${hostname}` : ''}`}
+                aria-label={
+                  editingSite
+                    ? t('aria_opacity_range_site', { host: hostname })
+                    : t('aria_opacity_range')
+                }
                 onChange={(e) => onOpacityChange(Number(e.target.value))}
               />
             </label>
             {mark('maskOpacity')}
 
             <div className="field">
-              <span id="fill-colour-label">Fill colour</span>
+              <span id="fill-colour-label">{t('field_maskColor')}</span>
               <div className="swatches" role="group" aria-labelledby="fill-colour-label">
                 {MASK_SWATCHES.map((s) => (
                   <button
@@ -788,8 +835,8 @@ export function App(): JSX.Element {
                     type="button"
                     className={maskColor === s.color ? 'swatch on' : 'swatch'}
                     style={{ background: s.color }}
-                    title={s.label}
-                    aria-label={s.label}
+                    title={t(s.labelKey)}
+                    aria-label={t(s.labelKey)}
                     aria-pressed={maskColor === s.color}
                     onClick={() => applySwatch(s.color)}
                   />
@@ -800,7 +847,7 @@ export function App(): JSX.Element {
                 <input
                   type="color"
                   className="swatch-input"
-                  aria-label="Custom fill colour"
+                  aria-label={t('aria_custom_fill')}
                   value={maskColor}
                   onChange={(e) => onColorChange(e.target.value)}
                 />
@@ -809,15 +856,17 @@ export function App(): JSX.Element {
             {mark('maskColor')}
 
             <p className="note">
-              Opacity does <strong>not</strong> uncover the content. Below 100% you see the{' '}
-              <strong>page’s own background</strong> through the fill — never the image or video,
-              which is never drawn at all.
+              {t('note_opacity_1')}
+              <strong>{t('note_opacity_not')}</strong>
+              {t('note_opacity_2')}
+              <strong>{t('note_opacity_bg')}</strong>
+              {t('note_opacity_3')}
             </p>
           </>
         ) : (
           <>
             <div className="field">
-              <span id="preset-label">Blur strength</span>
+              <span id="preset-label">{t('field_blur_strength')}</span>
               <div className="presets" role="group" aria-labelledby="preset-label">
                 {(Object.keys(BLUR_PRESETS) as PresetName[]).map((name) => (
                   <button
@@ -827,20 +876,20 @@ export function App(): JSX.Element {
                     aria-pressed={activePreset === name}
                     onClick={() => applyPreset(name)}
                   >
-                    {BLUR_PRESETS[name].label}
+                    {t(PRESET_KEYS[name])}
                   </button>
                 ))}
               </div>
             </div>
 
             <label className="field">
-              <span>Radius: {radius}px</span>
+              <span>{t('radius_label', { r: radius })}</span>
               <input
                 type="range"
                 min={4}
                 max={40}
                 value={radius}
-                aria-label="Blur radius in pixels"
+                aria-label={t('aria_radius')}
                 onChange={(e) => onRadiusChange(Number(e.target.value))}
               />
             </label>
@@ -848,22 +897,22 @@ export function App(): JSX.Element {
           </>
         )}
         <label className="field">
-          <span>Show blurred content</span>
+          <span>{t('field_reveal')}</span>
           <select
             value={shown.reveal}
-            aria-label="When to show blurred content"
+            aria-label={t('aria_reveal')}
             onChange={(e) => setBlurField({ reveal: e.target.value as RevealMode })}
           >
             {REVEAL_MODES.map((m) => (
               <option key={m.value} value={m.value}>
-                {m.label}
+                {t(m.labelKey)}
               </option>
             ))}
           </select>
         </label>
         {mark('reveal')}
         {shown.reveal === 'hover' && (
-          <p className="note">On touch devices, hover becomes tap-to-reveal.</p>
+          <p className="note">{t('note_hover')}</p>
         )}
         </div>
       </section>
@@ -874,13 +923,13 @@ export function App(): JSX.Element {
       <section className="group">
         <label className="field rehide">
           <span>
-            Re-hide when I switch away
-            <span className="sub">Applies everywhere</span>
+            {t('field_rehideOnBlur')}
+            <span className="sub">{t('rehide_applies')}</span>
           </span>
           <span className="switch">
             <input
               type="checkbox"
-              aria-label="Re-hide revealed content when the tab or window loses focus"
+              aria-label={t('aria_rehide')}
               checked={settings.blur.rehideOnBlur}
               onChange={(e) => update({ blur: { rehideOnBlur: e.target.checked } })}
             />
@@ -903,18 +952,18 @@ export function App(): JSX.Element {
           type="button"
           onClick={() => void browser.runtime.sendMessage({ type: 'revealAll', tabId })}
         >
-          Reveal all
+          {t('btn_reveal_all')}
         </button>
         <button
           type="button"
           onClick={() => void browser.runtime.sendMessage({ type: 'hideAll', tabId })}
         >
-          Hide all again
+          {t('btn_hide_all')}
         </button>
       </footer>
       <footer className="actions">
         <button type="button" onClick={() => void browser.runtime.openOptionsPage()}>
-          Open settings
+          {t('btn_open_settings')}
         </button>
       </footer>
     </main>

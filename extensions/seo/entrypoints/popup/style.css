@@ -182,6 +182,39 @@ body {
   color: var(--badge-fill-text);
 }
 
+/* Language switcher (EN/RU/ET segmented control) in its own settings section.
+   `flex-wrap` so the longer endonyms (Русский / Eesti) wrap within the 296px
+   content box instead of overflowing it. */
+.lang-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  border-left: 1px solid var(--border);
+}
+
+.lang-toggle__btn:first-child {
+  border-left: none;
+}
+
+.lang-toggle__btn--active {
+  background: var(--accent);
+  color: var(--badge-fill-text);
+}
+
 section h2 {
   font-size: 11px;
   text-transform: uppercase;

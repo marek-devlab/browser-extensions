@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { A11yReport } from '@blur/core';
+import { LanguageSwitcher, LocaleProvider, type Locale } from '@blur/ui';
 import {
-  A11Y_TERM,
   CheckRow,
-  IMPACT_MEANING,
   ViolationRow,
+  useA11yTerm,
+  useImpactLabel,
+  useImpactMeaning,
 } from '../../utils/report-ui';
 import {
   descriptionLengthStatus,
@@ -22,7 +24,8 @@ import {
   reportToMarkdown,
 } from '../../utils/export';
 import { requestA11yAudit, requestSeoReport } from '../../utils/messages';
-import { ThemeToggle, usePanelPrefs } from '../../utils/theme';
+import { ThemeToggle, usePanelPrefs, useSeoLocale } from '../../utils/theme';
+import { useT, type MsgKey, type TFn } from '../../utils/i18n';
 import {
   serpDisplayUrl,
   serpField,
@@ -49,9 +52,9 @@ const tabId = browser.devtools.inspectedWindow.tabId;
 
 type TabId = 'seo' | 'a11y';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'seo', label: 'SEO' },
-  { id: 'a11y', label: 'Accessibility' },
+const TABS: { id: TabId; key: MsgKey }[] = [
+  { id: 'seo', key: 'tabSeo' },
+  { id: 'a11y', key: 'accessibility' },
 ];
 
 type Async<T> =
@@ -61,6 +64,22 @@ type Async<T> =
   | { status: 'error'; error: string };
 
 export function App() {
+  const { locale, setLocale } = useSeoLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <PanelApp locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function PanelApp({
+  locale,
+  setLocale,
+}: {
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+}) {
+  const t = useT();
   const [tab, setTab] = useState<TabId>('seo');
   const [seo, setSeo] = useState<Async<SeoReportEx>>({ status: 'loading' });
   const [a11y, setA11y] = useState<Async<A11yReport>>({ status: 'idle' });
@@ -131,29 +150,34 @@ export function App() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <nav className="tabs" role="tablist" aria-label="Report sections">
-          {TABS.map((t, i) => (
+        <nav className="tabs" role="tablist" aria-label={t('reportSections')}>
+          {TABS.map((tabItem, i) => (
             <button
-              key={t.id}
-              id={`tab-${t.id}`}
+              key={tabItem.id}
+              id={`tab-${tabItem.id}`}
               ref={(el) => {
                 tabRefs.current[i] = el;
               }}
               role="tab"
-              aria-selected={tab === t.id}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={tab === t.id ? 0 : -1}
-              className={tab === t.id ? 'tab tab--active' : 'tab'}
-              onClick={() => chooseTab(t.id)}
+              aria-selected={tab === tabItem.id}
+              aria-controls={`panel-${tabItem.id}`}
+              tabIndex={tab === tabItem.id ? 0 : -1}
+              className={tab === tabItem.id ? 'tab tab--active' : 'tab'}
+              onClick={() => chooseTab(tabItem.id)}
               onKeyDown={(e) => onTabKeyDown(e, i)}
             >
-              {t.label}
+              {t(tabItem.key)}
             </button>
           ))}
         </nav>
         <ExportControls
           report={seo.status === 'ready' ? seo.value : null}
           a11y={a11y.status === 'ready' ? a11y.value : null}
+        />
+        <LanguageSwitcher
+          locale={locale}
+          onChange={setLocale}
+          label={t('interfaceLanguage')}
         />
         <ThemeToggle
           theme={prefs?.theme ?? 'auto'}
@@ -186,6 +210,7 @@ function ExportControls({
   report: SeoReportEx | null;
   a11y: A11yReport | null;
 }) {
+  const t = useT();
   const [copied, setCopied] = useState<string | null>(null);
   // Clear the "Copied…" status after a moment (like the per-section CopyButton),
   // so a stale confirmation does not linger indefinitely.
@@ -207,12 +232,12 @@ function ExportControls({
           : reportToMarkdown(report, a11y);
       try {
         await navigator.clipboard.writeText(text);
-        setCopied(`Copied report as ${format === 'json' ? 'JSON' : 'Markdown'}.`);
+        setCopied(t('copiedReportAs', { fmt: format === 'json' ? 'JSON' : 'Markdown' }));
       } catch {
-        setCopied('Could not copy to the clipboard.');
+        setCopied(t('couldNotCopy'));
       }
     },
-    [report, a11y],
+    [report, a11y, t],
   );
 
   return (
@@ -221,17 +246,17 @@ function ExportControls({
         className="btn btn--sm"
         onClick={() => void copy('json')}
         disabled={report === null}
-        aria-label="Copy report as JSON to the clipboard"
+        aria-label={t('copyJsonAria')}
       >
-        Copy JSON
+        {t('copyJson')}
       </button>
       <button
         className="btn btn--sm"
         onClick={() => void copy('markdown')}
         disabled={report === null}
-        aria-label="Copy report as Markdown to the clipboard"
+        aria-label={t('copyMarkdownAria')}
       >
-        Copy Markdown
+        {t('copyMarkdown')}
       </button>
       <span className="export__status" role="status" aria-live="polite">
         {copied}
@@ -251,6 +276,7 @@ function SeoTab({
   state: Async<SeoReportEx>;
   onRescan: () => Promise<void>;
 }) {
+  const t = useT();
   return (
     <section className="seo">
       <div className="a11y-toolbar">
@@ -258,22 +284,22 @@ function SeoTab({
           className="btn"
           onClick={() => void onRescan()}
           disabled={state.status === 'loading'}
-          aria-label="Re-scan the current page for SEO markup"
+          aria-label={t('reScanAria')}
         >
-          Re-scan page
+          {t('reScanPage')}
         </button>
       </div>
       <div role="status" aria-live="polite">
         {state.status === 'loading' && (
           <p className="state">
-            <span className="spinner" /> Reading the page…
+            <span className="spinner" /> {t('readingPage')}
           </p>
         )}
         {state.status === 'error' && (
           <p className="state state--error">{state.error}</p>
         )}
         {state.status === 'ready' && (
-          <p className="sr-only">SEO scan complete.</p>
+          <p className="sr-only">{t('seoScanComplete')}</p>
         )}
       </div>
       {state.status === 'ready' && <SeoReportView report={state.value} />}
@@ -282,6 +308,7 @@ function SeoTab({
 }
 
 function SeoReportView({ report }: { report: SeoReportEx }) {
+  const t = useT();
   const skippedLevels = findSkippedHeadingLevels(report.headings);
   const titleStatus = titleLengthStatus(report.title);
   const titleLen = report.title?.length ?? 0;
@@ -290,54 +317,54 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
 
   return (
     <>
-      <h3 className="section-title">Meta</h3>
+      <h3 className="section-title">{t('metaH')}</h3>
       <dl className="meta">
-        <dt>Title</dt>
+        <dt>{t('presTitle')}</dt>
         <dd className={report.title === null ? 'meta--missing' : 'mono'}>
           {report.title === null ? (
-            'Missing'
+            t('missing')
           ) : (
             <>
               {report.title}
               <span className={`badge badge--${titleStatus}`}>
-                {titleLen} chars · target 30–60
+                {t('titleBadge', { n: titleLen })}
               </span>
             </>
           )}
         </dd>
 
-        <dt>Description</dt>
+        <dt>{t('presDescription')}</dt>
         <dd className={report.description === null ? 'meta--missing' : ''}>
           {/* A null description is a real SEO error, not an empty cell —
               render it as an explicit missing state, never a blank string. */}
           {report.description === null ? (
-            'Missing'
+            t('missing')
           ) : (
             <>
               {report.description}
               <span className={`badge badge--${descStatus}`}>
-                {descLen} chars · target 120–160
+                {t('descBadge', { n: descLen })}
               </span>
             </>
           )}
         </dd>
 
-        <MetaRow label="Canonical" value={report.canonical} />
-        <MetaRow label="Robots" value={report.robots} />
+        <MetaRow label={t('metaCanonical')} value={report.canonical} />
+        <MetaRow label={t('metaRobots')} value={report.robots} />
       </dl>
 
-      <h3 className="section-title">Google result preview</h3>
+      <h3 className="section-title">{t('serpPreviewH')}</h3>
       <SerpPreview report={report} />
 
       {report.hreflang.length > 0 && (
         <>
-          <h3 className="section-title">hreflang</h3>
+          <h3 className="section-title">{t('hreflangH')}</h3>
           <div className="table-scroll">
             <table className="grid">
               <thead>
                 <tr>
-                  <th>lang</th>
-                  <th>href</th>
+                  <th>{t('thLang')}</th>
+                  <th>{t('thHref')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,14 +383,11 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
       )}
 
       <div className="section-head">
-        <h3 className="section-title">Heading outline</h3>
-        <CopyButton
-          text={headingsToMarkdown(report)}
-          label="Copy headings"
-        />
+        <h3 className="section-title">{t('headingOutlineH')}</h3>
+        <CopyButton text={headingsToMarkdown(report)} label={t('copyHeadings')} />
       </div>
       {report.headings.length === 0 ? (
-        <p className="state state--error">No headings found on this page.</p>
+        <p className="state state--error">{t('noHeadings')}</p>
       ) : (
         <ul className="outline">
           {report.headings.map((h, i) => {
@@ -377,7 +401,7 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
                 style={{ paddingLeft: `${(h.level - 1) * 16}px` }}
               >
                 <span className="mono outline__level">H{h.level}</span> {h.text}
-                {skipped && <span className="flag"> skipped level</span>}
+                {skipped && <span className="flag"> {t('skippedLevel')}</span>}
               </li>
             );
           })}
@@ -386,49 +410,42 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
 
       <div className="summary-bar">
         <Stat
-          label="Words"
+          label={t('statWords')}
           value={String(report.wordCount)}
           emphasis={report.wordCount < 100}
-          hint={
-            report.wordCount < 100
-              ? 'Very little visible text; thin content ranks poorly.'
-              : undefined
-          }
+          hint={report.wordCount < 100 ? t('thinContent') : undefined}
         />
+        <Stat label={t('statInternalLinks')} value={String(report.links.internal)} />
         <Stat
-          label="Internal links"
-          value={String(report.links.internal)}
-        />
-        <Stat
-          label="External links"
+          label={t('statExternalLinks')}
           value={String(report.links.external)}
           hint={
             report.links.nofollow +
               report.links.sponsored +
               report.links.ugc >
             0
-              ? `${report.links.nofollow} nofollow · ${report.links.sponsored} sponsored · ${report.links.ugc} ugc (user-generated content)`
+              ? t('extLinksHint', {
+                  nofollow: report.links.nofollow,
+                  sponsored: report.links.sponsored,
+                  ugc: report.links.ugc,
+                })
               : undefined
           }
         />
         <Stat
-          label="Images without alt"
+          label={t('statImagesNoAlt')}
           value={String(report.imagesWithoutAlt)}
           emphasis={report.imagesWithoutAlt > 0}
         />
         <Stat
-          label="Structured data blocks"
+          label={t('statSdBlocks')}
           value={String(report.structuredDataBlocks)}
           emphasis={report.structuredDataBlocks === 0}
-          hint={
-            report.structuredDataBlocks === 0
-              ? 'No JSON-LD or microdata found. Rich results are unavailable without it.'
-              : undefined
-          }
+          hint={report.structuredDataBlocks === 0 ? t('noSdHint') : undefined}
         />
       </div>
 
-      <h3 className="section-title">Social preview</h3>
+      <h3 className="section-title">{t('socialPreviewH')}</h3>
       <SocialCard
         social={report.social}
         canonical={report.canonical}
@@ -437,7 +454,7 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
 
       {report.structuredData.length > 0 && (
         <>
-          <h3 className="section-title">Structured data</h3>
+          <h3 className="section-title">{t('sdH')}</h3>
           <ul className="sd-list">
             {report.structuredData.map((item, i) => (
               <StructuredDataRow key={`${item.types.join()}-${i}`} item={item} />
@@ -447,8 +464,8 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
       )}
 
       <div className="section-head">
-        <h3 className="section-title">Checks</h3>
-        <CopyButton text={checksToMarkdown(report)} label="Copy checks" />
+        <h3 className="section-title">{t('checksH')}</h3>
+        <CopyButton text={checksToMarkdown(report)} label={t('copyChecks')} />
       </div>
       <ul className="checks">
         {report.checks.map((c) => (
@@ -461,6 +478,7 @@ function SeoReportView({ report }: { report: SeoReportEx }) {
 
 /** A small clipboard button for per-section copy, with a brief "Copied" state. */
 function CopyButton({ text, label }: { text: string; label: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const onClick = useCallback(async () => {
     try {
@@ -476,19 +494,20 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       type="button"
       className="btn btn--sm"
       onClick={() => void onClick()}
-      aria-label={`${label} to the clipboard`}
+      aria-label={t('copyAriaSuffix', { label })}
     >
-      {copied ? 'Copied' : label}
+      {copied ? t('copiedShort') : label}
     </button>
   );
 }
 
 function MetaRow({ label, value }: { label: string; value: string | null }) {
+  const t = useT();
   return (
     <>
       <dt>{label}</dt>
       <dd className={value === null ? 'meta--missing' : 'mono'}>
-        {value === null ? 'Missing' : value}
+        {value === null ? t('missing') : value}
       </dd>
     </>
   );
@@ -503,9 +522,10 @@ function SocialCard({
   canonical: string | null;
   pageUrl: string;
 }) {
+  const t = useT();
   // The host crawlers show is the page's own (og:url ?? canonical ?? page URL),
   // not the image host — og:image now resolves to an absolute (often CDN) URL.
-  const host = hostFrom(social.ogUrl ?? canonical ?? pageUrl);
+  const host = hostFrom(social.ogUrl ?? canonical ?? pageUrl, t);
   // Show the image if EITHER og:image or twitter:image is set, but the missing
   // warning below is still keyed to og:image specifically (the crawler default).
   const previewImage = social.ogImage ?? social.twitterImage;
@@ -513,7 +533,7 @@ function SocialCard({
     <div className="social">
       {previewImage === null ? (
         <div className="social__img social__img--placeholder">
-          <span className="social__placeholder-label">no og:image</span>
+          <span className="social__placeholder-label">{t('noOgImageLabel')}</span>
         </div>
       ) : (
         <div
@@ -526,30 +546,35 @@ function SocialCard({
       <div className="social__body">
         <div className="social__host mono">{host}</div>
         <div className="social__title">
-          {social.ogTitle ?? <span className="meta--missing">Untitled</span>}
+          {social.ogTitle ?? <span className="meta--missing">{t('untitled')}</span>}
         </div>
         <div className="social__desc">
           {social.ogDescription ?? (
-            <span className="meta--missing">No description</span>
+            <span className="meta--missing">{t('noDescription')}</span>
           )}
         </div>
         <div className="social__card mono">
-          {social.twitterCard ?? 'summary (default)'}
-          {social.ogType !== null && ` · og:type ${social.ogType}`}
+          {social.twitterCard ?? t('summaryDefault')}
+          {social.ogType !== null && t('ogTypeSuffix', { type: social.ogType })}
         </div>
       </div>
       {social.ogImage === null && (
         <p className="social__warn">
           {social.twitterImage !== null ? (
             <>
-              No <code>og:image</code> — Facebook and LinkedIn (which read{' '}
-              <code>og:image</code>) will show a blank preview. The image above is
-              the <code>twitter:image</code>, which only X/Twitter uses.
+              {t('swNo')}
+              <code>og:image</code>
+              {t('swFb')}
+              <code>og:image</code>
+              {t('swBlankPreview')}
+              <code>twitter:image</code>
+              {t('swOnlyTwitter')}
             </>
           ) : (
             <>
-              With no <code>og:image</code>, this link preview will render blank
-              when the page is shared on social platforms.
+              {t('swWithNo')}
+              <code>og:image</code>
+              {t('swRenderBlank')}
             </>
           )}
         </p>
@@ -559,9 +584,10 @@ function SocialCard({
 }
 
 function SerpPreview({ report }: { report: SeoReportEx }) {
-  const title = serpField(report.title ?? 'Untitled page', measureTitle, SERP_TITLE_MAX_PX);
+  const t = useT();
+  const title = serpField(report.title ?? t('serpUntitled'), measureTitle, SERP_TITLE_MAX_PX);
   const desc = serpField(
-    report.description ?? 'No meta description — Google will synthesise a snippet.',
+    report.description ?? t('serpNoDesc'),
     measureDesc,
     SERP_DESC_MAX_PX,
   );
@@ -576,15 +602,15 @@ function SerpPreview({ report }: { report: SeoReportEx }) {
         {desc.display}
       </div>
       <div className="serp__meters">
-        <SerpMeter label="Title" field={title} unit="px" />
-        <SerpMeter label="Description" field={desc} unit="px" />
+        <SerpMeter label={t('serpMeterTitle')} field={title} unit="px" />
+        <SerpMeter label={t('serpMeterDesc')} field={desc} unit="px" />
       </div>
       {(title.truncated || desc.truncated) && (
         <p className="serp__warn" role="note">
           {title.truncated &&
-            `Title is ${Math.round(title.pixels)}px, over the ~${SERP_TITLE_MAX_PX}px Google shows — it will be cut off. `}
+            t('serpWarnTitle', { px: Math.round(title.pixels), max: SERP_TITLE_MAX_PX })}
           {desc.truncated &&
-            `Description is ${Math.round(desc.pixels)}px, over the ~${SERP_DESC_MAX_PX}px shown — the tail is dropped.`}
+            t('serpWarnDesc', { px: Math.round(desc.pixels), max: SERP_DESC_MAX_PX })}
         </p>
       )}
     </div>
@@ -621,16 +647,15 @@ function SerpMeter({
 }
 
 function StructuredDataRow({ item }: { item: StructuredDataItem }) {
+  const t = useT();
   const complete = item.missingRequired.length === 0;
   return (
     <li className={complete ? 'sd sd--ok' : 'sd sd--warn'}>
-      <span className="sd__type mono">{item.types.join(', ') || '(untyped)'}</span>
+      <span className="sd__type mono">{item.types.join(', ') || t('sdUntyped')}</span>
       <span className="sd__status">
-        {complete ? (
-          'required properties present'
-        ) : (
-          <>missing: {item.missingRequired.join(', ')}</>
-        )}
+        {complete
+          ? t('sdRequiredPresent')
+          : t('sdMissingList', { list: item.missingRequired.join(', ') })}
       </span>
     </li>
   );
@@ -647,6 +672,7 @@ function AccessibilityTab({
   state: Async<A11yReport>;
   onRun: () => Promise<void>;
 }) {
+  const t = useT();
   return (
     <section className="a11y">
       <div className="a11y-toolbar">
@@ -654,22 +680,21 @@ function AccessibilityTab({
           className="btn"
           onClick={() => void onRun()}
           disabled={state.status === 'loading'}
-          aria-label="Run the axe-core accessibility audit on this page"
+          aria-label={t('runAxeAria')}
         >
-          {state.status === 'loading' ? 'Running…' : 'Run audit'}
+          {state.status === 'loading' ? t('running') : t('runAudit')}
         </button>
         <p className="note note--inline">
-          The audit bundles <strong>axe-core</strong> (MPL-2.0), which runs
-          entirely in the browser — never fetched at runtime, since MV3 bans
-          remote code. It is a separate chunk, injected into the page on demand
-          only when you press the button, so it never loads on normal browsing.
+          {t('axeNote1')}
+          <strong>axe-core</strong>
+          {t('axeNote2')}
         </p>
       </div>
 
       <div role="status" aria-live="polite">
         {state.status === 'loading' && (
           <p className="state">
-            <span className="spinner" /> Auditing the page with axe-core…
+            <span className="spinner" /> {t('auditingPage')}
           </p>
         )}
         {state.status === 'error' && (
@@ -677,8 +702,12 @@ function AccessibilityTab({
         )}
         {state.status === 'ready' && (
           <p className="sr-only">
-            Accessibility audit complete: {state.value.violations.length} violation
-            {state.value.violations.length === 1 ? '' : 's'} found.
+            {t(
+              state.value.violations.length === 1
+                ? 'a11yCompleteOne'
+                : 'a11yCompleteOther',
+              { n: state.value.violations.length },
+            )}
           </p>
         )}
       </div>
@@ -688,6 +717,10 @@ function AccessibilityTab({
 }
 
 function A11yReportView({ report }: { report: A11yReport }) {
+  const t = useT();
+  const a11yTerm = useA11yTerm();
+  const impactMeaning = useImpactMeaning();
+  const impactLabel = useImpactLabel();
   const sorted = useMemo(
     () =>
       [...report.violations].sort(
@@ -702,34 +735,36 @@ function A11yReportView({ report }: { report: A11yReport }) {
           so each carries its plain-language definition as VISIBLE text. */}
       <div className="summary-bar">
         <Stat
-          label="Violations"
+          label={t('tileViolations')}
           value={String(report.violations.length)}
           emphasis={report.violations.length > 0}
-          hint={A11Y_TERM.violations}
+          hint={a11yTerm.violations}
         />
-        <Stat label="Passes" value={String(report.passes)} hint={A11Y_TERM.passes} />
+        <Stat label={t('tilePasses')} value={String(report.passes)} hint={a11yTerm.passes} />
         <Stat
-          label="Incomplete"
+          label={t('tileIncomplete')}
           value={String(report.incomplete)}
-          hint={A11Y_TERM.incomplete}
+          hint={a11yTerm.incomplete}
         />
       </div>
 
-      <h3 className="section-title">Violations</h3>
+      <h3 className="section-title">{t('violationsH')}</h3>
       {sorted.length > 0 && (
         <ul className="impact-legend">
           {(['critical', 'serious', 'moderate', 'minor'] as const)
             .filter((i) => sorted.some((v) => v.impact === i))
             .map((impact) => (
               <li key={impact}>
-                <span className={`impact-badge impact-badge--${impact}`}>{impact}</span>
-                <span className="impact-legend__text">{IMPACT_MEANING[impact]}</span>
+                <span className={`impact-badge impact-badge--${impact}`}>
+                  {impactLabel(impact)}
+                </span>
+                <span className="impact-legend__text">{impactMeaning[impact]}</span>
               </li>
             ))}
         </ul>
       )}
       {sorted.length === 0 ? (
-        <p className="state">No violations detected by axe-core.</p>
+        <p className="state">{t('noViolationsDetected')}</p>
       ) : (
         <ul className="violations">
           {sorted.map((v) => (
@@ -767,11 +802,11 @@ function Stat({
   );
 }
 
-function hostFrom(url: string | null): string {
-  if (url === null) return 'this page';
+function hostFrom(url: string | null, t: TFn): string {
+  if (url === null) return t('thisPage');
   try {
     return new URL(url).hostname;
   } catch {
-    return 'this page';
+    return t('thisPage');
   }
 }

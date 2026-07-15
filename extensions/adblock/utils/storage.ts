@@ -1,7 +1,22 @@
 import { storage } from '#imports';
 import type { AdBlockExtensionSettings, AggregateStats } from '@blur/core';
 import { DEFAULT_ADBLOCK_SETTINGS, adBlockPresetForLevel } from '@blur/core';
+import type { Locale } from '@blur/ui';
 import type { AdBlockSiteConfigX, CustomFilters } from './adblock-types';
+
+/**
+ * The user's chosen interface language (English / Русский / Eesti). Runtime UI
+ * language, independent of the browser's own locale — see @blur/ui's i18n module.
+ * `local` (not `sync`): a UI preference for THIS machine, kept beside the other
+ * device-scoped prefs; the React surfaces read it synchronously-seeded via
+ * `useLocaleController`, and the background/content script read it directly with
+ * `await localeItem.getValue()`.
+ */
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+  version: 1,
+  migrations: {},
+});
 
 // Real zero-state for a fresh install. Every counter starts at 0 — the UI must
 // never show fabricated totals. `accuracy` is 'exact' because only exactly-known

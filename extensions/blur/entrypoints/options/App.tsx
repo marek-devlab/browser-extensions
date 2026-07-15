@@ -6,6 +6,9 @@ import { useSettings } from '../../utils/use-settings';
 import { useStorageItem } from '../../utils/use-storage-item';
 import { siteConfigsItem, imageSourceRulesItem, extensionPrefsItem } from '../../utils/storage';
 import { validateTextPattern } from '../../utils/text-blur';
+import { useT, type MsgKey } from '../../utils/i18n';
+import { useLocale, LanguageSwitcher, type TFunction } from '@blur/ui';
+import { useSetLocale } from '../../utils/use-locale';
 import {
   BLUR_PRESETS,
   presetForRadius,
@@ -20,50 +23,60 @@ import {
   type BlurOverrideKey,
 } from '../../utils/features';
 
+/** The `t` returned by `useT`, threaded into the module-level helpers below. */
+type T = TFunction<MsgKey>;
+
+/** Blur-strength preset name → translation key for its label. */
+const PRESET_KEYS: Record<PresetName, MsgKey> = {
+  light: 'preset_light',
+  medium: 'preset_medium',
+  heavy: 'preset_heavy',
+};
+
 type Tab = 'blur' | 'text' | 'sites' | 'images' | 'links' | 'backup' | 'about';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'blur', label: 'Blur' },
-  { id: 'text', label: 'Text patterns' },
-  { id: 'sites', label: 'Sites' },
-  { id: 'images', label: 'Image sources' },
-  { id: 'links', label: 'Links' },
-  { id: 'backup', label: 'Backup' },
-  { id: 'about', label: 'About' },
+const TABS: { id: Tab; labelKey: MsgKey }[] = [
+  { id: 'blur', labelKey: 'tab_blur' },
+  { id: 'text', labelKey: 'tab_text' },
+  { id: 'sites', labelKey: 'tab_sites' },
+  { id: 'images', labelKey: 'tab_images' },
+  { id: 'links', labelKey: 'tab_links' },
+  { id: 'backup', labelKey: 'tab_backup' },
+  { id: 'about', labelKey: 'tab_about' },
 ];
 
-const BLUR_TARGETS: { key: BlurOverrideKey; label: string }[] = [
-  { key: 'images', label: 'Images' },
-  { key: 'video', label: 'Video' },
-  { key: 'posters', label: 'Thumbnails & posters' },
-  { key: 'text', label: 'Text' },
+const BLUR_TARGETS: { key: BlurOverrideKey; labelKey: MsgKey }[] = [
+  { key: 'images', labelKey: 'target_images' },
+  { key: 'video', labelKey: 'target_video' },
+  { key: 'posters', labelKey: 'target_posters' },
+  { key: 'text', labelKey: 'target_text' },
 ];
 
-const REVEAL_MODES: { value: RevealMode; label: string }[] = [
-  { value: 'hover', label: 'On hover' },
-  { value: 'click', label: 'On click' },
-  { value: 'never', label: 'Never' },
+const REVEAL_MODES: { value: RevealMode; labelKey: MsgKey }[] = [
+  { value: 'hover', labelKey: 'reveal_hover' },
+  { value: 'click', labelKey: 'reveal_click' },
+  { value: 'never', labelKey: 'reveal_never' },
 ];
 
-const MASK_STYLES: { value: MaskStyle; label: string; hint: string }[] = [
+const MASK_STYLES: { value: MaskStyle; labelKey: MsgKey; hintKey: MsgKey }[] = [
   {
     value: 'blur',
-    label: 'Blur',
-    hint: 'Softens the content. Shape and colour still read through — you can tell a photo from a video.',
+    labelKey: 'mask_blur',
+    hintKey: 'opt_mask_blur_hint',
   },
   {
     value: 'solid',
-    label: 'Solid colour',
-    hint: 'Paints an opaque rectangle over the content. Nothing about it survives, and it costs less to render than blur.',
+    labelKey: 'opt_mask_solid',
+    hintKey: 'opt_mask_solid_hint',
   },
 ];
 
 /** Ready-made fills, so the common choices are one tap away on a phone. */
-const MASK_SWATCHES: { color: string; label: string }[] = [
-  { color: '#1f2430', label: 'Slate (default)' },
-  { color: '#000000', label: 'Black' },
-  { color: '#6b7280', label: 'Grey' },
-  { color: '#f2f3f5', label: 'Paper' },
+const MASK_SWATCHES: { color: string; labelKey: MsgKey }[] = [
+  { color: '#1f2430', labelKey: 'swatch_slate' },
+  { color: '#000000', labelKey: 'swatch_black' },
+  { color: '#6b7280', labelKey: 'swatch_grey' },
+  { color: '#f2f3f5', labelKey: 'swatch_paper' },
 ];
 
 /**
@@ -108,37 +121,41 @@ function maskFilterFor(blur: {
  * rendered the MERGED values, so an inherited toggle and an overriding one looked
  * identical, and nothing on the Blur tab hinted that some sites ignore it.
  */
-const FIELD_LABELS: Partial<Record<keyof BlurSettings, string>> = {
-  images: 'Images',
-  video: 'Video',
-  posters: 'Thumbnails & posters',
-  text: 'Text',
-  maskStyle: 'Mask style',
-  radius: 'Blur radius',
-  maskOpacity: 'Fill opacity',
-  maskColor: 'Fill colour',
-  reveal: 'Show blurred content',
-  rehideOnBlur: 'Re-hide when I switch away',
-  showLabels: 'Labels',
-  textPatterns: 'Text patterns',
+const FIELD_LABELS: Partial<Record<keyof BlurSettings, MsgKey>> = {
+  images: 'field_images',
+  video: 'field_video',
+  posters: 'field_posters',
+  text: 'field_text',
+  maskStyle: 'field_maskStyle',
+  radius: 'field_radius',
+  maskOpacity: 'field_maskOpacity',
+  maskColor: 'field_maskColor',
+  reveal: 'field_reveal',
+  rehideOnBlur: 'field_rehideOnBlur',
+  showLabels: 'field_showLabels',
+  textPatterns: 'field_textPatterns',
 };
 
-function describeBlurValue(field: keyof BlurSettings, v: unknown): string {
+function describeBlurValue(field: keyof BlurSettings, v: unknown, t: T): string {
   switch (field) {
     case 'maskStyle':
-      return v === 'solid' ? 'Solid colour' : 'Blur';
+      return v === 'solid' ? t('opt_value_solid') : t('value_blur');
     case 'radius':
       return `${String(v)}px`;
     case 'maskOpacity':
       return `${Math.round(clampMaskOpacity(Number(v)) * 100)}%`;
     case 'maskColor':
       return safeMaskColor(v);
-    case 'reveal':
-      return REVEAL_MODES.find((m) => m.value === v)?.label ?? String(v);
-    case 'textPatterns':
-      return `${Array.isArray(v) ? v.length : 0} pattern${Array.isArray(v) && v.length === 1 ? '' : 's'}`;
+    case 'reveal': {
+      const mode = REVEAL_MODES.find((m) => m.value === v);
+      return mode ? t(mode.labelKey) : String(v);
+    }
+    case 'textPatterns': {
+      const n = Array.isArray(v) ? v.length : 0;
+      return t(n === 1 ? 'patterns_one' : 'patterns_other', { n });
+    }
     default:
-      return v ? 'On' : 'Off';
+      return v ? t('value_on') : t('value_off');
   }
 }
 
@@ -166,21 +183,25 @@ function OverrideMark({
   host: string;
   onInherit: () => void;
 }): JSX.Element {
+  const t = useT();
   return (
     <p className="ovr ovr-inherit">
       <span className="ovr-icon" aria-hidden="true">
         ↳
       </span>
       <span className="ovr-txt">
-        <strong>{label}</strong> overrides global (<strong>{globalValue}</strong>).
+        <strong>{label}</strong>
+        {t('ovr_overrides_global_pre')}
+        <strong>{globalValue}</strong>
+        {t('ovr_overrides_global_post')}
       </span>
       <button
         type="button"
         className="ovr-btn"
-        aria-label={`Use the global ${label} setting on ${host}`}
+        aria-label={t('ovr_use_global_aria', { label, host })}
         onClick={onInherit}
       >
-        Use global
+        {t('ovr_use_global')}
       </button>
     </p>
   );
@@ -204,10 +225,13 @@ function normalizeHost(raw: string): string | null {
 }
 
 export function App(): JSX.Element {
+  const t = useT();
+  const locale = useLocale();
+  const setLocale = useSetLocale();
   const { settings, update, loaded, error } = useSettings();
   const [tab, setTab] = useState<Tab>('blur');
 
-  if (!loaded) return <main className="options">Loading…</main>;
+  if (!loaded) return <main className="options">{t('loading')}</main>;
 
   function setBlur(patch: Partial<BlurSettings>): void {
     // Pass ONLY the changed fields: `update` deep-merges `patch.blur` onto the
@@ -220,13 +244,13 @@ export function App(): JSX.Element {
   return (
     <main className="options">
       <header className="masthead">
-        <h1>Content Blur</h1>
+        <h1>{t('app_name')}</h1>
         <label className="master-toggle">
-          <span>{settings.enabled ? 'Enabled' : 'Disabled'}</span>
+          <span>{settings.enabled ? t('status_enabled') : t('status_disabled')}</span>
           <span className="switch">
             <input
               type="checkbox"
-              aria-label="Enable Content Blur globally"
+              aria-label={t('aria_enable_global')}
               checked={settings.enabled}
               onChange={(e) => update({ enabled: e.target.checked })}
             />
@@ -234,10 +258,13 @@ export function App(): JSX.Element {
           </span>
         </label>
       </header>
+      <section className="lang-row">
+        <h2 className="lang-heading">{t('language')}</h2>
+        <LanguageSwitcher locale={locale} onChange={setLocale} label={t('language')} />
+      </section>
       {!settings.enabled && (
         <p className="note" role="status">
-          Content Blur is turned off everywhere. Turn it back on to blur content and edit the
-          settings below.
+          {t('note_disabled_all')}
         </p>
       )}
       {error && (
@@ -294,10 +321,11 @@ function TabBar({
   current,
   onSelect,
 }: {
-  tabs: { id: Tab; label: string }[];
+  tabs: { id: Tab; labelKey: MsgKey }[];
   current: Tab;
   onSelect: (id: Tab) => void;
 }): JSX.Element {
+  const t = useT();
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   function onKey(e: ReactKeyboardEvent<HTMLDivElement>): void {
     const i = tabs.findIndex((t) => t.id === current);
@@ -314,23 +342,23 @@ function TabBar({
     refs.current[j]?.focus();
   }
   return (
-    <div className="tabs" role="tablist" aria-label="Settings sections" onKeyDown={onKey}>
-      {tabs.map((t, idx) => (
+    <div className="tabs" role="tablist" aria-label={t('aria_tabs')} onKeyDown={onKey}>
+      {tabs.map((tabItem, idx) => (
         <button
-          key={t.id}
+          key={tabItem.id}
           type="button"
           role="tab"
-          id={`tab-${t.id}`}
-          aria-selected={current === t.id}
-          aria-controls={current === t.id ? `panel-${t.id}` : undefined}
-          tabIndex={current === t.id ? 0 : -1}
+          id={`tab-${tabItem.id}`}
+          aria-selected={current === tabItem.id}
+          aria-controls={current === tabItem.id ? `panel-${tabItem.id}` : undefined}
+          tabIndex={current === tabItem.id ? 0 : -1}
           ref={(el) => {
             refs.current[idx] = el;
           }}
-          className={current === t.id ? 'tab on' : 'tab'}
-          onClick={() => onSelect(t.id)}
+          className={current === tabItem.id ? 'tab on' : 'tab'}
+          onClick={() => onSelect(tabItem.id)}
         >
-          {t.label}
+          {t(tabItem.labelKey)}
         </button>
       ))}
     </div>
@@ -346,10 +374,11 @@ function PresetRow({
   radius: number;
   onPreset: (name: PresetName) => void;
 }): JSX.Element {
+  const t = useT();
   const active = presetForRadius(radius);
   return (
     <div className="field">
-      <span id="opt-preset-label">Blur strength</span>
+      <span id="opt-preset-label">{t('field_blur_strength')}</span>
       <div className="presets" role="group" aria-labelledby="opt-preset-label">
         {(Object.keys(BLUR_PRESETS) as PresetName[]).map((name) => (
           <button
@@ -359,7 +388,7 @@ function PresetRow({
             aria-pressed={active === name}
             onClick={() => onPreset(name)}
           >
-            {BLUR_PRESETS[name].label} ({BLUR_PRESETS[name].radius}px)
+            {t(PRESET_KEYS[name])} ({BLUR_PRESETS[name].radius}px)
           </button>
         ))}
       </div>
@@ -382,6 +411,7 @@ function MaskPreview({
   blur: BlurSettings;
   radius: number;
 }): JSX.Element {
+  const t = useT();
   const filter = maskFilterFor({
     maskStyle: blur.maskStyle,
     maskColor: blur.maskColor,
@@ -394,17 +424,20 @@ function MaskPreview({
         <div className="preview-frame">
           <img src={SAMPLE_IMAGE} alt="" />
         </div>
-        <figcaption>Original</figcaption>
+        <figcaption>{t('cap_original')}</figcaption>
       </figure>
       <figure className="preview-fig">
         <div className="preview-frame">
-          <img src={SAMPLE_IMAGE} alt="Preview of an image with your mask applied" style={{ filter }} />
+          <img src={SAMPLE_IMAGE} alt={t('alt_preview')} style={{ filter }} />
           {blur.showLabels && <span className="preview-chip">JPEG · 1200×800</span>}
         </div>
         <figcaption>
           {blur.maskStyle === 'solid'
-            ? `Solid ${blur.maskColor} · ${Math.round(blur.maskOpacity * 100)}%`
-            : `Blur ${radius}px`}
+            ? t('cap_solid', {
+                color: blur.maskColor,
+                pct: Math.round(blur.maskOpacity * 100),
+              })
+            : t('cap_blur', { r: radius })}
         </figcaption>
       </figure>
     </div>
@@ -429,14 +462,15 @@ function MaskSection({
   onRadius: (next: number) => void;
   setBlur: (patch: Partial<BlurSettings>) => void;
 }): JSX.Element {
+  const t = useT();
   const solid = blur.maskStyle === 'solid';
   const style = MASK_STYLES.find((m) => m.value === blur.maskStyle);
   const opacityPct = Math.round(clampMaskOpacity(blur.maskOpacity) * 100);
   return (
     <div className="subpanel">
-      <h2>How content is hidden</h2>
+      <h2>{t('heading_how_hidden')}</h2>
       <div className="field">
-        <span id="opt-mask-label">Mask style</span>
+        <span id="opt-mask-label">{t('field_maskStyle')}</span>
         <div className="mask-styles" role="group" aria-labelledby="opt-mask-label">
           {MASK_STYLES.map((m) => (
             <button
@@ -446,12 +480,12 @@ function MaskSection({
               aria-pressed={blur.maskStyle === m.value}
               onClick={() => setBlur({ maskStyle: m.value })}
             >
-              {m.label}
+              {t(m.labelKey)}
             </button>
           ))}
         </div>
       </div>
-      {style && <p className="note">{style.hint}</p>}
+      {style && <p className="note">{t(style.hintKey)}</p>}
 
       <MaskPreview blur={blur} radius={radius} />
 
@@ -459,7 +493,7 @@ function MaskSection({
         {solid ? (
           <>
             <div className="field">
-              <span id="opt-swatch-label">Fill colour</span>
+              <span id="opt-swatch-label">{t('field_maskColor')}</span>
               <div className="swatches" role="group" aria-labelledby="opt-swatch-label">
                 {MASK_SWATCHES.map((s) => (
                   <button
@@ -467,8 +501,8 @@ function MaskSection({
                     type="button"
                     className={safeMaskColor(blur.maskColor) === s.color ? 'swatch on' : 'swatch'}
                     style={{ background: s.color }}
-                    title={s.label}
-                    aria-label={s.label}
+                    title={t(s.labelKey)}
+                    aria-label={t(s.labelKey)}
                     aria-pressed={safeMaskColor(blur.maskColor) === s.color}
                     onClick={() => setBlur({ maskColor: s.color })}
                   />
@@ -479,7 +513,7 @@ function MaskSection({
                 <input
                   type="color"
                   className="swatch-input"
-                  aria-label="Custom fill colour"
+                  aria-label={t('aria_custom_fill')}
                   value={safeMaskColor(blur.maskColor)}
                   onChange={(e) => setBlur({ maskColor: e.target.value })}
                 />
@@ -487,40 +521,43 @@ function MaskSection({
               </div>
             </div>
             <label className="field">
-              <span>Fill opacity: {opacityPct}%</span>
+              <span>{t('opt_opacity_label', { pct: opacityPct })}</span>
               <input
                 type="range"
                 min={50}
                 max={100}
                 step={5}
                 value={opacityPct}
-                aria-label="Fill opacity, as a percentage"
+                aria-label={t('aria_opacity_range')}
                 onChange={(e) => setBlur({ maskOpacity: clampMaskOpacity(Number(e.target.value) / 100) })}
               />
             </label>
             <p className="note">
-              This does <strong>not</strong> let the hidden content show through. Below 100% you see
-              the <strong>page's own background</strong> through the fill — never the image or video,
-              which is never drawn at all. Lower it only to make the mask blend into a page.
+              {t('opt_note_opacity_1')}
+              <strong>{t('note_opacity_not')}</strong>
+              {t('opt_note_opacity_2')}
+              <strong>{t('opt_note_opacity_bg')}</strong>
+              {t('opt_note_opacity_3')}
             </p>
           </>
         ) : (
           <>
             <PresetRow radius={radius} onPreset={(name) => onRadius(BLUR_PRESETS[name].radius)} />
             <label className="field">
-              <span>Radius: {radius}px</span>
+              <span>{t('radius_label', { r: radius })}</span>
               <input
                 type="range"
                 min={4}
                 max={40}
                 value={radius}
-                aria-label="Blur radius in pixels"
+                aria-label={t('aria_radius')}
                 onChange={(e) => onRadius(Number(e.target.value))}
               />
             </label>
             <p className="note">
-              A blur is a visual softening, not a guarantee: a heavily blurred picture can still be
-              recognisable. Choose <strong>Solid colour</strong> when it must not be readable at all.
+              {t('opt_note_blur_1')}
+              <strong>{t('opt_value_solid')}</strong>
+              {t('opt_note_blur_2')}
             </p>
           </>
         )}
@@ -537,6 +574,7 @@ function MaskSection({
  * no site overrides anything, which is the common case.
  */
 function GlobalOverridesNotice({ onManageSites }: { onManageSites: () => void }): JSX.Element | null {
+  const t = useT();
   const { value: configs } = useStorageItem(siteConfigsItem);
   const hosts = Object.keys(configs).filter((h) => hasSiteOverride(configs[h]));
   if (hosts.length === 0) return null;
@@ -547,12 +585,12 @@ function GlobalOverridesNotice({ onManageSites }: { onManageSites: () => void })
         ⚠
       </span>
       <span className="ovr-txt">
-        {hosts.length === 1 ? '1 site overrides' : `${hosts.length} sites override`} some of
-        these settings and will not follow changes made here: {shown.join(', ')}
-        {hosts.length > shown.length ? ` and ${hosts.length - shown.length} more` : ''}.
+        {hosts.length === 1 ? t('ovr_notice_one') : t('ovr_notice_many', { n: hosts.length })}
+        {t('ovr_notice_body', { hosts: shown.join(', ') })}
+        {hosts.length > shown.length ? t('ovr_notice_more', { n: hosts.length - shown.length }) : ''}.
       </span>
       <button type="button" className="ovr-btn" onClick={onManageSites}>
-        Review per-site overrides
+        {t('btn_review_overrides')}
       </button>
     </p>
   );
@@ -567,6 +605,7 @@ function BlurPanel({
   setBlur: (patch: Partial<BlurSettings>) => void;
   onManageSites: () => void;
 }): JSX.Element {
+  const t = useT();
   const [radius, setRadius] = useState(settings.blur.radius);
   useEffect(() => setRadius(settings.blur.radius), [settings.blur.radius]);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -582,23 +621,20 @@ function BlurPanel({
     <section className="panel">
       <GlobalOverridesNotice onManageSites={onManageSites} />
       <div className="toggles">
-        {BLUR_TARGETS.map(({ key, label }) => (
+        {BLUR_TARGETS.map(({ key, labelKey }) => (
           <label key={key} className="chip">
             <input
               type="checkbox"
-              aria-label={`Blur ${label.toLowerCase()}`}
+              aria-label={t('aria_blur_category', { category: t(labelKey).toLowerCase() })}
               checked={settings.blur[key]}
               onChange={(e) => setBlur({ [key]: e.target.checked } as Partial<BlurSettings>)}
             />
-            {label}
+            {t(labelKey)}
           </label>
         ))}
       </div>
       {settings.blur.text && (
-        <p className="note">
-          Accessibility: blurred text stays in the DOM and the accessibility tree, so screen readers
-          still read it aloud and it remains findable via Ctrl+F.
-        </p>
+        <p className="note">{t('opt_note_text_a11y')}</p>
       )}
 
       <MaskSection
@@ -609,36 +645,34 @@ function BlurPanel({
       />
 
       <div className="subpanel">
-        <h2>Revealing</h2>
+        <h2>{t('heading_revealing')}</h2>
         <label className="field">
-          <span>Show blurred content</span>
+          <span>{t('field_reveal')}</span>
           <select value={settings.blur.reveal} onChange={(e) => setBlur({ reveal: e.target.value as RevealMode })}>
             {REVEAL_MODES.map((m) => (
               <option key={m.value} value={m.value}>
-                {m.label}
+                {t(m.labelKey)}
               </option>
             ))}
           </select>
         </label>
         {settings.blur.reveal === 'hover' && (
           <p className="note">
-            On touch devices nothing can hover, so <strong>On hover</strong> automatically becomes
-            tap-to-reveal there — hidden content is never a dead end on a phone.
+            {t('opt_note_hover_1')}
+            <strong>{t('reveal_hover')}</strong>
+            {t('opt_note_hover_2')}
           </p>
         )}
         <RevealTimeoutField />
         <label className="field">
           <span>
-            Re-hide when I switch away
-            <span className="sub-line">
-              Instantly hides everything you revealed as soon as the tab is in the background or the
-              window loses focus — for when you are screen-sharing, or someone walks up.
-            </span>
+            {t('field_rehideOnBlur')}
+            <span className="sub-line">{t('opt_rehide_desc')}</span>
           </span>
           <span className="switch">
             <input
               type="checkbox"
-              aria-label="Re-hide revealed content when the tab or window loses focus"
+              aria-label={t('aria_rehide')}
               checked={settings.blur.rehideOnBlur}
               onChange={(e) => setBlur({ rehideOnBlur: e.target.checked })}
             />
@@ -648,19 +682,16 @@ function BlurPanel({
       </div>
 
       <div className="subpanel">
-        <h2>Labels</h2>
+        <h2>{t('heading_labels')}</h2>
         <label className="field">
           <span>
-            Label what is hidden
-            <span className="sub-line">
-              Puts a small chip on each masked element naming what is underneath — "JPEG · 1200×800",
-              "MP4 · 0:42" — so you can tell items apart without revealing them.
-            </span>
+            {t('opt_label_what')}
+            <span className="sub-line">{t('opt_labels_desc')}</span>
           </span>
           <span className="switch">
             <input
               type="checkbox"
-              aria-label="Show a label chip on each masked element"
+              aria-label={t('aria_show_labels')}
               checked={settings.blur.showLabels}
               onChange={(e) => setBlur({ showLabels: e.target.checked })}
             />
@@ -678,19 +709,20 @@ function BlurPanel({
  * `BlurSettings`). 0 keeps content revealed until navigation.
  */
 function RevealTimeoutField(): JSX.Element {
+  const t = useT();
   const { value: prefs, setValue } = useStorageItem(extensionPrefsItem);
   const options = [0, 3, 5, 10, 30, 60];
   return (
     <label className="field">
-      <span>Re-hide revealed content after</span>
+      <span>{t('opt_rehide_after')}</span>
       <select
         value={prefs.revealTimeoutSec}
-        aria-label="Automatically re-hide revealed content after this many seconds"
+        aria-label={t('aria_rehide_after')}
         onChange={(e) => setValue({ ...prefs, revealTimeoutSec: Number(e.target.value) })}
       >
         {options.map((sec) => (
           <option key={sec} value={sec}>
-            {sec === 0 ? 'Never (until I leave)' : `${sec} seconds`}
+            {sec === 0 ? t('opt_never_leave') : t('opt_seconds', { n: sec })}
           </option>
         ))}
       </select>
@@ -707,6 +739,7 @@ function TextPatternsPanel({
   patterns: string[];
   onChange: (next: string[]) => void;
 }): JSX.Element {
+  const t = useT();
   const [draft, setDraft] = useState('');
   const [bulk, setBulk] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -718,7 +751,7 @@ function TextPatternsPanel({
     const term = draft.trim();
     if (!term) return;
     if (entries.includes(term)) {
-      setError('That pattern is already in the list.');
+      setError(t('err_pattern_dup'));
       return;
     }
     const invalid = validateTextPattern(term);
@@ -741,7 +774,7 @@ function TextPatternsPanel({
     const { next: candidates, added } = mergeKeywords(entries, raw);
     if (added === 0) {
       setError(null);
-      setStatus('Nothing new to add — those keywords were already in the list.');
+      setStatus(t('status_nothing_new'));
       return;
     }
     const kept: string[] = [...entries];
@@ -752,13 +785,14 @@ function TextPatternsPanel({
     }
     if (kept.length === entries.length) {
       setStatus(null);
-      setError('None of those were valid patterns.');
+      setError(t('err_none_valid'));
       return;
     }
     setError(null);
+    const addedCount = kept.length - entries.length;
     setStatus(
-      `Added ${kept.length - entries.length} keyword${kept.length - entries.length === 1 ? '' : 's'}` +
-        (skipped > 0 ? `, skipped ${skipped} invalid.` : '.'),
+      t(addedCount === 1 ? 'status_added_one' : 'status_added_other', { n: addedCount }) +
+        (skipped > 0 ? t('status_skipped', { n: skipped }) : '.'),
     );
     onChange(kept);
   }
@@ -780,7 +814,11 @@ function TextPatternsPanel({
     a.download = `content-blur-keywords-${new Date().toISOString().slice(0, 10)}.${kind}`;
     a.click();
     URL.revokeObjectURL(url);
-    setStatus(`Exported ${entries.length} keyword${entries.length === 1 ? '' : 's'}.`);
+    setStatus(
+      t(entries.length === 1 ? 'status_exported_one' : 'status_exported_other', {
+        n: entries.length,
+      }),
+    );
     setError(null);
   }
 
@@ -788,13 +826,13 @@ function TextPatternsPanel({
     try {
       const parsed = parseKeywordFile(await file.text());
       if (parsed.length === 0) {
-        setError('That file had no keywords.');
+        setError(t('err_no_keywords'));
         setStatus(null);
         return;
       }
       addMany(parsed.join('\n'));
     } catch {
-      setError('Could not read that file.');
+      setError(t('err_cant_read'));
       setStatus(null);
     }
   }
@@ -802,28 +840,22 @@ function TextPatternsPanel({
   return (
     <section className="panel">
       <p className="note">
-        Add words or phrases to blur wherever they appear on a page. Use{' '}
-        <code>/pattern/flags</code> for a regular expression — for example{' '}
-        <code>/spoiler/i</code> to match any capitalization.
+        {t('tp_note1_1')}
+        <code>/pattern/flags</code>
+        {t('tp_note1_2')}
+        <code>/spoiler/i</code>
+        {t('tp_note1_3')}
       </p>
-      <p className="note">
-        Accessibility: blurred text stays in the DOM and the accessibility tree, so screen readers still read it
-        aloud, and it is still copyable and findable via Ctrl+F. CSS blur obscures content visually — it is not a
-        way to truly hide it.
-      </p>
+      <p className="note">{t('tp_note_a11y')}</p>
       <details className="advanced">
-        <summary>Technical details</summary>
-        <p className="note">
-          Plain keywords are compiled into a single alternation regex and matched in one pass.
-          Beyond ~1–2k terms this would move to an Aho-Corasick automaton — one linear scan
-          regardless of term count.
-        </p>
+        <summary>{t('tp_tech_summary')}</summary>
+        <p className="note">{t('tp_tech_body')}</p>
       </details>
       <div className="field">
         <input
           type="text"
-          aria-label="Add a text pattern"
-          placeholder="keyword or /regex/i"
+          aria-label={t('aria_add_pattern')}
+          placeholder={t('ph_pattern')}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -832,16 +864,20 @@ function TextPatternsPanel({
           onKeyDown={(e) => e.key === 'Enter' && add()}
         />
         <button type="button" onClick={add}>
-          Add
+          {t('btn_add')}
         </button>
       </div>
 
       <div className="subpanel">
-        <h2>Add many at once</h2>
-        <p className="note">One keyword or <code>/regex/</code> per line.</p>
+        <h2>{t('tp_add_many')}</h2>
+        <p className="note">
+          {t('tp_one_per_1')}
+          <code>/regex/</code>
+          {t('tp_one_per_2')}
+        </p>
         <textarea
-          aria-label="Add multiple keywords, one per line"
-          placeholder={'spoiler\nseason finale\n/leak(ed)?/i'}
+          aria-label={t('aria_add_multi')}
+          placeholder={t('ph_bulk')}
           value={bulk}
           onChange={(e) => {
             setBulk(e.target.value);
@@ -850,22 +886,22 @@ function TextPatternsPanel({
         />
         <div className="field wrap">
           <button type="button" onClick={addBulk}>
-            Add all
+            {t('btn_add_all')}
           </button>
           <button type="button" onClick={() => exportList('txt')} disabled={entries.length === 0}>
-            Export .txt
+            {t('btn_export_txt')}
           </button>
           <button type="button" onClick={() => exportList('json')} disabled={entries.length === 0}>
-            Export .json
+            {t('btn_export_json')}
           </button>
           <button type="button" onClick={() => fileRef.current?.click()}>
-            Import file
+            {t('btn_import_file')}
           </button>
           <input
             ref={fileRef}
             type="file"
             accept=".txt,.json,text/plain,application/json"
-            aria-label="Import a keyword file"
+            aria-label={t('aria_import_keywords')}
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -892,8 +928,12 @@ function TextPatternsPanel({
         {entries.map((term) => (
           <li key={term}>
             <span>{term}</span>
-            <button type="button" aria-label={`Remove pattern ${term}`} onClick={() => onChange(entries.filter((t) => t !== term))}>
-              Remove
+            <button
+              type="button"
+              aria-label={t('aria_remove_pattern', { term })}
+              onClick={() => onChange(entries.filter((x) => x !== term))}
+            >
+              {t('btn_remove')}
             </button>
           </li>
         ))}
@@ -911,17 +951,18 @@ function SitesPanel({
   allowlist: string[];
   onChange: (next: string[]) => void;
 }): JSX.Element {
+  const t = useT();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   function add(): void {
     const host = normalizeHost(draft);
     if (!host) {
-      setError('Enter a valid site, e.g. example.com.');
+      setError(t('err_valid_site'));
       return;
     }
     if (allowlist.includes(host)) {
-      setError(`${host} is already on the list.`);
+      setError(t('err_host_listed', { host }));
       return;
     }
     setError(null);
@@ -931,12 +972,12 @@ function SitesPanel({
 
   return (
     <section className="panel">
-      <p className="note">Sites on the allowlist are fully excluded — the extension does nothing on them.</p>
+      <p className="note">{t('sites_note')}</p>
       <div className="field">
         <input
           type="text"
-          aria-label="Add a site to the allowlist"
-          placeholder="example.com or https://example.com/page"
+          aria-label={t('aria_add_site')}
+          placeholder={t('ph_site')}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -945,7 +986,7 @@ function SitesPanel({
           onKeyDown={(e) => e.key === 'Enter' && add()}
         />
         <button type="button" onClick={add}>
-          Add
+          {t('btn_add')}
         </button>
       </div>
       {error && (
@@ -958,8 +999,12 @@ function SitesPanel({
         {allowlist.map((host) => (
           <li key={host}>
             <span>{host}</span>
-            <button type="button" aria-label={`Remove ${host} from allowlist`} onClick={() => onChange(allowlist.filter((h) => h !== host))}>
-              Remove
+            <button
+              type="button"
+              aria-label={t('aria_remove_site', { host })}
+              onClick={() => onChange(allowlist.filter((h) => h !== host))}
+            >
+              {t('btn_remove')}
             </button>
           </li>
         ))}
@@ -972,6 +1017,7 @@ function SitesPanel({
 
 /** Per-site category/radius overrides (feature 1). Distinct from the allowlist. */
 function SiteOverridesPanel(): JSX.Element {
+  const t = useT();
   const { settings } = useSettings();
   const { value: configs, setValue: setConfigs } = useStorageItem(siteConfigsItem);
   const [draft, setDraft] = useState('');
@@ -982,11 +1028,11 @@ function SiteOverridesPanel(): JSX.Element {
   function add(): void {
     const host = normalizeHost(draft);
     if (!host) {
-      setError('Enter a valid site, e.g. example.com.');
+      setError(t('err_valid_site'));
       return;
     }
     if (hosts.includes(host)) {
-      setError(`${host} already has overrides.`);
+      setError(t('err_host_overrides', { host }));
       return;
     }
     // Seed with the current global values so the toggles start meaningful.
@@ -997,20 +1043,21 @@ function SiteOverridesPanel(): JSX.Element {
 
   return (
     <div className="subpanel">
-      <h2>Per-site overrides</h2>
+      <h2>{t('heading_per_site')}</h2>
       <p className="note">
-        Choose exactly which categories blur, and how strongly, on a specific site. A site's
-        overrides <strong>beat your global settings</strong> there — so a marked control below is
-        one the Blur tab can no longer move on that site. Marked settings are the site's own;
-        everything else follows global. Use <strong>Use global</strong> to give a single setting
-        back, or <strong>Reset to global</strong> to clear the site entirely. This needs no extra
-        browser permission.
+        {t('ov_help_1')}
+        <strong>{t('ov_help_strong1')}</strong>
+        {t('ov_help_2')}
+        <strong>{t('ovr_use_global')}</strong>
+        {t('ov_help_3')}
+        <strong>{t('btn_reset_global')}</strong>
+        {t('ov_help_4')}
       </p>
       <div className="field">
         <input
           type="text"
-          aria-label="Add a site override"
-          placeholder="example.com"
+          aria-label={t('aria_add_override')}
+          placeholder={t('ph_example')}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -1019,7 +1066,7 @@ function SiteOverridesPanel(): JSX.Element {
           onKeyDown={(e) => e.key === 'Enter' && add()}
         />
         <button type="button" onClick={add}>
-          Add override
+          {t('btn_add_override')}
         </button>
       </div>
       {error && (
@@ -1028,7 +1075,7 @@ function SiteOverridesPanel(): JSX.Element {
           {error}
         </p>
       )}
-      {hosts.length === 0 && <p className="note">No per-site overrides yet.</p>}
+      {hosts.length === 0 && <p className="note">{t('ov_none')}</p>}
       {hosts.map((host) => (
         <SiteOverrideRow
           key={host}
@@ -1056,6 +1103,7 @@ function SiteOverrideRow({
   onChange: (patch: { enabled?: boolean | undefined; blur?: Partial<BlurSettings> }) => void;
   onRemove: () => void;
 }): JSX.Element {
+  const t = useT();
   const effective = { ...globalBlur, ...config?.blur };
   const solid = effective.maskStyle === 'solid';
   const own = config?.blur ?? {};
@@ -1069,10 +1117,11 @@ function SiteOverrideRow({
   /** Marker for a field this site actually pins — nothing for an inherited one. */
   function mark(field: keyof BlurSettings): JSX.Element | null {
     if (own[field] === undefined) return null;
+    const labelKey = FIELD_LABELS[field];
     return (
       <OverrideMark
-        label={FIELD_LABELS[field] ?? field}
-        globalValue={describeBlurValue(field, globalBlur[field])}
+        label={labelKey ? t(labelKey) : field}
+        globalValue={describeBlurValue(field, globalBlur[field], t)}
         host={host}
         onInherit={() => inherit(field)}
       />
@@ -1090,30 +1139,39 @@ function SiteOverrideRow({
               them apart. */}
           <span className="sub-line">
             {owned.length === 0
-              ? 'Follows global for everything.'
-              : `Overrides ${owned.length} setting${owned.length === 1 ? '' : 's'}: ${owned
-                  .map((k) => FIELD_LABELS[k] ?? k)
-                  .join(', ')}. Everything else follows global.`}
+              ? t('ov_follows_all')
+              : t(owned.length === 1 ? 'ov_overrides_one' : 'ov_overrides_other', {
+                  n: owned.length,
+                  list: owned
+                    .map((k) => {
+                      const key = FIELD_LABELS[k];
+                      return key ? t(key) : k;
+                    })
+                    .join(', '),
+                })}
           </span>
         </span>
         <button
           type="button"
-          aria-label={`Clear ${host}'s overrides and use global settings there`}
+          aria-label={t('aria_reset_override', { host })}
           onClick={onRemove}
         >
-          Reset to global
+          {t('btn_reset_global')}
         </button>
       </div>
       <div className="toggles">
-        {BLUR_TARGETS.map(({ key, label }) => (
+        {BLUR_TARGETS.map(({ key, labelKey }) => (
           <label key={key} className={own[key] !== undefined ? 'chip flagged-own' : 'chip'}>
             <input
               type="checkbox"
-              aria-label={`Blur ${label.toLowerCase()} on ${host}`}
+              aria-label={t('aria_blur_category_site', {
+                category: t(labelKey).toLowerCase(),
+                host,
+              })}
               checked={effective[key]}
               onChange={(e) => onChange({ blur: { [key]: e.target.checked } as Partial<BlurSettings> })}
             />
-            {label}
+            {t(labelKey)}
           </label>
         ))}
       </div>
@@ -1126,7 +1184,7 @@ function SiteOverrideRow({
           controls per row for no real use. The note below says so rather than
           leaving a colour control here that quietly edits the global value. */}
       <div className="field">
-        <span id={`ov-mask-${host}`}>Mask style</span>
+        <span id={`ov-mask-${host}`}>{t('field_maskStyle')}</span>
         <div className="mask-styles" role="group" aria-labelledby={`ov-mask-${host}`}>
           {MASK_STYLES.map((m) => (
             <button
@@ -1134,10 +1192,10 @@ function SiteOverrideRow({
               type="button"
               className={effective.maskStyle === m.value ? 'seg on' : 'seg'}
               aria-pressed={effective.maskStyle === m.value}
-              aria-label={`${m.label} mask on ${host}`}
+              aria-label={t('aria_mask_site', { style: t(m.labelKey), host })}
               onClick={() => onChange({ blur: { maskStyle: m.value } })}
             >
-              {m.label}
+              {t(m.labelKey)}
             </button>
           ))}
         </div>
@@ -1146,26 +1204,29 @@ function SiteOverrideRow({
       <div className="subordinate">
         {solid ? (
           <p className="note">
-            Filled with{' '}
+            {t('ov_filled_1')}
             <span
               className="swatch-dot"
               style={{ background: safeMaskColor(effective.maskColor) }}
               aria-hidden="true"
             />{' '}
-            <code>{safeMaskColor(effective.maskColor)}</code> at{' '}
-            {Math.round(clampMaskOpacity(effective.maskOpacity) * 100)}%. Colour and opacity are
-            global — change them under <strong>Blur</strong>.
+            <code>{safeMaskColor(effective.maskColor)}</code>
+            {t('ov_filled_2', {
+              pct: Math.round(clampMaskOpacity(effective.maskOpacity) * 100),
+            })}
+            <strong>{t('value_blur')}</strong>
+            {t('ov_filled_3')}
           </p>
         ) : (
           <>
             <label className="field">
-              <span>Radius: {effective.radius}px</span>
+              <span>{t('radius_label', { r: effective.radius })}</span>
               <input
                 type="range"
                 min={4}
                 max={40}
                 value={effective.radius}
-                aria-label={`Blur radius on ${host}`}
+                aria-label={t('aria_radius_site', { host })}
                 onChange={(e) => onChange({ blur: { radius: Number(e.target.value) } })}
               />
             </label>
@@ -1180,40 +1241,42 @@ function SiteOverrideRow({
 /* ------------------------- Image sources panel ------------------------ */
 
 function ImageSourcesPanel(): JSX.Element {
+  const t = useT();
   const { value: rules, setValue } = useStorageItem(imageSourceRulesItem);
   const { value: prefs, setValue: setPrefs } = useStorageItem(extensionPrefsItem);
   return (
     <section className="panel">
       <p className="note">
-        Match by any part of an image URL (usually a domain). <strong>Never blur</strong> keeps images
-        from these sources sharp even when Images is on; <strong>Always blur</strong> blurs them even
-        when Images is off. Matching is a plain substring of the <code>src</code>.
+        {t('img_note_1')}
+        <strong>{t('img_note_never')}</strong>
+        {t('img_note_2')}
+        <strong>{t('img_note_always')}</strong>
+        {t('img_note_3')}
+        <code>src</code>
+        {t('img_note_4')}
       </p>
       <DomainList
-        title="Never blur images from"
+        title={t('img_never_title')}
         values={rules.never}
         onChange={(never) => setValue((prev) => ({ ...prev, never }))}
       />
       <DomainList
-        title="Always blur images from"
+        title={t('img_always_title')}
         values={rules.always}
         onChange={(always) => setValue((prev) => ({ ...prev, always }))}
       />
       <div className="subpanel">
-        <h2>Minimum image size</h2>
-        <p className="note">
-          Skip blurring tiny images — favicons, icons and 1px tracking pixels — so only real pictures
-          are blurred. An image is left sharp when it is smaller than this in both width and height.
-        </p>
+        <h2>{t('heading_min_size')}</h2>
+        <p className="note">{t('min_size_note')}</p>
         <label className="field">
-          <span>Don't blur images under</span>
+          <span>{t('min_size_label')}</span>
           <input
             type="number"
             min={0}
             max={512}
             step={1}
             value={prefs.minImagePx}
-            aria-label="Minimum image size in pixels"
+            aria-label={t('aria_min_size')}
             onChange={(e) =>
               setPrefs((prev) => ({
                 ...prev,
@@ -1221,7 +1284,7 @@ function ImageSourcesPanel(): JSX.Element {
               }))
             }
           />
-          <span>px</span>
+          <span>{t('unit_px')}</span>
         </label>
       </div>
     </section>
@@ -1236,16 +1299,17 @@ function ImageSourcesPanel(): JSX.Element {
  * permission.
  */
 function LinksPanel(): JSX.Element {
+  const t = useT();
   const { value: prefs, setValue } = useStorageItem(extensionPrefsItem);
   return (
     <section className="panel">
       <p className="note">
-        Blur links whose address contains one of these domains — for example to soften results from a
-        site you'd rather not see in search pages or feeds. Matching is a plain substring of the link's{' '}
-        <code>href</code>. This uses only the existing blur engine and needs no extra permission.
+        {t('links_note_1')}
+        <code>href</code>
+        {t('links_note_2')}
       </p>
       <DomainList
-        title="Blur links pointing at"
+        title={t('links_title')}
         values={prefs.linkDomains}
         onChange={(linkDomains) => setValue((prev) => ({ ...prev, linkDomains }))}
       />
@@ -1262,6 +1326,7 @@ function DomainList({
   values: string[];
   onChange: (next: string[]) => void;
 }): JSX.Element {
+  const t = useT();
   const [draft, setDraft] = useState('');
   function add(): void {
     const v = draft.trim().toLowerCase();
@@ -1279,21 +1344,25 @@ function DomainList({
         <input
           type="text"
           aria-label={title}
-          placeholder="cdn.example.com"
+          placeholder={t('ph_cdn')}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
         />
         <button type="button" onClick={add}>
-          Add
+          {t('btn_add')}
         </button>
       </div>
       <ul className="allowlist">
         {values.map((v) => (
           <li key={v}>
             <span>{v}</span>
-            <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>
-              Remove
+            <button
+              type="button"
+              aria-label={t('aria_remove', { v })}
+              onClick={() => onChange(values.filter((x) => x !== v))}
+            >
+              {t('btn_remove')}
             </button>
           </li>
         ))}
@@ -1305,6 +1374,7 @@ function DomainList({
 /* ----------------------------- Backup panel --------------------------- */
 
 function BackupPanel(): JSX.Element {
+  const t = useT();
   const { settings, update } = useSettings();
   const { value: siteConfigs, setValue: setSiteConfigs } = useStorageItem(siteConfigsItem);
   const { value: imageRules, setValue: setImageRules } = useStorageItem(imageSourceRulesItem);
@@ -1321,7 +1391,7 @@ function BackupPanel(): JSX.Element {
     a.download = `content-blur-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setStatus('Settings exported.');
+    setStatus(t('status_exported_settings'));
     setError(null);
   }
 
@@ -1331,9 +1401,7 @@ function BackupPanel(): JSX.Element {
       const parsed = parseBackup(text);
       // Importing REPLACES current settings, per-site overrides and image rules —
       // a destructive action, so confirm before overwriting the user's config.
-      const ok = window.confirm(
-        'Import will replace your current settings, per-site overrides and image-source rules. Continue?',
-      );
+      const ok = window.confirm(t('confirm_import'));
       if (!ok) {
         setStatus(null);
         setError(null);
@@ -1342,32 +1410,29 @@ function BackupPanel(): JSX.Element {
       update(parsed.settings);
       setSiteConfigs(parsed.siteConfigs);
       setImageRules(parsed.imageSourceRules);
-      setStatus('Settings imported.');
+      setStatus(t('status_imported'));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Import failed.');
+      setError(e instanceof Error ? e.message : t('err_import_failed'));
       setStatus(null);
     }
   }
 
   return (
     <section className="panel">
-      <p className="note">
-        Export all settings, per-site overrides, text patterns and image-source rules to a JSON file,
-        or import them back on another machine. Everything stays on your device.
-      </p>
+      <p className="note">{t('backup_note')}</p>
       <div className="field">
         <button type="button" onClick={exportJson}>
-          Export to JSON
+          {t('btn_export_json_full')}
         </button>
         <button type="button" onClick={() => fileRef.current?.click()}>
-          Import from JSON
+          {t('btn_import_json')}
         </button>
         <input
           ref={fileRef}
           type="file"
           accept="application/json,.json"
-          aria-label="Import settings file"
+          aria-label={t('aria_import_settings')}
           style={{ display: 'none' }}
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -1395,20 +1460,16 @@ function BackupPanel(): JSX.Element {
 /* ----------------------------- About panel ---------------------------- */
 
 function AboutPanel(): JSX.Element {
+  const t = useT();
   return (
     <section className="panel">
+      <p className="note">{t('about_privacy')}</p>
       <p className="note">
-        Privacy: no browsing data leaves your device. Page scanning, blurring and counting all happen locally.
+        {t('about_shortcuts_1')}
+        <code>chrome://extensions/shortcuts</code>
+        {t('about_shortcuts_2')}
       </p>
-      <p className="note">
-        Keyboard shortcuts (rebind at <code>chrome://extensions/shortcuts</code>): Alt+Shift+B toggles the
-        extension globally, Alt+Shift+R reveals everything on the page, and Alt+Shift+P is a panic toggle that
-        blurs all media instantly.
-      </p>
-      <p className="note">
-        This extension only blurs content. Ad blocking lives in a separate companion extension, so each add-on
-        keeps a single, narrow purpose.
-      </p>
+      <p className="note">{t('about_scope')}</p>
     </section>
   );
 }

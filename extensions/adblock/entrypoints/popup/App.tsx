@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { browser } from '#imports';
+import { LocaleProvider } from '@blur/ui';
 import type {
   AdBlockLevel,
   AdBlockSettings,
   AdBlockTabStats,
   AggregateStats,
 } from '@blur/core';
-import { ADBLOCK_LEVELS, adBlockPresetForLevel } from '@blur/core';
+import { adBlockPresetForLevel } from '@blur/core';
 import { useSettings } from '../../utils/use-settings';
 import { useStorageItem } from '../../utils/use-storage-item';
 import { useHostAccess } from '../../utils/use-host-access';
@@ -20,7 +21,6 @@ import {
   RULESET_STATUS_OK,
 } from '../../utils/storage';
 import type { RulesetStatus } from '../../utils/storage';
-import { degradedNotice } from '../../utils/backends/rule-budget';
 import type { AdBlockSiteConfigX, CustomFilters } from '../../utils/adblock-types';
 import {
   ALL_SITES,
@@ -31,17 +31,19 @@ import {
 import type { HiddenElement } from '../../utils/custom-filters';
 import { getDnrTabCounts } from '../../utils/matched-rules';
 import { formatCount } from '../../utils/format-count';
+import { useAdblockLocale } from '../../utils/use-locale';
+import { useT, useDegradedNotice, levelLabel, levelDesc, type TFn, type MsgKey } from '../../utils/i18n';
 
 const PAUSE_MINUTES = 10;
 
 const ADBLOCK_ORDER: AdBlockLevel[] = ['off', 'standard', 'aggressive'];
 
-// Display names for the per-list breakdown ("which lists this site's traffic
+// Translation keys for the per-list breakdown ("which lists this site's traffic
 // hits"). Keyed by the ruleset ids the backends report in byList.
-const LIST_LABELS: Record<string, string> = {
-  easylist: 'Ads (EasyList)',
-  easyprivacy: 'Trackers (EasyPrivacy)',
-  annoyances: 'Annoyances',
+const LIST_LABEL_KEY: Record<string, MsgKey> = {
+  easylist: 'listAds',
+  easyprivacy: 'listTrackers',
+  annoyances: 'listAnnoyances',
 };
 const LIST_ORDER = ['easylist', 'easyprivacy', 'annoyances'];
 
@@ -52,14 +54,14 @@ type TrackerToggleKey = keyof Pick<
 
 const TRACKER_TOGGLES: {
   key: TrackerToggleKey;
-  label: string;
+  labelKey: MsgKey;
 }[] = [
-  { key: 'blockTrackers', label: 'Block trackers' },
-  { key: 'stripTrackingParams', label: 'Strip tracking parameters' },
+  { key: 'blockTrackers', labelKey: 'blockTrackers' },
+  { key: 'stripTrackingParams', labelKey: 'stripParams' },
   // Names the NETWORK annoyances ruleset specifically: on-page clutter hiding
   // (cookie banners, pop-ups) is cosmetic filtering governed by the Aggressive
   // strictness level, not by this toggle — see the note below (§ honesty).
-  { key: 'blockAnnoyances', label: 'Block annoyance requests' },
+  { key: 'blockAnnoyances', labelKey: 'blockAnnoyanceReq' },
 ];
 
 /**
@@ -75,14 +77,6 @@ interface PopupStats {
   /** Applies to the network/tracker figures only. */
   approximate: boolean;
 }
-
-// What the cumulative total actually counts differs by engine, so the label must
-// too (§ honesty): Chromium's aggregate only ever accrues exact cosmetic hides
-// (its network figures are approximate + on-demand, never cumulative), whereas
-// Firefox's blocking webRequest folds exact network + tracker blocks in as well.
-const AGGREGATE_LABEL = import.meta.env.FIREFOX
-  ? 'Ads, trackers and elements removed'
-  : 'Elements hidden';
 
 function useActiveTab(): { hostname: string; tabId: number } {
   const [state, setState] = useState<{ hostname: string; tabId: number }>({
@@ -108,6 +102,19 @@ function useActiveTab(): { hostname: string; tabId: number } {
 }
 
 export function App(): JSX.Element {
+  // Read the persisted UI language and provide it to the whole popup tree so
+  // every `useT()` renders in the chosen locale.
+  const { locale } = useAdblockLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <PopupBody />
+    </LocaleProvider>
+  );
+}
+
+function PopupBody(): JSX.Element {
+  const t = useT();
+  const degradedNotice = useDegradedNotice();
   const { settings, update, loaded } = useSettings();
   const { hostname, tabId } = useActiveTab();
   const { value: siteConfigs, update: setSiteConfigs } = useStorageItem<
@@ -128,6 +135,12 @@ export function App(): JSX.Element {
   );
   const [installDate, setInstallDate] = useState('');
   const [now, setNow] = useState(() => Date.now());
+
+  // What the cumulative total actually counts differs by engine, so the label must
+  // too (§ honesty): Chromium's aggregate only ever accrues exact cosmetic hides
+  // (its network figures are approximate + on-demand, never cumulative), whereas
+  // Firefox's blocking webRequest folds exact network + tracker blocks in as well.
+  const aggregateLabel = t(import.meta.env.FIREFOX ? 'aggFirefox' : 'aggChromium');
 
   useEffect(() => {
     void installDateItem.getValue().then(setInstallDate);
@@ -321,23 +334,23 @@ export function App(): JSX.Element {
 
   const siteScopedCount = hidden.filter((e) => e.host !== ALL_SITES).length;
 
-  if (!loaded) return <main className="popup">Loading…</main>;
+  if (!loaded) return <main className="popup">{t('loading')}</main>;
 
   return (
     <main className="popup">
       <header className="row header">
         <div>
-          <div className="host">Ad &amp; Tracker Blocker</div>
+          <div className="host">{t('appName')}</div>
           <div className="sub">
-            {globallyOff ? 'Turned off everywhere' : 'Protection on'}
+            {globallyOff ? t('offEverywhere') : t('protectionOn')}
           </div>
         </div>
-        <label className="switch" title="Turn blocking on or off everywhere">
+        <label className="switch" title={t('toggleEverywhere')}>
           <input
             type="checkbox"
             checked={settings.enabled}
             onChange={toggleGlobal}
-            aria-label="Turn blocking on or off everywhere"
+            aria-label={t('toggleEverywhere')}
           />
           <span className="slider" />
         </label>
@@ -347,25 +360,25 @@ export function App(): JSX.Element {
         <div>
           {/* Ellipsized when long — `title` keeps the full hostname reachable. */}
           <div className="host" title={onWebPage ? hostname : undefined}>
-            {onWebPage ? hostname : 'This page'}
+            {onWebPage ? hostname : t('thisPage')}
           </div>
           <div className="sub">
             {!onWebPage
-              ? "Blocking doesn't run here"
+              ? t('blockingNotHere')
               : globallyOff
-                ? 'Paused — turn on above'
+                ? t('pausedTurnOnAbove')
                 : siteEnabled
-                  ? 'Blocking on this site'
-                  : 'Paused on this site'}
+                  ? t('blockingOnSite')
+                  : t('pausedOnSite')}
           </div>
         </div>
-        <label className="switch" title="Enable on this site">
+        <label className="switch" title={t('enableOnSite')}>
           <input
             type="checkbox"
             checked={siteEnabled}
             disabled={!onWebPage || globallyOff}
             onChange={toggleSite}
-            aria-label="Enable blocking on this site"
+            aria-label={t('enableBlockingOnSite')}
           />
           <span className="slider" />
         </label>
@@ -378,37 +391,35 @@ export function App(): JSX.Element {
               type="checkbox"
               checked={!cosmeticDisabled}
               onChange={toggleCosmetic}
-              aria-label="Hide page elements on this site"
+              aria-label={t('hideElementsAria')}
             />
-            Hide page elements (cosmetic) on this site
+            {t('hideElementsLabel')}
           </label>
           <button
             type="button"
             className="pick-btn"
             onClick={pickElement}
-            aria-label="Pick an element on this page to block"
+            aria-label={t('pickElementAria')}
           >
-            Block an element on this page…
+            {t('blockElementBtn')}
           </button>
         </section>
       )}
 
       {onWebPage && hidden.length > 0 && (
         <section className="group hidden-block">
-          <h2>Hidden by you on this site</h2>
+          <h2>{t('hiddenByYou')}</h2>
           {/* Honesty: the rules are still stored, but nothing is being hidden right
               now — don't let the list imply otherwise. Restoring still works. */}
           {(!siteEnabled || cosmeticDisabled) && (
-            <p className="caveat">
-              Hiding is off on this site right now, so these are not applied.
-            </p>
+            <p className="caveat">{t('hidingOffCaveat')}</p>
           )}
           <ul className="hidden-list">
             {hidden.map((entry) => {
               const name = entry.label ?? entry.selector;
               return (
                 <li
-                  key={`${entry.host} ${entry.selector}`}
+                  key={`${entry.host} ${entry.selector}`}
                   className="hidden-item"
                   // Hover is a convenience only; the Show button below is the
                   // real, touch- and keyboard-reachable affordance.
@@ -420,7 +431,7 @@ export function App(): JSX.Element {
                     </span>
                     <span className="hidden-meta">
                       {entry.host === ALL_SITES && (
-                        <span className="hidden-tag">all sites</span>
+                        <span className="hidden-tag">{t('allSitesTag')}</span>
                       )}
                       {/* Un-labelled (pre-existing, pasted or hand-typed) rules
                           have nothing better to show than the selector, so it is
@@ -434,17 +445,17 @@ export function App(): JSX.Element {
                       className="peek-btn"
                       onClick={() => peek(entry.selector)}
                       onFocus={() => peek(entry.selector)}
-                      aria-label={`Show where ${name} is on the page`}
+                      aria-label={t('showWhereAria', { name })}
                     >
-                      Show
+                      {t('showBtn')}
                     </button>
                     <button
                       type="button"
                       className="restore-btn"
                       onClick={() => restoreOne(entry)}
-                      aria-label={`Restore ${name}`}
+                      aria-label={t('restoreAria', { name })}
                     >
-                      Restore
+                      {t('restoreBtn')}
                     </button>
                   </div>
                 </li>
@@ -456,9 +467,10 @@ export function App(): JSX.Element {
               type="button"
               className="restore-all-btn"
               onClick={restoreAllHere}
-              aria-label={`Restore all ${siteScopedCount} elements hidden on ${hostname}`}
+              aria-label={t('restoreAllAria', { count: siteScopedCount, host: hostname })}
             >
-              Restore all {siteScopedCount} on {hostname}
+              {t('restoreAllPre', { count: siteScopedCount })}
+              {hostname}
             </button>
           )}
         </section>
@@ -466,9 +478,7 @@ export function App(): JSX.Element {
 
       {stats === null ? (
         <p className="empty" role="status">
-          {onWebPage
-            ? 'Measuring… nothing blocked on this page yet.'
-            : 'Ad & Tracker Blocker can’t run on this page.'}
+          {onWebPage ? t('measuring') : t('cantRunHere')}
         </p>
       ) : (
         <>
@@ -476,55 +486,50 @@ export function App(): JSX.Element {
             <div className="stat">
               {/* Cosmetic hides are EXACT everywhere — never prefixed with ~. */}
               <span className="num">{stats.cosmeticHidden}</span>
-              <span className="lbl">Hidden</span>
+              <span className="lbl">{t('statHidden')}</span>
             </div>
             <div className="stat">
               <span className="num">
                 <Count value={stats.networkBlocked} approximate={stats.approximate} />
               </span>
-              <span className="lbl">Blocked</span>
+              <span className="lbl">{t('statBlocked')}</span>
             </div>
             <div className="stat">
               <span className="num">
                 <Count value={stats.trackersBlocked} approximate={stats.approximate} />
               </span>
-              <span className="lbl">Trackers</span>
+              <span className="lbl">{t('statTrackers')}</span>
             </div>
           </section>
 
-          {stats.approximate && (
-            <p className="caveat">
-              Blocked and tracker counts on this browser are a best-effort estimate
-              for this page. The hidden count is exact.
-            </p>
-          )}
+          {stats.approximate && <p className="caveat">{t('approxCaveat')}</p>}
 
-          <ListBreakdown byList={byList} approximate={stats.approximate} />
+          <ListBreakdown byList={byList} approximate={stats.approximate} t={t} />
         </>
       )}
 
       {aggregate && (
         <section className="totals-block" aria-live="polite">
           <div className="totals-label">
-            {AGGREGATE_LABEL} (exact)
-            {installDate && <span className="since"> · since {installDate}</span>}
+            {aggregateLabel} {t('exactParen')}
+            {installDate && <span className="since"> · {t('since', { date: installDate })}</span>}
           </div>
           <div className="totals">
             <span>
-              Today <b>{aggregate.today.toLocaleString()}</b>
+              {t('today')} <b>{aggregate.today.toLocaleString()}</b>
             </span>
             <span>
-              Week <b>{aggregate.week.toLocaleString()}</b>
+              {t('week')} <b>{aggregate.week.toLocaleString()}</b>
             </span>
             <span>
-              Total <b>{aggregate.total.toLocaleString()}</b>
+              {t('total')} <b>{aggregate.total.toLocaleString()}</b>
             </span>
           </div>
         </section>
       )}
 
       <section className="group">
-        <h2>Strictness</h2>
+        <h2>{t('strictness')}</h2>
         <div className="levels">
           {ADBLOCK_ORDER.map((level) => (
             <label
@@ -542,17 +547,15 @@ export function App(): JSX.Element {
                 name="adblock"
                 checked={settings.adblock.level === level}
                 onChange={() => setLevel(level)}
-                aria-label={ADBLOCK_LEVELS[level].label}
+                aria-label={levelLabel(t, level)}
               />
               <span className="level-label">
-                {ADBLOCK_LEVELS[level].label}
+                {levelLabel(t, level)}
                 {level === 'aggressive' && (
-                  <span className="badge-warn">may break sites</span>
+                  <span className="badge-warn">{t('mayBreakSites')}</span>
                 )}
               </span>
-              <span className="level-desc">
-                {ADBLOCK_LEVELS[level].description}
-              </span>
+              <span className="level-desc">{levelDesc(t, level)}</span>
             </label>
           ))}
         </div>
@@ -568,64 +571,60 @@ export function App(): JSX.Element {
       </section>
 
       <section className="group">
-        <h2>Trackers &amp; annoyances</h2>
+        <h2>{t('trackersAnnoyances')}</h2>
         <div className="toggles">
-          {TRACKER_TOGGLES.map(({ key, label }) => (
+          {TRACKER_TOGGLES.map(({ key, labelKey }) => (
             <label key={key} className="chip">
               <input
                 type="checkbox"
                 checked={settings.adblock[key]}
                 onChange={(e) => toggleTracker(key, e.target.checked)}
-                aria-label={label}
+                aria-label={t(labelKey)}
               />
-              {label}
+              {t(labelKey)}
             </label>
           ))}
         </div>
         {stripParamsPending && (
           <p className="caveat">
             <span aria-hidden="true">⚠ </span>
-            Stripping tracking parameters needs site access to run.{' '}
+            {t('stripNeedsAccess')}{' '}
             <button type="button" className="linkish" onClick={() => void requestHost()}>
-              Grant access
+              {t('grantAccess')}
             </button>
           </p>
         )}
         <p className="caveat">
-          "Block annoyance requests" toggles the network annoyances list only.
-          Hiding leftover on-page clutter (cookie banners, pop-ups) is cosmetic
-          filtering, turned on by the <b>Aggressive</b> strictness level above.
+          {t('annoyanceNotePre')}
+          <b>{t('levelAggressiveLabel')}</b>
+          {t('annoyanceNotePost')}
         </p>
       </section>
 
       {paused ? (
         <section className="row pause-row" role="status">
-          <div className="sub">
-            Paused everywhere · {pauseMinutesLeft} min left
-          </div>
+          <div className="sub">{t('pausedEverywhereLeft', { n: pauseMinutesLeft })}</div>
           <button type="button" className="pause-btn" onClick={resumeNow}>
-            Resume now
+            {t('resumeNow')}
           </button>
         </section>
       ) : (
         <section className="row pause-row">
-          <div className="sub">
-            {globallyOff ? 'Blocking is already off everywhere' : 'Take a break from blocking'}
-          </div>
+          <div className="sub">{globallyOff ? t('alreadyOff') : t('takeBreak')}</div>
           <button
             type="button"
             className="pause-btn"
             onClick={pauseEverywhere}
             disabled={globallyOff}
           >
-            Pause {PAUSE_MINUTES} min
+            {t('pauseFor', { n: PAUSE_MINUTES })}
           </button>
         </section>
       )}
 
       <footer className="actions">
         <button type="button" onClick={() => void browser.runtime.openOptionsPage()}>
-          Open settings
+          {t('openSettings')}
         </button>
       </footer>
     </main>
@@ -653,9 +652,11 @@ function Count({
 function ListBreakdown({
   byList,
   approximate,
+  t,
 }: {
   byList: Record<string, number> | null;
   approximate: boolean;
+  t: TFn;
 }): JSX.Element | null {
   if (!byList) return null;
   const entries = LIST_ORDER.map((id) => [id, byList[id] ?? 0] as const).filter(
@@ -664,11 +665,11 @@ function ListBreakdown({
   if (entries.length === 0) return null;
   return (
     <section className="list-breakdown" aria-live="polite">
-      <h2>Filter lists matched here</h2>
+      <h2>{t('filterListsMatched')}</h2>
       <ul>
         {entries.map(([id, n]) => (
           <li key={id}>
-            <span className="list-name">{LIST_LABELS[id] ?? id}</span>
+            <span className="list-name">{LIST_LABEL_KEY[id] ? t(LIST_LABEL_KEY[id]) : id}</span>
             <span className="list-count">{formatCount(n, approximate)}</span>
           </li>
         ))}

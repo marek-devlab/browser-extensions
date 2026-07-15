@@ -1,4 +1,5 @@
 import type { TimedNetworkEntry } from '../../utils/perf-types';
+import { useT } from '../../utils/i18n';
 
 // A simple horizontal waterfall of resource start/duration (PLAN §10 "developer").
 // No new permission: it draws purely from the Resource-Timing / HAR entries already
@@ -42,6 +43,7 @@ function shortUrl(url: string): string {
 }
 
 export function Waterfall({ entries }: { entries: TimedNetworkEntry[] }) {
+  const t = useT();
   if (entries.length === 0) return null;
 
   // Cap rows so a heavy page doesn't render thousands of bars; keep the earliest.
@@ -56,13 +58,15 @@ export function Waterfall({ entries }: { entries: TimedNetworkEntry[] }) {
   const presentKinds = KIND_ORDER.filter((k) => rows.some((e) => e.kind === k));
 
   return (
-    <figure className="waterfall" aria-label="Resource load waterfall">
+    <figure className="waterfall" aria-label={t('wfAria')}>
       <figcaption className="note">
-        Waterfall — each bar is a request's start offset and duration
-        {entries.length > MAX_ROWS ? ` (first ${MAX_ROWS} of ${entries.length})` : ''}.
-        Total window {Math.round(span)} ms.
+        {t('wfCaptionPre')}
+        {entries.length > MAX_ROWS
+          ? t('wfFirstOf', { max: MAX_ROWS, total: entries.length })
+          : ''}
+        {t('wfCaptionPost', { ms: Math.round(span) })}
       </figcaption>
-      <ul className="wf-legend" aria-label="Resource kinds">
+      <ul className="wf-legend" aria-label={t('wfKinds')}>
         {presentKinds.map((k) => (
           <li key={k} className="wf-legend__item">
             <span className={`wf-legend__swatch ${KIND_CLASS[k] ?? 'wf--other'}`} aria-hidden="true" />
@@ -81,7 +85,11 @@ export function Waterfall({ entries }: { entries: TimedNetworkEntry[] }) {
                 <span
                   className={`waterfall__bar ${KIND_CLASS[e.kind] ?? 'wf--other'}`}
                   style={{ marginInlineStart: `${offset}%`, inlineSize: `${width}%` }}
-                  title={`${e.kind} · start ${Math.round(e.startTime - minStart)} ms · ${Math.round(e.duration)} ms`}
+                  title={t('wfBarTitle', {
+                    kind: e.kind,
+                    start: Math.round(e.startTime - minStart),
+                    dur: Math.round(e.duration),
+                  })}
                 />
               </span>
               <span className="waterfall__dur mono">{Math.round(e.duration)} ms</span>

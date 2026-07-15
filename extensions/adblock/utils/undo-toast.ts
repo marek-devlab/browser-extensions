@@ -102,6 +102,32 @@ export interface ToastHandle {
   dismiss: () => void;
 }
 
+/**
+ * Localizable toast copy. Defaults are the English source strings, so callers
+ * that don't pass `strings` behave exactly as before; the content script passes
+ * locale-resolved copies.
+ */
+export interface ToastStrings {
+  /** "Element hidden" — the headline while Undo is offered. */
+  hidden: string;
+  /** "Element restored" — the confirmation after Undo. */
+  restored: string;
+  /** The Undo button label. */
+  undo: string;
+  /** The dismiss (×) button's aria-label. */
+  dismiss: string;
+  /** aria-label for Undo, given the (possibly empty) element description. */
+  undoAria: (description: string) => string;
+}
+
+const DEFAULT_TOAST_STRINGS: ToastStrings = {
+  hidden: 'Element hidden',
+  restored: 'Element restored',
+  undo: 'Undo',
+  dismiss: 'Dismiss',
+  undoAria: (description) => `Undo hiding ${description || 'this element'}`,
+};
+
 /** Remove any toast on screen (content-script teardown / extension reload). */
 export function dismissToast(): void {
   teardown();
@@ -123,7 +149,11 @@ function teardown(): void {
  * user activates Undo (click, tap, or keyboard); the toast then confirms and
  * fades. Auto-dismisses after 8s — long enough to notice and reach on a phone.
  */
-export function showUndoToast(description: string, onUndo: () => void): ToastHandle {
+export function showUndoToast(
+  description: string,
+  onUndo: () => void,
+  strings: ToastStrings = DEFAULT_TOAST_STRINGS,
+): ToastHandle {
   teardown();
 
   const host = document.createElement('div');
@@ -143,7 +173,7 @@ export function showUndoToast(description: string, onUndo: () => void): ToastHan
   const msg = document.createElement('div');
   msg.className = 'msg';
   const strong = document.createElement('b');
-  strong.textContent = 'Element hidden';
+  strong.textContent = strings.hidden;
   const desc = document.createElement('span');
   desc.className = 'desc';
   // textContent, never innerHTML: `description` is derived from page content.
@@ -153,14 +183,14 @@ export function showUndoToast(description: string, onUndo: () => void): ToastHan
   const undo = document.createElement('button');
   undo.type = 'button';
   undo.className = 'undo';
-  undo.textContent = 'Undo';
-  undo.setAttribute('aria-label', `Undo hiding ${description || 'this element'}`);
+  undo.textContent = strings.undo;
+  undo.setAttribute('aria-label', strings.undoAria(description));
 
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'close';
   close.textContent = '×';
-  close.setAttribute('aria-label', 'Dismiss');
+  close.setAttribute('aria-label', strings.dismiss);
 
   undo.addEventListener('click', (e) => {
     e.preventDefault();
@@ -168,7 +198,7 @@ export function showUndoToast(description: string, onUndo: () => void): ToastHan
     onUndo();
     // Confirm in place rather than vanishing: the user needs to see that the
     // undo actually happened, especially when the restored element is off screen.
-    strong.textContent = 'Element restored';
+    strong.textContent = strings.restored;
     desc.textContent = '';
     undo.remove();
     if (current) {

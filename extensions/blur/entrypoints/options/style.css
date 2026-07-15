@@ -31,6 +31,23 @@
   cursor: pointer;
 }
 
+/* Language switcher row — sits under the masthead, near where a theme control
+   would live. Wraps so a longer label set never overflows. `.lang-toggle` itself
+   is styled in popup/style.css (imported first). */
+.lang-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.lang-heading {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sub);
+  min-width: 0;
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;

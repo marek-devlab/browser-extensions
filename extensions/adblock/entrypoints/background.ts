@@ -7,6 +7,7 @@ import type {
   CountAccuracy,
   FilterList,
 } from '@blur/core';
+import type { Locale } from '@blur/ui';
 import {
   settingsItem,
   statsItem,
@@ -14,7 +15,9 @@ import {
   pauseUntilItem,
   pausePrevEnabledItem,
   installDateItem,
+  localeItem,
 } from '../utils/storage';
+import { tAt } from '../utils/i18n';
 import { createBackend } from '../utils/backends';
 import { StatsStore } from '../utils/stats';
 import { publicUrl } from '../utils/public-url';
@@ -139,18 +142,31 @@ export default defineBackground({
     // Context menu (feature §5). `removeAll` before create keeps it idempotent
     // across service-worker restarts (create would otherwise throw on a duplicate
     // id). `contextMenus` is not a host permission, so this adds no broad access.
-    function setupContextMenus(): void {
+    // Titles are localized to the user's chosen UI language; changing the language
+    // re-runs this (via the `localeItem.watch` below) so the menu re-titles live.
+    async function setupContextMenus(): Promise<void> {
       if (!browser.contextMenus) return;
+      const locale: Locale = await localeItem.getValue().catch((): Locale => 'en');
       type Contexts = NonNullable<
         Parameters<typeof browser.contextMenus.create>[0]['contexts']
       >;
       const contexts = ['page', 'frame', 'image', 'video', 'link'] as unknown as Contexts;
       browser.contextMenus.removeAll(() => {
-        browser.contextMenus.create({ id: 'block-element', title: 'Block this element…', contexts });
-        browser.contextMenus.create({ id: 'pause-site', title: 'Pause on this site', contexts });
+        browser.contextMenus.create({
+          id: 'block-element',
+          title: tAt(locale, 'ctxBlockElement'),
+          contexts,
+        });
+        browser.contextMenus.create({
+          id: 'pause-site',
+          title: tAt(locale, 'ctxPauseSite'),
+          contexts,
+        });
       });
     }
-    setupContextMenus();
+    void setupContextMenus();
+    // Re-title the menus when the user switches language.
+    localeItem.watch(() => void setupContextMenus());
 
     async function togglePauseForHost(host: string): Promise<void> {
       const current = await settingsItem.getValue();

@@ -385,3 +385,43 @@ select:focus-visible {
 .delta--up .delta__diff { color: var(--poor-fg); }
 .delta--down .delta__diff { color: var(--good-fg); }
 .delta--flat .delta__diff { color: var(--text-dim); }
+
+/* ---------------------------------------------------------------- */
+/* Interface-language switcher                                      */
+/* ---------------------------------------------------------------- */
+.settings {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* A segmented EN/RU/ET control (from @blur/ui's LanguageSwitcher). Styled locally
+   so the popup does not depend on @blur/ui's components.css, mirroring the .btn
+   look. `flex-wrap` lets the three labels drop to a second row on the 320px popup
+   rather than overflow when a longer localisation widens them. */
+.lang-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-toggle__btn:hover {
+  border-color: var(--accent);
+}
+
+.lang-toggle__btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}

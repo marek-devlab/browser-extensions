@@ -78,6 +78,23 @@ export interface PickerHandle {
 }
 
 /**
+ * Localizable chrome for the picker overlay. Defaults are the English source
+ * strings, so callers that don't pass `strings` (and the unit tests) behave
+ * exactly as before; the content script passes locale-resolved copies.
+ */
+export interface PickerStrings {
+  /** The persistent instruction banner. */
+  instruction: string;
+  /** Preview label for the element the click will hide, given its selector. */
+  blockLabel: (selector: string) => string;
+}
+
+const DEFAULT_PICKER_STRINGS: PickerStrings = {
+  instruction: 'Click an element to block it · press Esc to cancel',
+  blockLabel: (selector) => `Block: ${selector}`,
+};
+
+/**
  * Start interactive picking. Highlights the element under the cursor; a click
  * selects it (and is swallowed so the page never navigates). Escape cancels.
  * Returns a handle whose `cancel()` tears everything down. Idempotent teardown.
@@ -85,6 +102,7 @@ export interface PickerHandle {
 export function startPicker(
   onPick: (selector: string, el: Element) => void,
   onCancel?: () => void,
+  strings: PickerStrings = DEFAULT_PICKER_STRINGS,
 ): PickerHandle {
   const doc = document;
   const highlight = doc.createElement('div');
@@ -141,7 +159,7 @@ export function startPicker(
   } satisfies Partial<CSSStyleDeclaration>);
   instruction.setAttribute('role', 'status');
   instruction.setAttribute('aria-live', 'polite');
-  instruction.textContent = 'Click an element to block it · press Esc to cancel';
+  instruction.textContent = strings.instruction;
 
   let current: Element | null = null;
   let done = false;
@@ -156,7 +174,7 @@ export function startPicker(
     });
     const sel = computeSelector(el);
     // Show exactly what the click will hide (uBO/AdGuard-style preview).
-    label.textContent = `Block: ${sel}`;
+    label.textContent = strings.blockLabel(sel);
     label.style.left = `${Math.max(0, r.left)}px`;
     label.style.top = `${Math.max(0, r.top - 22)}px`;
   }

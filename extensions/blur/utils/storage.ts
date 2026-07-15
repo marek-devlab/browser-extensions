@@ -1,6 +1,7 @@
 import { storage } from '#imports';
 import type { BlurExtensionSettings, BlurSiteConfig } from '@blur/core';
 import { DEFAULT_BLUR_SETTINGS } from '@blur/core';
+import type { Locale } from '@blur/ui';
 
 // Storage layout (PLAN.md §13).
 //   - `local` : 10 MB, no per-item or write-rate cap.
@@ -118,3 +119,21 @@ export const extensionPrefsItem = storage.defineItem<ExtensionPrefs>(
     migrations: {},
   },
 );
+
+/**
+ * The user's chosen UI language — an in-settings switch, NOT `chrome.i18n` (which
+ * is locked to the browser UI language and can't be flipped at runtime; see
+ * @blur/ui/i18n). Local, defaults to English on a fresh install regardless of the
+ * browser locale. Read by every React root via `useLocaleController` and by the
+ * background context-menu titles via `localeItem.getValue()` / `.watch()`.
+ */
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+  version: 1,
+  migrations: {},
+});
+
+/** Synchronous localStorage seed key for the locale, so the first paint is
+ *  already in the chosen language. Same naming scheme as the theme seeds used
+ *  elsewhere in the family: 'blur-<ext>:locale'. */
+export const LOCALE_SEED_KEY = 'blur-blur:locale';

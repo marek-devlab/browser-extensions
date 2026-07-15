@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@blur/core": "*",
+    "@blur/ui": "*",
     "axe-core": "^4.12.1",
     "react": "^19",
     "react-dom": "^19"

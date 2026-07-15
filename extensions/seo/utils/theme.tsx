@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { panelPrefsItem, type PanelPrefs } from './storage';
+import { useLocaleController, type Locale } from '@blur/ui';
+import { localeItem, panelPrefsItem, type PanelPrefs } from './storage';
+import { useT } from './i18n';
 
 // Wires the persisted `PanelPrefs.theme` (utils/storage.ts) to a working
 // light/dark/auto toggle shared by the panel and popup. The CSS keys colour
@@ -103,13 +105,14 @@ export function usePanelPrefs(): {
   return { prefs, update };
 }
 
-const THEMES: { id: Theme; label: string }[] = [
-  { id: 'auto', label: 'Auto' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
+const THEME_LABELS: { id: Theme; key: 'themeAuto' | 'themeLight' | 'themeDark' }[] = [
+  { id: 'auto', key: 'themeAuto' },
+  { id: 'light', key: 'themeLight' },
+  { id: 'dark', key: 'themeDark' },
 ];
 
-/** Segmented Auto/Light/Dark control. */
+/** Segmented Auto/Light/Dark control. Rendered inside a <LocaleProvider>, so it
+ *  reads its labels from the active-locale catalog. */
 export function ThemeToggle({
   theme,
   onChange,
@@ -117,21 +120,40 @@ export function ThemeToggle({
   theme: Theme;
   onChange: (theme: Theme) => void;
 }) {
+  const t = useT();
   return (
-    <div className="theme-toggle" role="group" aria-label="Colour theme">
-      {THEMES.map((t) => (
+    <div className="theme-toggle" role="group" aria-label={t('colourTheme')}>
+      {THEME_LABELS.map((item) => (
         <button
-          key={t.id}
+          key={item.id}
           type="button"
           className={
-            theme === t.id ? 'theme-toggle__btn theme-toggle__btn--active' : 'theme-toggle__btn'
+            theme === item.id
+              ? 'theme-toggle__btn theme-toggle__btn--active'
+              : 'theme-toggle__btn'
           }
-          aria-pressed={theme === t.id}
-          onClick={() => onChange(t.id)}
+          aria-pressed={theme === item.id}
+          onClick={() => onChange(item.id)}
         >
-          {t.label}
+          {t(item.key)}
         </button>
       ))}
     </div>
   );
+}
+
+/**
+ * Wire the persisted UI language (utils/storage `localeItem`) to React state. The
+ * initial value is the synchronous localStorage seed (English on a fresh install,
+ * so a surface paints in the right language on the FIRST frame); the async read
+ * then reconciles. The seed key reuses the theme prefix (`blur-seo:`) so the two
+ * prefs sit together. Used by the popup and DevTools-panel roots, each wrapping
+ * its tree in <LocaleProvider locale={locale}>.
+ */
+export function useSeoLocale(): { locale: Locale; setLocale: (l: Locale) => void } {
+  return useLocaleController({
+    key: 'blur-seo:locale',
+    read: () => localeItem.getValue(),
+    write: (locale) => localeItem.setValue(locale),
+  });
 }

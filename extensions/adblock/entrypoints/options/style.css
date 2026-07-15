@@ -338,3 +338,59 @@ summary:focus-visible,
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* Interface-language control. Sits near the top of the settings, under a
+   translated "Language" heading. `min-width: 0` + wrap keeps it from forcing the
+   page wider when the switcher's labels are long. */
+.lang-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lang-heading {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sub);
+}
+
+/* Segmented EN/RU/ET switch (@blur/ui LanguageSwitcher). Local block mirroring
+   this extension's own tab/chip look, with tokens from popup/style.css. It is
+   `flex-wrap: wrap` so a longer label set drops to a second row rather than
+   overflowing. */
+.lang-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lang-toggle__btn:hover {
+  border-color: var(--accent);
+}
+
+.lang-toggle__btn--active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.lang-toggle__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

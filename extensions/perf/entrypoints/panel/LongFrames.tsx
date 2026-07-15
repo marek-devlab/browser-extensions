@@ -3,6 +3,7 @@ import type {
   LongFrameSummary,
   ScriptAttribution,
 } from '../../utils/perf-types';
+import { useT } from '../../utils/i18n';
 
 // Long Animation Frames / Long Tasks panel section (PLAN §7.2). Chromium-only —
 // when neither observer is supported we say so plainly rather than imply the main
@@ -65,52 +66,48 @@ function offenderName(sourceURL: string): string {
 }
 
 export function LongFramesSection({ summary }: { summary: LongFrameSummary }) {
+  const t = useT();
   if (!summary.loafSupported && !summary.longTaskSupported) {
     return (
-      <section className="loaf" aria-label="Main-thread blocking">
-        <h3 className="loaf__title">Main-thread blocking</h3>
-        <p className="note">
-          Long Animation Frames and the Long Tasks API are Chromium-only, and this
-          browser exposes neither — so per-frame blocking can't be measured here.
-          Core Web Vitals above still reflect the user experience.
-        </p>
+      <section className="loaf" aria-label={t('mainThreadBlocking')}>
+        <h3 className="loaf__title">{t('mainThreadBlocking')}</h3>
+        <p className="note">{t('lfUnsupported')}</p>
       </section>
     );
   }
 
+  // Proper-noun API tokens — the source name is a fact, not translated prose.
   const source = summary.loafSupported ? 'Long Animation Frames' : 'Long Tasks';
+  const kind = summary.loafSupported ? t('viKindAnimFrames') : t('viKindTasks');
   const frames = summary.frames;
   const offenders = aggregateOffenders(frames).slice(0, 10);
 
   return (
-    <section className="loaf" aria-label="Main-thread blocking" aria-live="polite">
-      <h3 className="loaf__title">Main-thread blocking</h3>
+    <section className="loaf" aria-label={t('mainThreadBlocking')} aria-live="polite">
+      <h3 className="loaf__title">{t('mainThreadBlocking')}</h3>
       <div className="loaf__summary">
         <div className="stat">
           <div className="stat__value mono">{Math.round(summary.totalBlockingDuration)} ms</div>
-          <div className="stat__label">total blocking</div>
+          <div className="stat__label">{t('lfTotalBlocking')}</div>
         </div>
         <div className="stat">
           <div className="stat__value mono">{frames.length}</div>
-          <div className="stat__label">{summary.loafSupported ? 'long frames' : 'long tasks'}</div>
+          <div className="stat__label">{summary.loafSupported ? t('lfLongFrames') : t('lfLongTasks')}</div>
         </div>
       </div>
 
       {frames.length === 0 ? (
-        <p className="note">
-          No long {summary.loafSupported ? 'animation frames' : 'tasks'} (over 50&nbsp;ms)
-          recorded yet. Source: {source}.
-        </p>
+        <p className="note">{t('lfNoFrames', { kind, source })}</p>
       ) : (
         <>
           <div className="table-scroll">
             <table className="net loaf__table">
               <thead>
                 <tr>
-                  <th className="num">Start</th>
-                  <th className="num">Duration</th>
-                  <th className="num">Blocking</th>
-                  <th>Top scripts</th>
+                  <th className="num">{t('lfColStart')}</th>
+                  <th className="num">{t('lfColDuration')}</th>
+                  <th className="num">{t('lfColBlocking')}</th>
+                  <th>{t('lfColTopScripts')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -123,14 +120,16 @@ export function LongFramesSection({ summary }: { summary: LongFrameSummary }) {
                       <td className="num mono">{Math.round(f.blockingDuration)} ms</td>
                       <td>
                         {scripts.length === 0 ? (
-                          <span className="note">no script attribution</span>
+                          <span className="note">{t('lfNoScriptAttr')}</span>
                         ) : (
                           <ul className="loaf__scripts">
                             {scripts.map((s, j) => (
                               <li key={j} className="mono" title={s.sourceURL || undefined}>
                                 {scriptLabel(s)} — {Math.round(s.duration)} ms
                                 {s.forcedStyleAndLayoutDuration > 0
-                                  ? ` (+${Math.round(s.forcedStyleAndLayoutDuration)} ms layout)`
+                                  ? t('lfLayoutSuffix', {
+                                      ms: Math.round(s.forcedStyleAndLayoutDuration),
+                                    })
                                   : ''}
                               </li>
                             ))}
@@ -143,25 +142,20 @@ export function LongFramesSection({ summary }: { summary: LongFrameSummary }) {
               </tbody>
             </table>
           </div>
-          <p className="note">
-            Source: {source}. Blocking is the main-thread time that could delay
-            interaction. Script attribution shows the longest scripts in each frame.
-          </p>
+          <p className="note">{t('lfSourceNote', { source })}</p>
 
           {offenders.length > 0 && (
             <>
-              <h4 className="loaf__subtitle">Worst offenders (by script, across all frames)</h4>
+              <h4 className="loaf__subtitle">{t('lfWorstOffenders')}</h4>
               <div className="table-scroll">
                 <table className="net loaf__table">
-                  <caption className="net__caption">
-                    Scripts ranked by total time across every long frame this load.
-                  </caption>
+                  <caption className="net__caption">{t('lfOffendersCaption')}</caption>
                   <thead>
                     <tr>
-                      <th scope="col">Script</th>
-                      <th scope="col" className="num">Frames</th>
-                      <th scope="col" className="num">Total</th>
-                      <th scope="col" className="num">Layout</th>
+                      <th scope="col">{t('lfColScript')}</th>
+                      <th scope="col" className="num">{t('lfColFrames')}</th>
+                      <th scope="col" className="num">{t('lfColTotal')}</th>
+                      <th scope="col" className="num">{t('lfColLayout')}</th>
                     </tr>
                   </thead>
                   <tbody>

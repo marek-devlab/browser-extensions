@@ -5,6 +5,7 @@ import type {
   SeoCheck,
   SeoSeverity,
 } from '@blur/core';
+import { useT, type MsgKey } from './i18n';
 
 // Shared report vocabulary + row components, used by BOTH the DevTools panel and
 // the popup. The panel already rendered the full detail (a check's label+detail,
@@ -13,51 +14,83 @@ import type {
 // the same class names (the popup's copies are tuned for 320px).
 //
 // The glossary strings are the other half of the job: a bare "INCOMPLETE 2" tells
-// a non-expert nothing, and no amount of layout fixes that. The words below are
-// the answer to "как пользователю понять?" and are rendered next to the numbers.
+// a non-expert nothing, and no amount of layout fixes that. Every human-readable
+// word here is translated (en/ru/et) through the shared catalog (utils/i18n),
+// while the ids/severity tokens that CSS and logic key off stay untranslated.
 
-/** Text label for an SEO severity, so status is never conveyed by colour alone. */
-export const SEVERITY_LABEL: Record<SeoSeverity, string> = {
-  ok: 'Pass',
-  warning: 'Warning',
-  error: 'Error',
+/** SEO severity → catalog key, so the visible label never conveys status by
+ *  colour alone (WCAG 1.4.1) and is spoken in the active language. */
+const SEVERITY_LABEL_KEY: Record<SeoSeverity, MsgKey> = {
+  ok: 'sevOk',
+  warning: 'sevWarning',
+  error: 'sevError',
 };
 
-/**
- * What each axe-core impact level actually means, in plain language. axe assigns
- * exactly one of these to every violation; the words are ours, the levels are
- * axe's (https://github.com/dequelabs/axe-core/blob/develop/doc/API.md).
- */
-export const IMPACT_MEANING: Record<A11yImpact, string> = {
-  critical:
-    'Blocks people with disabilities from using this content at all. Fix first.',
-  serious:
-    'A severe barrier: many people will be blocked or badly slowed down.',
-  moderate:
-    'Frustrating, but most people can still work around it.',
-  minor:
-    'A small annoyance affecting few people. Fix once the rest is done.',
+/** axe impact → catalog key for its plain-language meaning. */
+const IMPACT_MEANING_KEY: Record<A11yImpact, MsgKey> = {
+  critical: 'impCritical',
+  serious: 'impSerious',
+  moderate: 'impModerate',
+  minor: 'impMinor',
 };
+
+/** axe impact → catalog key for its short display label (the badge text). The
+ *  CSS class still keys off the raw `impact` token, so only the label localises. */
+const IMPACT_LABEL_KEY: Record<A11yImpact, MsgKey> = {
+  critical: 'impactCritical',
+  serious: 'impactSerious',
+  moderate: 'impactModerate',
+  minor: 'impactMinor',
+};
+
+const A11Y_TERM_KEY: Record<'violations' | 'passes' | 'incomplete', MsgKey> = {
+  violations: 'termViolations',
+  passes: 'termPasses',
+  incomplete: 'termIncomplete',
+};
+
+const SEO_TERM_KEY: Record<'errors' | 'warnings' | 'imagesWithoutAlt', MsgKey> = {
+  errors: 'termErrors',
+  warnings: 'termWarnings',
+  imagesWithoutAlt: 'termImagesWithoutAlt',
+};
+
+/** The plain-language meaning of each axe impact level, in the active language. */
+export function useImpactMeaning(): Record<A11yImpact, string> {
+  const t = useT();
+  return {
+    critical: t(IMPACT_MEANING_KEY.critical),
+    serious: t(IMPACT_MEANING_KEY.serious),
+    moderate: t(IMPACT_MEANING_KEY.moderate),
+    minor: t(IMPACT_MEANING_KEY.minor),
+  };
+}
+
+/** The short display label for each axe impact level (badge text). */
+export function useImpactLabel(): (impact: A11yImpact) => string {
+  const t = useT();
+  return (impact) => t(IMPACT_LABEL_KEY[impact]);
+}
 
 /** Plain-language gloss for each accessibility headline number. */
-export const A11Y_TERM: Record<'violations' | 'passes' | 'incomplete', string> = {
-  violations:
-    'Accessibility rules this page BROKE. Each one names what is wrong and which elements are at fault.',
-  passes:
-    'Rules that ran and found nothing wrong. This counts RULES, not elements — a high number is normal and is not a score.',
-  incomplete:
-    'axe-core could not decide automatically and needs a human to look. Typically text over an image or a video, where contrast cannot be computed. Not necessarily a problem — just unproven.',
-};
+export function useA11yTerm(): Record<'violations' | 'passes' | 'incomplete', string> {
+  const t = useT();
+  return {
+    violations: t(A11Y_TERM_KEY.violations),
+    passes: t(A11Y_TERM_KEY.passes),
+    incomplete: t(A11Y_TERM_KEY.incomplete),
+  };
+}
 
 /** Gloss for the SEO headline numbers. */
-export const SEO_TERM: Record<'errors' | 'warnings' | 'imagesWithoutAlt', string> = {
-  errors:
-    'Checks that failed outright — these actively cost you search visibility.',
-  warnings:
-    'Checks that passed but are below best practice. Worth fixing, not urgent.',
-  imagesWithoutAlt:
-    'Images with no alt attribute. Screen readers announce nothing for them, and search engines cannot read them. alt="" is fine for purely decorative images.',
-};
+export function useSeoTerm(): Record<'errors' | 'warnings' | 'imagesWithoutAlt', string> {
+  const t = useT();
+  return {
+    errors: t(SEO_TERM_KEY.errors),
+    warnings: t(SEO_TERM_KEY.warnings),
+    imagesWithoutAlt: t(SEO_TERM_KEY.imagesWithoutAlt),
+  };
+}
 
 /** How many offending selectors a violation shows before collapsing the rest. */
 export const MAX_NODES_SHOWN = 3;
@@ -77,12 +110,16 @@ function safeHelpUrl(url: string): string | null {
   }
 }
 
-/** One SEO check: severity chip, human label, and the detail it already carries. */
+/** One SEO check: severity chip, human label, and the detail it already carries.
+ *  `check.label`/`check.detail` are already localised at report-build time
+ *  (utils/checks.ts, utils/indexability.ts); only the severity chip is resolved
+ *  here from the active-locale catalog. */
 export function CheckRow({ check }: { check: SeoCheck }) {
+  const t = useT();
   return (
     <li className={`check severity--${check.severity}`}>
       <span className={`check__severity check__severity--${check.severity}`}>
-        {SEVERITY_LABEL[check.severity]}
+        {t(SEVERITY_LABEL_KEY[check.severity])}
       </span>
       <span className="check__label">{check.label}</span>
       <span className="check__detail">{check.detail}</span>
@@ -91,12 +128,14 @@ export function CheckRow({ check }: { check: SeoCheck }) {
 }
 
 /**
- * One a11y violation: impact badge, axe's plain-language `help`, HOW MANY
- * elements are affected, the offending selectors (truncated past
- * `MAX_NODES_SHOWN` so one bad rule cannot flood a 320px popup), and a link to
- * Deque's full explanation.
+ * One a11y violation: impact badge, axe's plain-language `help` (axe's own text,
+ * left untranslated), HOW MANY elements are affected, the offending selectors
+ * (truncated past `MAX_NODES_SHOWN` so one bad rule cannot flood a 320px popup),
+ * and a link to Deque's full explanation.
  */
 export function ViolationRow({ violation }: { violation: A11yViolation }) {
+  const t = useT();
+  const impactLabel = useImpactLabel();
   const shown = violation.nodes.slice(0, MAX_NODES_SHOWN);
   const hidden = violation.nodes.length - shown.length;
   const count = violation.nodes.length;
@@ -106,12 +145,12 @@ export function ViolationRow({ violation }: { violation: A11yViolation }) {
     <li className={`violation impact--${violation.impact}`}>
       <div className="violation__head">
         <span className={`impact-badge impact-badge--${violation.impact}`}>
-          {violation.impact}
+          {impactLabel(violation.impact)}
         </span>
         <span className="violation__help">{violation.help}</span>
       </div>
       <p className="violation__count">
-        {count} element{count === 1 ? '' : 's'} affected
+        {t(count === 1 ? 'violElementsOne' : 'violElementsOther', { count })}
       </p>
       <ul className="violation__nodes">
         {shown.map((n) => (
@@ -121,7 +160,7 @@ export function ViolationRow({ violation }: { violation: A11yViolation }) {
         ))}
         {hidden > 0 && (
           <li className="violation__more">
-            + {hidden} more element{hidden === 1 ? '' : 's'}
+            {t(hidden === 1 ? 'violMoreOne' : 'violMoreOther', { n: hidden })}
           </li>
         )}
       </ul>
@@ -132,10 +171,10 @@ export function ViolationRow({ violation }: { violation: A11yViolation }) {
           target="_blank"
           rel="noreferrer"
         >
-          {violation.id} — how to fix
+          {t('howToFix', { id: violation.id })}
         </a>
       ) : (
-        <span className="violation__link">{violation.id} — how to fix</span>
+        <span className="violation__link">{t('howToFix', { id: violation.id })}</span>
       )}
     </li>
   );

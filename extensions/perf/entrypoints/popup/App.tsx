@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react';
 import { browser } from '#imports';
 import type { NetworkEntry, PageInsight, ResourceKind } from '@blur/core';
 import { formatBytes } from '@blur/core';
+import {
+  LanguageSwitcher,
+  LocaleProvider,
+  useLocaleController,
+  type Locale,
+} from '@blur/ui';
 import type { MeasureResult } from '../../utils/protocol';
 import type { LongFrameSummary, PageTiming, PerfWebVital } from '../../utils/perf-types';
 import { getRegistrableDomain } from '../../utils/registrable-domain';
-import { lastReportItem } from '../../utils/storage';
+import { lastReportItem, localeItem } from '../../utils/storage';
+import { useT, type TFn } from '../../utils/i18n';
 import { VitalsSection } from './Vitals';
 
 // The popup works WITHOUT DevTools open, so it shows what is available cross-origin
@@ -35,7 +42,52 @@ function useActiveTab(): { tabId: number | null; hostname: string } {
   return state;
 }
 
-export function App() {
+/** Root: wires the persisted locale to React and provides it to the whole popup
+ *  before any translated string renders (the seed is synchronous, so no flash). */
+export function Root() {
+  const { locale, setLocale } = useLocaleController({
+    key: 'blur-perf:locale',
+    read: () => localeItem.getValue(),
+    write: (next) => localeItem.setValue(next),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <App locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+/** The interface-language control, shown at the foot of the popup in both the
+ *  empty and populated states. */
+function LanguageSettings({
+  locale,
+  setLocale,
+  t,
+}: {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+  t: TFn;
+}) {
+  return (
+    <section className="settings">
+      <h2>{t('language')}</h2>
+      <LanguageSwitcher
+        locale={locale}
+        onChange={setLocale}
+        label={t('interfaceLanguage')}
+      />
+    </section>
+  );
+}
+
+export function App({
+  locale,
+  setLocale,
+}: {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+}) {
+  const t = useT();
   const { tabId, hostname } = useActiveTab();
   const [insight, setInsight] = useState<PageInsight | null>(null);
   const [entries, setEntries] = useState<NetworkEntry[]>([]);
@@ -99,9 +151,7 @@ export function App() {
     try {
       const granted = await browser.permissions.request({ permissions: ['debugger'] });
       if (!granted) {
-        setMeasureError(
-          'The debugger permission was declined. Exact byte measurement needs it.',
-        );
+        setMeasureError(t('puErrDebuggerDeclined'));
         return;
       }
       const result = (await browser.runtime.sendMessage({
@@ -115,7 +165,7 @@ export function App() {
         setMeasureError(result.error);
       }
     } catch (err) {
-      setMeasureError(err instanceof Error ? err.message : 'Measurement failed.');
+      setMeasureError(err instanceof Error ? err.message : t('puErrMeasureFailed'));
     } finally {
       setMeasuring(false);
     }
@@ -125,7 +175,7 @@ export function App() {
     return (
       <div className="popup">
         <header className="head">
-          <h1>Page Insight</h1>
+          <h1>{t('puTitle')}</h1>
           {/* The hostname ellipsizes when it is too long for the header, so the
               full value has to stay reachable on hover. */}
           <span className="host mono" title={hostname}>
@@ -133,9 +183,9 @@ export function App() {
           </span>
         </header>
         <p className="caveat" role="status" aria-live="polite">
-          No measurements yet for this tab. Reload the page to collect Web Vitals
-          and resource timing from the first byte.
+          {t('puNoMeasure')}
         </p>
+        <LanguageSettings locale={locale} setLocale={setLocale} t={t} />
       </div>
     );
   }
@@ -199,7 +249,7 @@ export function App() {
   return (
     <div className="popup">
       <header className="head">
-        <h1>Page Insight</h1>
+        <h1>{t('puTitle')}</h1>
         {/* Ellipsized when long — `title` keeps the full hostname reachable. */}
         <span className="host mono" title={shown.hostname || hostname}>
           {shown.hostname || hostname}
@@ -210,54 +260,47 @@ export function App() {
         <div className="stats">
           <div className="stat">
             <div className="stat__value mono">{shown.requestCount}</div>
-            <div className="stat__label">requests</div>
+            <div className="stat__label">{t('puRequests')}</div>
           </div>
           <div className={exactMode ? 'stat stat--exact' : 'stat'}>
             <div className="stat__value mono">{formatBytes(shown.measuredBytes)}</div>
-            <div className="stat__label">{exactMode ? 'exact bytes (cold load)' : 'measured bytes'}</div>
+            <div className="stat__label">
+              {exactMode ? t('puExactBytesLabel') : t('puMeasuredBytesLabel')}
+            </div>
           </div>
           {hasUnmeasured && (
             <div className="stat stat--warn">
               <div className="stat__value mono">{shown.unmeasuredRequests}</div>
-              <div className="stat__label">unmeasured</div>
+              <div className="stat__label">{t('puUnmeasured')}</div>
             </div>
           )}
         </div>
 
         {exactMode ? (
-          <p className="caveat caveat--ok">
-            Exact page weight measured over a cache-bypassing reload with the
-            debugger — every request re-fetched from the network and counted,
-            including third-party resources.
-          </p>
+          <p className="caveat caveat--ok">{t('puExactCaveat')}</p>
         ) : hasUnmeasured ? (
           <div className="caveat">
-            Some third-party resources don't report their size, so this total is a
-            lower bound — {shown.unmeasuredRequests} request
-            {shown.unmeasuredRequests === 1 ? '' : 's'} could not be measured (they
-            are left out, not counted as zero).
+            {t(
+              shown.unmeasuredRequests === 1 ? 'puLowerBoundOne' : 'puLowerBoundOther',
+              { count: shown.unmeasuredRequests },
+            )}
             <details className="caveat__more">
-              <summary>Why?</summary>
-              Cross-origin resources served without a{' '}
-              <code>Timing-Allow-Origin</code> response header hide their transfer
-              size from the page's Resource Timing data.
+              <summary>{t('puWhy')}</summary>
+              {t('puTaoPre')}
+              <code>Timing-Allow-Origin</code>
+              {t('puTaoPost')}
             </details>
           </div>
         ) : (
-          <p className="caveat">
-            Every request on this page reported its size, so this total is complete.
-          </p>
+          <p className="caveat">{t('puComplete')}</p>
         )}
       </div>
 
       {!exactMode && (
         <section className="measure">
-          <h2>Exact byte weight</h2>
+          <h2>{t('puExactByteWeight')}</h2>
           {import.meta.env.FIREFOX ? (
-            <p className="caveat">
-              Banner-free exact byte measurement isn't available in this browser, so
-              the total above (from Resource Timing) is the best estimate here.
-            </p>
+            <p className="caveat">{t('puFfMeasure')}</p>
           ) : (
             <>
               <button
@@ -265,10 +308,10 @@ export function App() {
                 disabled={measuring}
                 onClick={() => setConfirming(true)}
               >
-                {measuring ? 'Measuring…' : 'Measure exact bytes'}
+                {measuring ? t('puMeasuring') : t('puMeasureBtn')}
               </button>
               {confirming && (
-                <ConsentDialog onCancel={() => setConfirming(false)} onConfirm={measure} />
+                <ConsentDialog onCancel={() => setConfirming(false)} onConfirm={measure} t={t} />
               )}
               {measureError && (
                 <p className="caveat" role="alert">
@@ -281,7 +324,7 @@ export function App() {
       )}
 
       <section>
-        <h2>By type</h2>
+        <h2>{t('puByType')}</h2>
         <ul className="breakdown">
           {kinds.map(([kind, n]) => {
             const b = kindBytes.get(kind);
@@ -293,7 +336,10 @@ export function App() {
                   {b && b.unmeasured > 0 && (
                     <span
                       className="breakdown__partial"
-                      title={`${b.unmeasured} request${b.unmeasured === 1 ? '' : 's'} of this type reported no size`}
+                      title={t(
+                        b.unmeasured === 1 ? 'puByTypePartialOne' : 'puByTypePartialOther',
+                        { count: b.unmeasured },
+                      )}
                     >
                       {' '}+{b.unmeasured}
                     </span>
@@ -310,7 +356,7 @@ export function App() {
 
       {shown.thirdPartyDomains.length > 0 && (
         <section>
-          <h2>Third-party domains</h2>
+          <h2>{t('puThirdPartyDomains')}</h2>
           {thirdParties.length > 0 ? (
             <ul className="breakdown">
               {thirdParties.map(([domain, s]) => (
@@ -321,7 +367,10 @@ export function App() {
                     {s.unmeasured > 0 && (
                       <span
                         className="breakdown__partial"
-                        title={`${s.unmeasured} request${s.unmeasured === 1 ? '' : 's'} from this domain reported no size`}
+                        title={t(
+                          s.unmeasured === 1 ? 'puTpPartialOne' : 'puTpPartialOther',
+                          { count: s.unmeasured },
+                        )}
                       >
                         {' '}+{s.unmeasured}
                       </span>
@@ -342,28 +391,24 @@ export function App() {
       )}
 
       <section className="compare">
-        <h2>Compare loads</h2>
-        <button className="btn" aria-label="Save this load as a snapshot" onClick={() => void saveSnapshot()}>
-          Save snapshot
+        <h2>{t('puCompareLoads')}</h2>
+        <button className="btn" aria-label={t('puSaveAria')} onClick={() => void saveSnapshot()}>
+          {t('puSaveSnapshot')}
         </button>
         {comparable && snapshot && (
           <div className="compare__diff" role="status" aria-live="polite">
-            <Delta label="Requests" from={snapshot.requestCount} to={shown.requestCount} />
+            <Delta label={t('puDeltaRequests')} from={snapshot.requestCount} to={shown.requestCount} />
             {bytesComparable ? (
-              <Delta label="Bytes" from={snapshot.measuredBytes} to={shown.measuredBytes} bytes />
+              <Delta label={t('puDeltaBytes')} from={snapshot.measuredBytes} to={shown.measuredBytes} bytes />
             ) : (
-              <p className="caveat">
-                Byte totals aren't compared: the snapshot and this load used
-                different measurement methods, so a diff wouldn't be like-for-like.
-              </p>
+              <p className="caveat">{t('puBytesNotCompared')}</p>
             )}
-            <Delta label="Unmeasured" from={snapshot.unmeasuredRequests} to={shown.unmeasuredRequests} invert />
+            <Delta label={t('puDeltaUnmeasured')} from={snapshot.unmeasuredRequests} to={shown.unmeasuredRequests} invert />
           </div>
         )}
         {snapshot && !comparable && (
           <p className="caveat">
-            Saved snapshot is for <span className="mono">{snapshot.hostname}</span>; reload
-            that page to compare.
+            {t('puSnapshotForPre')}<span className="mono">{snapshot.hostname}</span>{t('puSnapshotForPost')}
           </p>
         )}
       </section>
@@ -374,9 +419,9 @@ export function App() {
           the fix for that specific cause. */}
       <VitalsSection vitals={vitals} timing={timing} longFrames={longFrames} />
 
-      <footer className="foot">
-        Open the Performance panel (F12) for the full request table.
-      </footer>
+      <footer className="foot">{t('puFooter')}</footer>
+
+      <LanguageSettings locale={locale} setLocale={setLocale} t={t} />
     </div>
   );
 }
@@ -418,24 +463,27 @@ function Delta({
 function ConsentDialog({
   onCancel,
   onConfirm,
+  t,
 }: {
   onCancel: () => void;
   onConfirm: () => void;
+  t: TFn;
 }) {
   return (
-    <div className="confirm" role="alertdialog" aria-label="Confirm exact-byte measurement">
+    <div className="confirm" role="alertdialog" aria-label={t('puConsentAria')}>
       <p className="confirm__body">
-        Measuring exact bytes attaches Chrome's debugger to this tab and{' '}
-        <strong>reloads the page bypassing the cache</strong> so every request is
-        re-fetched from the network and counted from the first byte. Chrome shows a
-        non-dismissable <strong>“extension is debugging this browser”</strong> banner
-        while it runs. Only one debugger can attach at a time, so{' '}
-        <strong>close this tab's DevTools</strong> if it's open.
+        {t('puConsent1')}
+        <strong>{t('puConsentReloadStrong')}</strong>
+        {t('puConsent2')}
+        <strong>{t('puConsentBannerStrong')}</strong>
+        {t('puConsent3')}
+        <strong>{t('puConsentCloseStrong')}</strong>
+        {t('puConsent4')}
       </p>
       <div className="confirm__actions">
-        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn" onClick={onCancel}>{t('puCancel')}</button>
         <button className="btn btn--primary" onClick={onConfirm}>
-          Attach debugger &amp; measure
+          {t('puAttachMeasure')}
         </button>
       </div>
     </div>

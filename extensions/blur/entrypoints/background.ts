@@ -5,10 +5,12 @@ import {
   settingsItem,
   siteConfigsItem,
   panicSnapshotItem,
+  localeItem,
   withSettingsLock,
   withStorageLock,
 } from '../utils/storage';
 import { togglePanic, setSiteOverride } from '../utils/features';
+import { tAt } from '../utils/i18n';
 
 // Shape mirrors `BlurProtocol` in @blur/core. `stats` is the content-script
 // report; the rest are popup/options round-trips.
@@ -200,23 +202,28 @@ export default defineBackground({
     const MENU_BLUR_THIS = 'bx-blur-this';
     const MENU_ALWAYS_IMAGES = 'bx-always-images';
 
-    function createMenus(): void {
+    // Menu titles follow the user's chosen UI language (default English), read
+    // from the same persisted `local:locale` the popup/options switcher writes.
+    async function createMenus(): Promise<void> {
+      const locale = await localeItem.getValue();
       browser.contextMenus?.removeAll(() => {
         browser.contextMenus?.create({
           id: MENU_BLUR_THIS,
-          title: 'Blur this element',
+          title: tAt(locale, 'menu_blur_this'),
           contexts: ['image', 'video', 'all'],
         });
         browser.contextMenus?.create({
           id: MENU_ALWAYS_IMAGES,
-          title: 'Always blur images on this site',
+          title: tAt(locale, 'menu_always_images'),
           contexts: ['image', 'all'],
         });
       });
     }
-    browser.runtime.onInstalled.addListener(createMenus);
-    browser.runtime.onStartup?.addListener(createMenus);
-    createMenus();
+    browser.runtime.onInstalled.addListener(() => void createMenus());
+    browser.runtime.onStartup?.addListener(() => void createMenus());
+    void createMenus();
+    // Re-title live when the user switches language, so the menu never lags the UI.
+    localeItem.watch(() => void createMenus());
 
     browser.contextMenus?.onClicked.addListener((info, tab) => {
       void (async () => {

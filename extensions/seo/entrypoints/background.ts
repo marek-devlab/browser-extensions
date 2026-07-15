@@ -1,5 +1,6 @@
 import { defineBackground } from '#imports';
-import { lastReportItem } from '../utils/storage';
+import { lastReportItem, localeItem } from '../utils/storage';
+import { tAt, type TFn } from '../utils/i18n';
 import type {
   A11yReportOutcome,
   ContentRequest,
@@ -29,19 +30,29 @@ import type { SeoReportEx } from '../utils/checks';
 async function askContent<T>(
   tabId: number,
   request: ContentRequest,
+  t: TFn,
 ): Promise<ContentResponse<T>> {
   const response = (await browser.tabs.sendMessage(tabId, request)) as
     | ContentResponse<T>
     | undefined;
   if (response == null) {
-    return { ok: false, error: 'The page did not return a result.' };
+    return { ok: false, error: t('errNoResult') };
   }
   return response;
 }
 
+// The locale the UI-facing error strings are rendered in. Resolved per request so
+// a language change takes effect on the next scan (presentation only — routing,
+// caching and messaging are unchanged).
+async function currentT(): Promise<TFn> {
+  const locale = await localeItem.getValue();
+  return (key, vars) => tAt(locale, key, vars);
+}
+
 async function getSeoReport(tabId: number): Promise<SeoReportOutcome> {
+  const t = await currentT();
   try {
-    const outcome = await askContent<SeoReportEx>(tabId, { type: 'extractSeo' });
+    const outcome = await askContent<SeoReportEx>(tabId, { type: 'extractSeo' }, t);
     if (!outcome.ok) return outcome;
     await lastReportItem.setValue(outcome.data);
     return outcome;
@@ -51,39 +62,31 @@ async function getSeoReport(tabId: number): Promise<SeoReportOutcome> {
     // extension was installed and not yet reloaded.
     return {
       ok: false,
-      error: describe(
-        error,
-        'This page cannot be audited, or it needs a reload for the auditor to attach.',
-      ),
+      error: describe(error, t, t('errCannotAudit')),
     };
   }
 }
 
 async function runA11yAudit(tabId: number): Promise<A11yReportOutcome> {
+  const t = await currentT();
   try {
-    return await askContent<A11yReport>(tabId, { type: 'runA11y' });
+    return await askContent<A11yReport>(tabId, { type: 'runA11y' }, t);
   } catch (error) {
     return {
       ok: false,
-      error: describe(
-        error,
-        'This page cannot be audited, or it needs a reload for the auditor to attach.',
-      ),
+      error: describe(error, t, t('errCannotAudit')),
     };
   }
 }
 
-function describe(error: unknown, fallback?: string): string {
+function describe(error: unknown, t: TFn, fallback?: string): string {
   const message = error instanceof Error ? error.message : String(error);
   if (
     /chrome:\/\/|edge:\/\/|about:|cannot be scripted|showing error page|receiving end does not exist|could not establish connection/i.test(
       message,
     )
   ) {
-    return (
-      fallback ??
-      'This page cannot be audited (browser or store pages are off-limits), or it needs a reload.'
-    );
+    return fallback ?? t('errCannotAuditBrowser');
   }
   return fallback ?? message;
 }

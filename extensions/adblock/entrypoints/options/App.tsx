@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { browser } from '#imports';
+import { LanguageSwitcher, LocaleProvider } from '@blur/ui';
 import type { AdBlockLevel, AdBlockSettings } from '@blur/core';
 import { publicUrl } from '../../utils/public-url';
-import { ADBLOCK_LEVELS, adBlockPresetForLevel } from '@blur/core';
+import { adBlockPresetForLevel } from '@blur/core';
 import { useSettings } from '../../utils/use-settings';
 import { useStorageItem } from '../../utils/use-storage-item';
 import { useHostAccess } from '../../utils/use-host-access';
@@ -15,7 +16,6 @@ import {
   RULESET_STATUS_OK,
 } from '../../utils/storage';
 import type { RulesetStatus } from '../../utils/storage';
-import { degradedNotice } from '../../utils/backends/rule-budget';
 import type { CustomFilters } from '../../utils/adblock-types';
 import {
   ALL_SITES,
@@ -31,6 +31,8 @@ import {
 // scanner sees the same name exported from two modules and warns on build.
 import { exportBackup, applyBackup } from '../../utils/backup';
 import { parseBackup } from '../../utils/backup-parse';
+import { useAdblockLocale } from '../../utils/use-locale';
+import { useT, useDegradedNotice, levelLabel, levelDesc, type MsgKey } from '../../utils/i18n';
 
 // Shape of the generated public/rules/manifest.json (see scripts/build-rulesets.mjs).
 interface ManifestList {
@@ -61,14 +63,14 @@ function useManifest(): { lists: ManifestList[]; loaded: boolean } {
 
 type Tab = 'blocking' | 'lists' | 'trackers' | 'sites' | 'filters' | 'backup' | 'about';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'blocking', label: 'Blocking' },
-  { id: 'lists', label: 'Filter lists' },
-  { id: 'trackers', label: 'Trackers' },
-  { id: 'sites', label: 'Sites' },
-  { id: 'filters', label: 'My filters' },
-  { id: 'backup', label: 'Backup' },
-  { id: 'about', label: 'About' },
+const TABS: { id: Tab; labelKey: MsgKey }[] = [
+  { id: 'blocking', labelKey: 'tabBlocking' },
+  { id: 'lists', labelKey: 'tabLists' },
+  { id: 'trackers', labelKey: 'tabTrackers' },
+  { id: 'sites', labelKey: 'tabSites' },
+  { id: 'filters', labelKey: 'tabFilters' },
+  { id: 'backup', labelKey: 'tabBackup' },
+  { id: 'about', labelKey: 'tabAbout' },
 ];
 
 const ADBLOCK_ORDER: AdBlockLevel[] = ['off', 'standard', 'aggressive'];
@@ -103,11 +105,29 @@ function ruleBudgetAt(lists: ManifestList[], level: AdBlockLevel): number {
 }
 
 export function App(): JSX.Element {
+  // Owns the persisted UI language (with setLocale for the switcher) and provides
+  // it to the whole options tree.
+  const { locale, setLocale } = useAdblockLocale();
+  return (
+    <LocaleProvider locale={locale}>
+      <OptionsBody locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function OptionsBody({
+  locale,
+  setLocale,
+}: {
+  locale: ReturnType<typeof useAdblockLocale>['locale'];
+  setLocale: ReturnType<typeof useAdblockLocale>['setLocale'];
+}): JSX.Element {
+  const t = useT();
   const { settings, update, loaded } = useSettings();
   const [tab, setTab] = useState<Tab>('blocking');
   const { granted: hostGranted, request: requestHost } = useHostAccess();
 
-  if (!loaded) return <main className="options">Loading…</main>;
+  if (!loaded) return <main className="options">{t('loading')}</main>;
 
   const level = settings.adblock.level;
 
@@ -120,28 +140,33 @@ export function App(): JSX.Element {
   const stripParamsPending =
     settings.adblock.stripTrackingParams && !import.meta.env.FIREFOX && !hostGranted;
 
+  const currentTabLabel = t(TABS.find((tt) => tt.id === tab)?.labelKey ?? 'tabBlocking');
+
   return (
     <main className="options">
-      <h1>Ad &amp; Tracker Blocker</h1>
+      <h1>{t('appName')}</h1>
 
       <div className="master">
         <div>
-          <div className="master-title">Ad &amp; tracker blocking</div>
+          <div className="master-title">{t('masterTitle')}</div>
           <div className="note">
-            {settings.enabled
-              ? 'On — filtering runs on every site except those you exclude below.'
-              : 'Off — nothing is blocked or hidden on any site.'}
+            {settings.enabled ? t('masterOn') : t('masterOff')}
           </div>
         </div>
-        <label className="switch" title="Turn blocking on or off everywhere">
+        <label className="switch" title={t('toggleEverywhere')}>
           <input
             type="checkbox"
             checked={settings.enabled}
             onChange={() => update({ enabled: !settings.enabled })}
-            aria-label="Turn blocking on or off everywhere"
+            aria-label={t('toggleEverywhere')}
           />
           <span className="slider" />
         </label>
+      </div>
+
+      <div className="lang-row">
+        <h2 className="lang-heading">{t('language')}</h2>
+        <LanguageSwitcher locale={locale} onChange={setLocale} label={t('interfaceLanguage')} />
       </div>
 
       <TabBar tabs={TABS} current={tab} onSelect={setTab} />
@@ -149,7 +174,7 @@ export function App(): JSX.Element {
       <div
         id="settings-panel"
         role="region"
-        aria-label={`${TABS.find((t) => t.id === tab)?.label ?? ''} settings`}
+        aria-label={t('regionAria', { name: currentTabLabel })}
       >
       {tab === 'blocking' && (
         <section className="panel">
@@ -178,50 +203,48 @@ export function App(): JSX.Element {
                       },
                     })
                   }
-                  aria-label={ADBLOCK_LEVELS[lvl].label}
+                  aria-label={levelLabel(t, lvl)}
                 />
                 <span className="level-label">
-                  {ADBLOCK_LEVELS[lvl].label}
+                  {levelLabel(t, lvl)}
                   {lvl === 'aggressive' && (
-                    <span className="badge-warn">may break sites</span>
+                    <span className="badge-warn">{t('mayBreakSites')}</span>
                   )}
                 </span>
-                <span className="level-desc">
-                  {ADBLOCK_LEVELS[lvl].description}
-                </span>
+                <span className="level-desc">{levelDesc(t, lvl)}</span>
               </label>
             ))}
           </div>
 
-          <h3>What each level does</h3>
+          <h3>{t('whatEachLevel')}</h3>
           <ul className="explain">
             <li>
-              <b>Off</b> — nothing is blocked or hidden.
+              <b>{t('levelOffLabel')}</b>{t('explainOff')}
             </li>
             <li>
-              <b>Standard</b> — blocks ads and known trackers, and hides ad slots
-              on sites we have specific rules for. Safe on virtually every site.
+              <b>{t('levelStandardLabel')}</b>{t('explainStandard')}
             </li>
             <li>
-              <b>Aggressive</b> — also hides common page clutter everywhere (cookie
-              banners, newsletter pop-ups, leftover ad boxes). More thorough, but
-              can occasionally break a site's layout.
+              <b>{t('levelAggressiveLabel')}</b>{t('explainAggressive')}
             </li>
           </ul>
 
           <details className="advanced">
-            <summary>Technical details</summary>
+            <summary>{t('technicalDetails')}</summary>
             <ul className="explain">
               <li>
-                Each level toggles the bundled static rulesets via{' '}
-                <code>declarativeNetRequest.updateEnabledRulesets()</code>.
+                {t('techLevel1Pre')}
+                <code>declarativeNetRequest.updateEnabledRulesets()</code>
+                {t('periodOnly')}
               </li>
               <li>
-                "Hiding page clutter" is <em>cosmetic filtering</em> —{' '}
-                <code>display:none</code> rules injected by the content script.
-                Only <em>generic</em> cosmetic filtering (selectors applied on
-                every site) is enabled at Aggressive; it is what occasionally
-                breaks layouts, so it stays off at Standard.
+                {t('techLevel2a')}
+                <em>{t('emCosmeticFiltering')}</em>
+                {t('techLevel2b')}
+                <code>display:none</code>
+                {t('techLevel2c')}
+                <em>{t('emGeneric')}</em>
+                {t('techLevel2d')}
               </li>
             </ul>
           </details>
@@ -253,49 +276,53 @@ export function App(): JSX.Element {
                   },
                 })
               }
-              aria-label="Block known trackers"
+              aria-label={t('blockKnownTrackers')}
             />
-            Block known trackers
+            {t('blockKnownTrackers')}
           </label>
           <label className="chip">
             <input
               type="checkbox"
               checked={settings.adblock.stripTrackingParams}
               onChange={(e) => setStripParams(e.target.checked)}
-              aria-label="Strip tracking parameters from links"
+              aria-label={t('stripFromLinks')}
             />
-            Strip tracking parameters from links
+            {t('stripFromLinks')}
           </label>
           {stripParamsPending && (
             <p className="note status-err" role="alert">
               <span aria-hidden="true">⚠ </span>
-              Parameter stripping needs site access to run on this browser.{' '}
+              {t('paramNeedsAccess')}{' '}
               <button type="button" className="linkish" onClick={() => void requestHost()}>
-                Grant access
+                {t('grantAccess')}
               </button>
             </p>
           )}
           <p className="note">
-            Tracking parameters are the extra tags added to links (like{' '}
-            <code>?utm_source=…</code> or <code>fbclid</code>) that let sites
-            follow you between pages. Removing them takes you to the same
-            destination without the tracking tag.
+            {t('trackParamsNoteA')}
+            <code>?utm_source=…</code>
+            {t('trackParamsNoteB')}
+            <code>fbclid</code>
+            {t('trackParamsNoteC')}
           </p>
 
           <details className="advanced">
-            <summary>Technical details</summary>
+            <summary>{t('technicalDetails')}</summary>
             <p className="note">
-              Parameter stripping is a single DNR <code>redirect</code> rule using{' '}
-              <code>transform.queryTransform.removeParams</code>. Rules that
-              rewrite a URL count as "unsafe" and are capped at <b>5,000</b> across
-              the extension (PLAN.md §4.1).
+              {t('trackTechA')}
+              <code>redirect</code>
+              {t('trackTechB')}
+              <code>transform.queryTransform.removeParams</code>
+              {t('trackTechC')}
+              <b>5,000</b>
+              {t('trackTechD')}
             </p>
             <p className="note">
-              A future addition: a Privacy Badger–style heuristic that flags a
-              domain as a tracker once it is seen on ≥3 unrelated sites. EFF ported
-              Privacy Badger to MV3 in 2024, learning by observing{' '}
-              <code>webRequest</code> and blocking via <em>dynamic</em> DNR rules
-              (PLAN.md §4.3).
+              {t('trackTech2A')}
+              <code>webRequest</code>
+              {t('trackTech2B')}
+              <em>{t('emDynamic')}</em>
+              {t('trackTech2C')}
             </p>
           </details>
         </section>
@@ -335,13 +362,14 @@ function TabBar({
   current,
   onSelect,
 }: {
-  tabs: { id: Tab; label: string }[];
+  tabs: { id: Tab; labelKey: MsgKey }[];
   current: Tab;
   onSelect: (id: Tab) => void;
 }): JSX.Element {
+  const t = useT();
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   function onKey(e: ReactKeyboardEvent<HTMLDivElement>): void {
-    const i = tabs.findIndex((t) => t.id === current);
+    const i = tabs.findIndex((tt) => tt.id === current);
     let j = -1;
     if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
     else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
@@ -358,25 +386,25 @@ function TabBar({
     <div
       className="tabs"
       role="toolbar"
-      aria-label="Settings sections"
+      aria-label={t('tabsAria')}
       aria-orientation="horizontal"
       onKeyDown={onKey}
     >
-      {tabs.map((t, idx) => (
+      {tabs.map((tab, idx) => (
         <button
-          key={t.id}
+          key={tab.id}
           type="button"
-          id={`tab-${t.id}`}
+          id={`tab-${tab.id}`}
           aria-controls="settings-panel"
-          aria-current={current === t.id ? 'page' : undefined}
-          tabIndex={current === t.id ? 0 : -1}
+          aria-current={current === tab.id ? 'page' : undefined}
+          tabIndex={current === tab.id ? 0 : -1}
           ref={(el) => {
             refs.current[idx] = el;
           }}
-          className={current === t.id ? 'tab on' : 'tab'}
-          onClick={() => onSelect(t.id)}
+          className={current === tab.id ? 'tab on' : 'tab'}
+          onClick={() => onSelect(tab.id)}
         >
-          {t.label}
+          {t(tab.labelKey)}
         </button>
       ))}
     </div>
@@ -407,6 +435,8 @@ function ListsPanel({
     checked: boolean,
   ) => void;
 }): JSX.Element {
+  const t = useT();
+  const degradedNotice = useDegradedNotice();
   const { lists, loaded } = useManifest();
   const used = useMemo(() => ruleBudgetAt(lists, level), [lists, level]);
   const over = used > GUARANTEED_STATIC_RULES;
@@ -425,47 +455,52 @@ function ListsPanel({
     <section className="panel">
       {loaded && lists.length === 0 && (
         <p className="caveat">
-          No generated rulesets found. Run <code>npm run build:rules</code> to build them from{' '}
-          <code>@adguard/dnr-rulesets</code>.
+          {t('noRulesetsA')}
+          <code>npm run build:rules</code>
+          {t('noRulesetsB')}
+          <code>@adguard/dnr-rulesets</code>
+          {t('periodOnly')}
         </p>
       )}
       <p className="note">
-        Turn individual lists on or off. Picking a strictness level on the{' '}
-        <b>Blocking</b> tab sets these as a starting point; you can then override
-        any single list here.
+        {t('listsNote1a')}
+        <b>{t('tabBlocking')}</b>
+        {t('listsNote1b')}
       </p>
       <p className="note">
-        The <b>Annoyances</b> list blocks <em>network requests</em> for
-        cookie-consent and newsletter widgets. Hiding leftover on-page clutter
-        (cookie banners, pop-ups) is <em>cosmetic</em> filtering — governed by the{' '}
-        <b>Aggressive</b> strictness level on the <b>Blocking</b> tab, not by this
-        toggle. Turning this list off still leaves that clutter hidden at
-        Aggressive.
+        {t('listsNote2a')}
+        <b>{t('listAnnoyances')}</b>
+        {t('listsNote2b')}
+        <em>{t('emNetworkRequests')}</em>
+        {t('listsNote2c')}
+        <em>{t('emCosmetic')}</em>
+        {t('listsNote2d')}
+        <b>{t('levelAggressiveLabel')}</b>
+        {t('listsNote2e')}
+        <b>{t('tabBlocking')}</b>
+        {t('listsNote2f')}
       </p>
       {!masterOn && (
         <p className="caveat">
           <span aria-hidden="true">⚠ </span>
-          {enabled
-            ? 'Strictness is Off, so no list filters right now.'
-            : 'Blocking is turned off everywhere, so no list filters right now.'}{' '}
-          Your choices below are kept and apply once it is back on.
+          {enabled ? t('strictnessOffNote') : t('blockingOffNote')}
+          {t('choicesKept')}
         </p>
       )}
       {degraded && (
         <p className="caveat" role="alert">
           <span aria-hidden="true">⚠ </span>
-          {degradedNotice(rulesetStatus.dropped)} Its switch stays on below, and it
-          is retried automatically — it will start filtering as soon as the budget
-          allows.
+          {degradedNotice(rulesetStatus.dropped)}
+          {t('degradedRetry')}
         </p>
       )}
       <table className="lists">
         <thead>
           <tr>
-            <th>On</th>
-            <th>List</th>
-            <th className="num-col">Rules</th>
-            <th>License</th>
+            <th>{t('thOn')}</th>
+            <th>{t('thList')}</th>
+            <th className="num-col">{t('thRules')}</th>
+            <th>{t('thLicense')}</th>
           </tr>
         </thead>
         <tbody>
@@ -478,12 +513,12 @@ function ListsPanel({
               <tr key={l.id} className={masterOn && on && !blocked ? 'active-row' : ''}>
                 <td>
                   {key ? (
-                    <label className="switch switch--sm" title={`Toggle ${l.title}`}>
+                    <label className="switch switch--sm" title={t('toggleList', { name: l.title })}>
                       <input
                         type="checkbox"
                         checked={on}
                         onChange={(e) => onToggleList(key, e.target.checked)}
-                        aria-label={`Enable ${l.title}`}
+                        aria-label={t('enableList', { name: l.title })}
                       />
                       <span className="slider" />
                     </label>
@@ -493,9 +528,7 @@ function ListsPanel({
                 </td>
                 <td>
                   {l.title}
-                  {blocked && (
-                    <span className="sub"> — not active (no rule budget)</span>
-                  )}
+                  {blocked && <span className="sub">{t('notActiveBudget')}</span>}
                 </td>
                 <td className="num-col">{l.ruleCount.toLocaleString()}</td>
                 <td>{l.license}</td>
@@ -506,19 +539,19 @@ function ListsPanel({
       </table>
 
       <p className="note">
-        Peter Lowe's list is free for <em>personal / non-commercial</em> use only
-        and needs permission for commercial redistribution, so it is deliberately
-        NOT bundled here.
+        {t('peterLoweA')}
+        <em>{t('emPersonal')}</em>
+        {t('peterLoweB')}
       </p>
 
       {/* The rule-budget meter is developer-facing noise for a normal user, so it
           lives behind a disclosure rather than in the default view. */}
       <details className="advanced">
-        <summary>Technical details (rule budget)</summary>
+        <summary>{t('techBudget')}</summary>
         <div className="budget">
           <div className="budget-head">
             <span>
-              Rule budget at <b>{ADBLOCK_LEVELS[level].label}</b>
+              {t('budgetAt')}<b>{levelLabel(t, level)}</b>
             </span>
             <span className={over ? 'over' : ''}>
               {used.toLocaleString()} / {GUARANTEED_STATIC_RULES.toLocaleString()}
@@ -533,16 +566,16 @@ function ListsPanel({
           {over && (
             <p className="caveat">
               <span aria-hidden="true">⚠ </span>
-              Exceeds Chrome's guaranteed 30,000 static rules. The overflow falls
-              back to the shared 300,000 global pool, which is best-effort and can
-              be exhausted by other extensions.
+              {t('budgetOver')}
             </p>
           )}
         </div>
         <p className="note">
-          Chrome guarantees <b>30,000</b> enabled static rules per extension, plus a{' '}
-          <b>300,000</b>-rule pool shared across all installed extensions. A full
-          EasyList + EasyPrivacy set fits inside the per-extension guarantee.
+          {t('budgetNoteA')}
+          <b>30,000</b>
+          {t('budgetNoteB')}
+          <b>300,000</b>
+          {t('budgetNoteC')}
         </p>
       </details>
     </section>
@@ -556,6 +589,7 @@ function SitesPanel({
   allowlist: string[];
   onChange: (next: string[]) => void;
 }): JSX.Element {
+  const t = useT();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [bulk, setBulk] = useState('');
@@ -564,11 +598,11 @@ function SitesPanel({
   function add(): void {
     const host = normalizeHost(draft);
     if (!host) {
-      setError('Enter a valid site, e.g. example.com.');
+      setError(t('invalidSite'));
       return;
     }
     if (allowlist.includes(host)) {
-      setError(`${host} is already excluded.`);
+      setError(t('alreadyExcluded', { host }));
       return;
     }
     setError(null);
@@ -582,7 +616,7 @@ function SitesPanel({
   function importBulk(): void {
     const tokens = bulk.split(/[\s,]+/).filter(Boolean);
     if (tokens.length === 0) {
-      setBulkStatus('Nothing to import.');
+      setBulkStatus(t('nothingToImport'));
       return;
     }
     const next = new Set(allowlist);
@@ -601,33 +635,35 @@ function SitesPanel({
     }
     onChange([...next]);
     setBulk('');
-    setBulkStatus(
-      `Added ${added} site${added === 1 ? '' : 's'}` +
-        (skipped > 0 ? `; skipped ${skipped} unparseable line${skipped === 1 ? '' : 's'}.` : '.'),
-    );
+    const addedMsg = t(added === 1 ? 'addedSiteOne' : 'addedSiteOther', { n: added });
+    const skippedMsg =
+      skipped > 0 ? t(skipped === 1 ? 'skippedLineOne' : 'skippedLineOther', { n: skipped }) : t('periodOnly');
+    setBulkStatus(addedMsg + skippedMsg);
   }
 
   return (
     <section className="panel">
       <p className="note">
-        Sites listed here are fully excluded — no network or cosmetic filtering
-        runs on them. Paste a full URL or just the hostname; it is normalized to a
-        bare host (e.g. <code>https://example.com/page</code> → <code>example.com</code>).
+        {t('sitesNoteA')}
+        <code>https://example.com/page</code>
+        {t('sitesNoteB')}
+        <code>example.com</code>
+        {t('sitesNoteC')}
       </p>
       <div className="field">
         <input
           type="text"
-          placeholder="example.com or https://example.com/page"
+          placeholder={t('placeholderSite')}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
             if (error) setError(null);
           }}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          aria-label="Site to exclude from blocking"
+          aria-label={t('excludeAria')}
         />
         <button type="button" onClick={add}>
-          Add
+          {t('addBtn')}
         </button>
       </div>
       {error && (
@@ -637,10 +673,7 @@ function SitesPanel({
         </p>
       )}
       {allowlist.length === 0 ? (
-        <p className="note empty-hint">
-          No excluded sites yet. Add a hostname above to turn blocking off for
-          that site.
-        </p>
+        <p className="note empty-hint">{t('noExcluded')}</p>
       ) : (
         <ul className="allowlist">
           {allowlist.map((host) => (
@@ -649,20 +682,17 @@ function SitesPanel({
               <button
                 type="button"
                 onClick={() => onChange(allowlist.filter((h) => h !== host))}
-                aria-label={`Remove ${host}`}
+                aria-label={t('removeHost', { host })}
               >
-                Remove
+                {t('removeBtn')}
               </button>
             </li>
           ))}
         </ul>
       )}
 
-      <h3>Bulk import</h3>
-      <p className="note">
-        One site per line (or comma-separated). Full URLs are accepted and
-        normalized to a bare host. Existing entries are skipped.
-      </p>
+      <h3>{t('bulkImport')}</h3>
+      <p className="note">{t('bulkNote')}</p>
       <textarea
         className="filter-paste"
         rows={4}
@@ -672,11 +702,11 @@ function SitesPanel({
           setBulk(e.target.value);
           if (bulkStatus) setBulkStatus(null);
         }}
-        aria-label="Sites to exclude, one per line"
+        aria-label={t('bulkAria')}
       />
       <div className="field">
         <button type="button" onClick={importBulk}>
-          Import sites
+          {t('importSites')}
         </button>
       </div>
       {bulkStatus && (
@@ -685,13 +715,13 @@ function SitesPanel({
         </p>
       )}
 
-      <h3>Export</h3>
+      <h3>{t('exportHeading')}</h3>
       <textarea
         className="filter-paste"
         rows={4}
         readOnly
         value={allowlist.join('\n')}
-        aria-label="Excluded sites as text"
+        aria-label={t('sitesExportAria')}
         onFocus={(e) => e.currentTarget.select()}
       />
     </section>
@@ -702,6 +732,7 @@ function SitesPanel({
 // user's own per-site selectors, plus paste-import EasyList `##selector` lines
 // and text export.
 function FiltersPanel(): JSX.Element {
+  const t = useT();
   const { value: filters, update, loaded } = useStorageItem<CustomFilters>(
     customFiltersItem,
     {},
@@ -726,66 +757,72 @@ function FiltersPanel(): JSX.Element {
   function importPasted(): void {
     const { filters: parsed, skipped } = parseCosmeticFilters(paste);
     if (parsed.length === 0 && skipped.length === 0) {
-      setStatus('Nothing to import.');
+      setStatus(t('nothingToImport'));
       return;
     }
     update(mergeParsed(filters, parsed));
     setPaste('');
-    setStatus(
-      `Imported ${parsed.length} cosmetic rule${parsed.length === 1 ? '' : 's'}` +
-        (skipped.length > 0
-          ? `; skipped ${skipped.length} (network rules and unsupported syntax — see below).`
-          : '.'),
-    );
+    const importedMsg = t(parsed.length === 1 ? 'importedRuleOne' : 'importedRuleOther', {
+      n: parsed.length,
+    });
+    const skippedMsg =
+      skipped.length > 0 ? t('skippedRules', { n: skipped.length }) : t('periodOnly');
+    setStatus(importedMsg + skippedMsg);
   }
 
-  if (!loaded) return <section className="panel">Loading…</section>;
+  if (!loaded) return <section className="panel">{t('loading')}</section>;
 
   return (
     <section className="panel">
       <p className="note">
-        Your own cosmetic rules hide elements with <code>display:none</code>. They
-        apply at <em>every</em> level (even Standard) because they are your explicit
-        choice — unlike the generic list, which only turns on at Aggressive. Use{' '}
-        <b>Block an element on this page</b> in the toolbar popup to pick visually.
+        {t('filtersNote1a')}
+        <code>display:none</code>
+        {t('filtersNote1b')}
+        <em>{t('emEvery')}</em>
+        {t('filtersNote1c')}
+        <b>{t('boldBlockAnElement')}</b>
+        {t('filtersNote1d')}
       </p>
       <p className="note">
-        To bring one back you do not need this page: right after you hide an
-        element the page itself offers <b>Undo</b>, and the toolbar popup lists
-        everything you have hidden <em>on the site you are on</em> with a{' '}
-        <b>Restore</b> button for each. This tab is the full, cross-site list.
+        {t('filtersNote2a')}
+        <b>{t('boldUndo')}</b>
+        {t('filtersNote2b')}
+        <em>{t('emOnSiteYouAreOn')}</em>
+        {t('filtersNote2c')}
+        <b>{t('boldRestore')}</b>
+        {t('filtersNote2d')}
       </p>
 
-      <h3>Add a rule</h3>
+      <h3>{t('addRule')}</h3>
       <div className="field filter-add">
         <input
           type="text"
-          placeholder="host (blank = all sites)"
+          placeholder={t('placeholderHost')}
           value={host}
           onChange={(e) => setHost(e.target.value)}
-          aria-label="Host for this cosmetic rule (blank for all sites)"
+          aria-label={t('hostAria')}
         />
         <input
           type="text"
-          placeholder="CSS selector, e.g. .promo-box"
+          placeholder={t('placeholderSelector')}
           value={selector}
           onChange={(e) => setSelector(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addOne()}
-          aria-label="CSS selector to hide"
+          aria-label={t('selectorAria')}
         />
         <button type="button" onClick={addOne}>
-          Add
+          {t('addBtn')}
         </button>
       </div>
 
-      <h3>Your rules</h3>
+      <h3>{t('yourRules')}</h3>
       {hosts.length === 0 ? (
-        <p className="note empty-hint">No custom rules yet.</p>
+        <p className="note empty-hint">{t('noCustomRules')}</p>
       ) : (
         <ul className="filter-list">
           {hosts.map((h) => (
             <li key={h} className="filter-host">
-              <div className="filter-host-name">{h === ALL_SITES ? 'All sites' : h}</div>
+              <div className="filter-host-name">{h === ALL_SITES ? t('allSites') : h}</div>
               <ul>
                 {/* Rules picked with the element picker carry the human label
                     captured at pick time; ones typed here or pasted have none and
@@ -799,9 +836,9 @@ function FiltersPanel(): JSX.Element {
                     <button
                       type="button"
                       onClick={() => update(removeFilter(filters, h, entry.selector))}
-                      aria-label={`Remove ${entry.selector} from ${h}`}
+                      aria-label={t('removeSelector', { selector: entry.selector, host: h })}
                     >
-                      Remove
+                      {t('removeBtn')}
                     </button>
                   </li>
                 ))}
@@ -811,13 +848,14 @@ function FiltersPanel(): JSX.Element {
         </ul>
       )}
 
-      <h3>Import (paste EasyList cosmetic rules)</h3>
+      <h3>{t('importHeading')}</h3>
       <p className="note">
-        One rule per line: <code>example.com##.ad-box</code> (site-specific) or{' '}
-        <code>##.global-ad</code> (all sites). Network rules and extended
-        (non-CSS) syntax are skipped — network blocking is handled by the bundled
-        DNR rulesets, and remote list fetching is out of scope (it needs extra host
-        permissions and review).
+        {t('importNoteA')}
+        <code>example.com##.ad-box</code>
+        {t('importNoteB')}
+        <code>##.global-ad</code>
+        {t('importNoteC')}
+        {t('importNoteD')}
       </p>
       <textarea
         className="filter-paste"
@@ -825,11 +863,11 @@ function FiltersPanel(): JSX.Element {
         placeholder="example.com##.sponsored"
         value={paste}
         onChange={(e) => setPaste(e.target.value)}
-        aria-label="Paste EasyList cosmetic rules"
+        aria-label={t('pasteAria')}
       />
       <div className="field">
         <button type="button" onClick={importPasted}>
-          Import pasted rules
+          {t('importPastedBtn')}
         </button>
       </div>
       {status && (
@@ -838,13 +876,13 @@ function FiltersPanel(): JSX.Element {
         </p>
       )}
 
-      <h3>Export</h3>
+      <h3>{t('exportHeading')}</h3>
       <textarea
         className="filter-paste"
         rows={4}
         readOnly
         value={toFilterText(filters)}
-        aria-label="Your cosmetic rules as text"
+        aria-label={t('filtersExportAria')}
         onFocus={(e) => e.currentTarget.select()}
       />
     </section>
@@ -853,6 +891,7 @@ function FiltersPanel(): JSX.Element {
 
 // Full settings/allowlist/filters backup as JSON (feature §4).
 function BackupPanel(): JSX.Element {
+  const t = useT();
   const [text, setText] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -860,7 +899,7 @@ function BackupPanel(): JSX.Element {
   async function doExport(): Promise<void> {
     const backup = await exportBackup();
     setText(JSON.stringify(backup, null, 2));
-    setStatus('Exported. Copy the JSON below or download it.');
+    setStatus(t('exportedStatus'));
     setError(null);
   }
 
@@ -878,43 +917,40 @@ function BackupPanel(): JSX.Element {
     try {
       const backup = parseBackup(text);
       await applyBackup(backup);
-      setStatus('Imported and applied.');
+      setStatus(t('importedApplied'));
       setError(null);
     } catch (err) {
       // Invalid/garbage JSON surfaces a friendly message, never a crash.
-      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(t('importFailed', { msg: err instanceof Error ? err.message : String(err) }));
       setStatus(null);
     }
   }
 
   return (
     <div className="backup">
-      <h3>Backup &amp; restore</h3>
-      <p className="note">
-        Export your settings, excluded sites, per-site options and custom filters
-        as JSON — or paste a previously exported document and import it.
-      </p>
+      <h3>{t('backupRestore')}</h3>
+      <p className="note">{t('backupNote')}</p>
       <div className="field">
         <button type="button" onClick={() => void doExport()}>
-          Export
+          {t('exportBtn')}
         </button>
         <button type="button" onClick={download} disabled={!text}>
-          Download .json
+          {t('downloadJson')}
         </button>
         <button type="button" onClick={() => void doImport()} disabled={!text.trim()}>
-          Import
+          {t('importBtn')}
         </button>
       </div>
       <textarea
         className="filter-paste"
         rows={8}
-        placeholder="Exported JSON appears here; paste JSON to import."
+        placeholder={t('backupPlaceholder')}
         value={text}
         onChange={(e) => {
           setText(e.target.value);
           if (error) setError(null);
         }}
-        aria-label="Settings backup JSON"
+        aria-label={t('backupAria')}
       />
       {status && (
         <p className="note status-ok" role="status">
@@ -933,6 +969,7 @@ function BackupPanel(): JSX.Element {
 }
 
 function AboutPanel(): JSX.Element {
+  const t = useT();
   const [version, setVersion] = useState('—');
   const [installDate, setInstallDate] = useState('');
   useEffect(() => {
@@ -942,22 +979,15 @@ function AboutPanel(): JSX.Element {
   return (
     <section className="panel">
       <p>
-        Filter list build: <b>{version}</b>
+        {t('filterListBuild')}<b>{version}</b>
       </p>
       {installDate && (
         <p className="note">
-          Counting since <b>{installDate}</b>.
+          {t('countingSince')}<b>{installDate}</b>{t('periodOnly')}
         </p>
       )}
-      <p className="note">
-        Privacy: no browsing data leaves your device. Filtering, counting and
-        allowlisting all happen locally.
-      </p>
-      <p className="note">
-        Content blurring and the developer toolkit are separate companion
-        extensions in this suite — each ships on its own to keep every add-on to
-        one narrow purpose (PLAN.md §0).
-      </p>
+      <p className="note">{t('privacyNote')}</p>
+      <p className="note">{t('companionNote')}</p>
       <ResetStatsControl />
       <BackupPanel />
     </section>
@@ -969,6 +999,7 @@ function AboutPanel(): JSX.Element {
 // two-step in-page confirm (not a blocking `window.confirm`) so the destructive
 // action always takes a deliberate second click.
 function ResetStatsControl(): JSX.Element {
+  const t = useT();
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -980,18 +1011,15 @@ function ResetStatsControl(): JSX.Element {
 
   return (
     <div className="reset-stats">
-      <h3>Statistics</h3>
-      <p className="note">
-        The lifetime counter (today, this week and total) shown in the toolbar
-        popup. Resetting clears it to zero and can't be undone.
-      </p>
+      <h3>{t('statisticsHeading')}</h3>
+      <p className="note">{t('resetNote')}</p>
       {confirming ? (
         <div className="field">
           <button type="button" className="linkish" onClick={() => void reset()}>
-            Confirm reset
+            {t('confirmReset')}
           </button>
           <button type="button" onClick={() => setConfirming(false)}>
-            Cancel
+            {t('cancel')}
           </button>
         </div>
       ) : (
@@ -1003,14 +1031,14 @@ function ResetStatsControl(): JSX.Element {
               setConfirming(true);
             }}
           >
-            Reset statistics
+            {t('resetStats')}
           </button>
         </div>
       )}
       {done && (
         <p className="note status-ok" role="status">
           <span aria-hidden="true">✓ </span>
-          Statistics reset to zero.
+          {t('statsReset')}
         </p>
       )}
     </div>

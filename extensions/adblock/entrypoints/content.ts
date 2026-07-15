@@ -8,8 +8,10 @@ import {
   isAllowlisted,
   DEFAULT_ADBLOCK_SETTINGS,
 } from '@blur/core';
+import type { Locale } from '@blur/ui';
 import type { AdBlockSiteConfigX, CustomFilters } from '../utils/adblock-types';
-import { settingsItem, siteConfigsItem, customFiltersItem } from '../utils/storage';
+import { settingsItem, siteConfigsItem, customFiltersItem, localeItem } from '../utils/storage';
+import { tAt } from '../utils/i18n';
 import { addFilter, removeFilter, customRulesForHost } from '../utils/custom-filters';
 import { startPicker } from '../utils/element-picker';
 import { describeElement, labelFor } from '../utils/element-label';
@@ -64,6 +66,9 @@ export default defineContentScript({
       .getValue()
       .catch((): Record<string, AdBlockSiteConfigX> => ({}));
     let customFilters = await customFiltersItem.getValue().catch((): CustomFilters => ({}));
+    // The user's chosen UI language, for the in-page picker chrome and undo toast.
+    // Kept live so a locale change reaches an already-open tab's next pick/toast.
+    let locale = await localeItem.getValue().catch((): Locale => 'en');
 
     // Whether cosmetic filtering should currently run for this host. Recomputed
     // live: the full allowlist and the master switch stop everything; the per-site
@@ -224,6 +229,9 @@ export default defineContentScript({
       customFilters = next ?? {};
       apply();
     });
+    const unwatchLocale = localeItem.watch((next) => {
+      locale = next ?? 'en';
+    });
 
     // Element picker (feature §1) + context-menu "Block this element": the
     // background/popup sends `startPicker`; only the top frame runs it.
@@ -248,10 +256,21 @@ export default defineContentScript({
           // Immediate undo, where the user is already looking, with their hand
           // still on the mouse (or their thumb still on the screen). This is the
           // single most important case: "I just blocked the wrong thing."
-          showUndoToast(label, () => void removeUserRule(selector));
+          showUndoToast(label, () => void removeUserRule(selector), {
+            hidden: tAt(locale, 'toastHidden'),
+            restored: tAt(locale, 'toastRestored'),
+            undo: tAt(locale, 'undoBtn'),
+            dismiss: tAt(locale, 'dismissBtn'),
+            undoAria: (desc) =>
+              tAt(locale, 'undoAria', { desc: desc || tAt(locale, 'thisElement') }),
+          });
         },
         () => {
           activePicker = undefined;
+        },
+        {
+          instruction: tAt(locale, 'pickerInstruction'),
+          blockLabel: (sel) => tAt(locale, 'pickerBlock', { selector: sel }),
         },
       );
     });
@@ -267,6 +286,7 @@ export default defineContentScript({
       unwatchSettings();
       unwatchSiteConfigs();
       unwatchCustom();
+      unwatchLocale();
       // Flush any pending delta so the last window of hides isn't lost.
       send();
       engine?.stop();

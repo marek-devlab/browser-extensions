@@ -115,10 +115,14 @@ body {
   height: 100vh;
 }
 
-/* Header: tab bar + export controls */
+/* Header: tab bar + export controls. `flex-wrap` so the added language switcher
+   never forces a horizontal overflow in a narrow DevTools dock — the controls
+   drop to a second line instead. */
 .panel-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
   flex: 0 0 auto;
@@ -725,6 +729,40 @@ summary:focus-visible {
 }
 
 .theme-toggle__btn--active {
+  background: var(--accent);
+  color: var(--badge-fill-text);
+}
+
+/* Language switcher (EN/RU/ET segmented control), sibling of the theme toggle in
+   the header. Mirrors `.theme-toggle` but `flex-wrap`s so a longer label set
+   (Русский / Eesti) wraps to a second row instead of overflowing. */
+.lang-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-right: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  border-left: 1px solid var(--border);
+}
+
+.lang-toggle__btn:first-child {
+  border-left: none;
+}
+
+.lang-toggle__btn--active {
   background: var(--accent);
   color: var(--badge-fill-text);
 }

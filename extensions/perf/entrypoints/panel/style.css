@@ -720,3 +720,55 @@ summary:focus-visible {
 .field-data {
   margin-top: 14px;
 }
+
+/* ---------------------------------------------------------------- */
+/* Interface-language switcher (persistent panel footer)            */
+/* ---------------------------------------------------------------- */
+.panel-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.panel-foot__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+/* A segmented EN/RU/ET control (from @blur/ui's LanguageSwitcher). Styled locally
+   so the panel does not depend on @blur/ui's components.css, mirroring the .tab
+   look. `flex-wrap` keeps the labels from overflowing a narrow DevTools dock when
+   a longer localisation widens them. */
+.lang-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lang-toggle__btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-toggle__btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.lang-toggle__btn--active {
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}

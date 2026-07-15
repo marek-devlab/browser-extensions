@@ -1,5 +1,14 @@
 import { storage } from '#imports';
 import type { PageInsight } from '@blur/core';
+import type { Locale } from '@blur/ui';
+
+// Runtime UI language. Persisted per-device in storage.local (like the PSI config)
+// so it never rides sync quotas, and defaults to English regardless of the
+// browser's own UI language (see @blur/ui's DEFAULT_LOCALE). The popup and the
+// DevTools panel each wire this into `useLocaleController`.
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+});
 
 // Storage layout (PLAN.md §13). The sync/local split is a hard requirement:
 //   - `sync`  : lightweight UI prefs only. Quotas are HARD failures on exceed

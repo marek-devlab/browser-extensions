@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { Locale } from '@blur/ui';
 import type { SeoReportEx } from './checks';
 
 // Storage layout. The sync/local split is a hard requirement:
@@ -34,3 +35,15 @@ export const lastReportItem = storage.defineItem<SeoReportEx | null>(
     migrations: {},
   },
 );
+
+/**
+ * The user's chosen UI language. Independent of the browser's own UI locale and
+ * of the theme; defaults to English on a fresh install (the switcher lives in the
+ * DevTools panel header, beside the theme toggle). Read synchronously-seeded by
+ * @blur/ui's useLocaleController on the React surfaces (popup / panel), and read
+ * directly (`await localeItem.getValue()`) when the non-React content script
+ * builds the SEO report so its check prose is localised too.
+ */
+export const localeItem = storage.defineItem<Locale>('local:locale', {
+  fallback: 'en',
+});

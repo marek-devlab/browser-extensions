@@ -7,6 +7,12 @@ import type {
   WebVital,
 } from '@blur/core';
 import { formatBytes, formatVital, rateVital, VITAL_THRESHOLDS } from '@blur/core';
+import {
+  LanguageSwitcher,
+  LocaleProvider,
+  useLocaleController,
+  type Locale,
+} from '@blur/ui';
 import type { ByteMechanism } from '../../utils/protocol';
 import type { LongFrameSummary, TimedNetworkEntry } from '../../utils/perf-types';
 import { emptyLongFrameSummary } from '../../utils/perf-types';
@@ -23,6 +29,8 @@ import {
   vitalsToCsv,
   type ExportPayload,
 } from '../../utils/export';
+import { localeItem } from '../../utils/storage';
+import { useT, type MsgKey, type TFn } from '../../utils/i18n';
 import { AuditPanel } from './AuditPanel';
 import { Waterfall } from './Waterfall';
 import { LongFramesSection } from './LongFrames';
@@ -35,15 +43,37 @@ import { LongFramesSection } from './LongFrames';
 
 type TabId = 'vitals' | 'network' | 'audit';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'vitals', label: 'Vitals' },
-  { id: 'network', label: 'Network' },
-  { id: 'audit', label: 'Audit (PSI)' },
+const TABS: { id: TabId; labelKey: MsgKey }[] = [
+  { id: 'vitals', labelKey: 'tabVitals' },
+  { id: 'network', labelKey: 'tabNetwork' },
+  { id: 'audit', labelKey: 'tabAudit' },
 ];
 
 const inspectedTabId = browser.devtools.inspectedWindow.tabId;
 
+/** Root: wires the persisted locale to React and provides it to the whole panel
+ *  before any translated string renders (the seed is synchronous, so no flash). */
 export function App() {
+  const { locale, setLocale } = useLocaleController({
+    key: 'blur-perf:locale',
+    read: () => localeItem.getValue(),
+    write: (next) => localeItem.setValue(next),
+  });
+  return (
+    <LocaleProvider locale={locale}>
+      <Panel locale={locale} setLocale={setLocale} />
+    </LocaleProvider>
+  );
+}
+
+function Panel({
+  locale,
+  setLocale,
+}: {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+}) {
+  const t = useT();
   const [tab, setTab] = useState<TabId>('vitals');
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -64,23 +94,23 @@ export function App() {
 
   return (
     <div className="panel">
-      <nav className="tabs" role="tablist" aria-label="Performance panels">
-        {TABS.map((t, i) => (
+      <nav className="tabs" role="tablist" aria-label={t('pnPanelsAria')}>
+        {TABS.map((tb, i) => (
           <button
-            key={t.id}
-            id={`tab-${t.id}`}
+            key={tb.id}
+            id={`tab-${tb.id}`}
             ref={(el) => {
               tabRefs.current[i] = el;
             }}
             role="tab"
-            aria-selected={tab === t.id}
-            aria-controls={`panel-${t.id}`}
-            tabIndex={tab === t.id ? 0 : -1}
-            className={tab === t.id ? 'tab tab--active' : 'tab'}
-            onClick={() => setTab(t.id)}
+            aria-selected={tab === tb.id}
+            aria-controls={`panel-${tb.id}`}
+            tabIndex={tab === tb.id ? 0 : -1}
+            className={tab === tb.id ? 'tab tab--active' : 'tab'}
+            onClick={() => setTab(tb.id)}
             onKeyDown={(e) => onTabKeyDown(e, i)}
           >
-            {t.label}
+            {t(tb.labelKey)}
           </button>
         ))}
       </nav>
@@ -96,6 +126,15 @@ export function App() {
         {tab === 'network' && <NetworkPanel />}
         {tab === 'audit' && <AuditPanel />}
       </div>
+
+      <footer className="panel-foot">
+        <span className="panel-foot__label">{t('language')}</span>
+        <LanguageSwitcher
+          locale={locale}
+          onChange={setLocale}
+          label={t('interfaceLanguage')}
+        />
+      </footer>
     </div>
   );
 }
@@ -105,6 +144,7 @@ export function App() {
 /* ------------------------------------------------------------------ */
 
 function VitalsPanel() {
+  const t = useT();
   const [vitals, setVitals] = useState<WebVital[]>([]);
   const [longFrames, setLongFrames] = useState<LongFrameSummary>(emptyLongFrameSummary());
 
@@ -154,11 +194,7 @@ function VitalsPanel() {
         />
       </div>
       {sorted.length === 0 ? (
-        <p className="note">
-          Waiting for metrics. LCP and CLS finalise on the first interaction or
-          when the page is hidden, so interact with the page or switch tabs to
-          see their final values.
-        </p>
+        <p className="note">{t('pnWaitingMetrics')}</p>
       ) : (
         <div className="cards">
           {sorted.map((v) => {
@@ -167,11 +203,11 @@ function VitalsPanel() {
               <article key={v.name} className={`card rating--${rating}`}>
                 <header className="card__name">{v.name}</header>
                 <div className="card__value mono">{formatVital(v)}</div>
-                <div className="card__rating">{ratingLabel(rating)}</div>
+                <div className="card__rating">{ratingLabel(t, rating)}</div>
                 {v.attribution && (
                   <div
                     className="card__attribution mono"
-                    title="Element that caused this metric"
+                    title={t('pnAttributionTitle')}
                   >
                     {v.attribution}
                   </div>
@@ -184,12 +220,11 @@ function VitalsPanel() {
       )}
 
       <p className="note">
-        Element Timing cannot measure arbitrary elements on pages you do not
-        control: the <code>elementtiming</code> attribute does not work
-        retroactively (W3C spec), so once an element has painted, setting it has
-        no effect. We surface the LCP element via{' '}
-        <code>LargestContentfulPaint.entry.element</code> instead. FCP and TTFB
-        are timing-only and carry no element.
+        {t('pnElementTiming1')}
+        <code>elementtiming</code>
+        {t('pnElementTiming2')}
+        <code>LargestContentfulPaint.entry.element</code>
+        {t('pnElementTiming3')}
       </p>
 
       <LongFramesSection summary={longFrames} />
@@ -209,20 +244,21 @@ interface ByteView {
   approximate?: boolean;
 }
 
-const MECHANISM_LABEL: Record<ByteMechanism, string> = {
-  'resource-timing': 'Measured bytes',
-  'devtools-har': 'DevTools bytes',
-  'cdp-debugger': 'Exact bytes (debugger)',
+const MECHANISM_LABEL_KEY: Record<ByteMechanism, MsgKey> = {
+  'resource-timing': 'nwLblMeasured',
+  'devtools-har': 'nwLblDevtools',
+  'cdp-debugger': 'nwLblExact',
 };
 
-function byteLabel(view: ByteView): string {
+function byteLabel(t: TFn, view: ByteView): string {
   if (view.mechanism === 'devtools-har' && view.approximate) {
-    return 'DevTools bytes (approx.)';
+    return t('nwLblDevtoolsApprox');
   }
-  return MECHANISM_LABEL[view.mechanism];
+  return t(MECHANISM_LABEL_KEY[view.mechanism]);
 }
 
 function NetworkPanel() {
+  const t = useT();
   const [rt, setRt] = useState<ByteView | null>(null);
   const [har, setHar] = useState<ByteView | null>(null);
   const [hostname, setHostname] = useState('');
@@ -304,7 +340,7 @@ function NetworkPanel() {
   if (!view) {
     return (
       <section>
-        <p className="note">Waiting for network activity. Reload the page to capture it all.</p>
+        <p className="note">{t('nwWaiting')}</p>
       </section>
     );
   }
@@ -328,11 +364,11 @@ function NetworkPanel() {
   return (
     <section aria-live="polite">
       <div className="summary-bar">
-        <Stat label="Requests" value={String(view.insight.requestCount)} />
-        <Stat label={byteLabel(view)} value={formatBytes(view.insight.measuredBytes)} />
+        <Stat label={t('nwStatRequests')} value={String(view.insight.requestCount)} />
+        <Stat label={byteLabel(t, view)} value={formatBytes(view.insight.measuredBytes)} />
         {hasUnmeasured && (
           <Stat
-            label="Unmeasured"
+            label={t('nwStatUnmeasured')}
             value={String(view.insight.unmeasuredRequests)}
             emphasis
           />
@@ -347,31 +383,30 @@ function NetworkPanel() {
         </div>
       </div>
 
-      <p className="note">{caveatFor(view)}</p>
+      <p className="note">{caveatFor(t, view)}</p>
 
       {hasUnmeasured && (
         <p className="note">
-          <strong>{view.insight.unmeasuredRequests}</strong> request
-          {view.insight.unmeasuredRequests === 1 ? '' : 's'} reported no size, so
-          they are missing from the total above — left out, never counted as zero.
+          <strong>{view.insight.unmeasuredRequests}</strong>
+          {t(
+            view.insight.unmeasuredRequests === 1
+              ? 'nwUnmeasuredSuffixOne'
+              : 'nwUnmeasuredSuffixOther',
+          )}
           {mech === 'resource-timing' ? (
             <>
-              {' '}For exact page weight including these, use{' '}
-              <strong>Measure exact bytes</strong> in the toolbar popup.
+              {t('nwUnmeasuredRtPre')}
+              <strong>{t('nwMeasureExactBytesStrong')}</strong>
+              {t('nwUnmeasuredRtPost')}
             </>
           ) : (
-            <>
-              {' '}Reload with DevTools already open to capture their sizes from the
-              first byte.
-            </>
+            t('nwUnmeasuredHar')
           )}
         </p>
       )}
 
       <p className="note exact-hint">
-        {import.meta.env.FIREFOX
-          ? 'This browser has no banner-free exact-byte path, so DevTools HAR bytes above are the most accurate total available here.'
-          : 'For exact wire bytes counted even for cross-origin resources, open the extension popup and choose “Measure exact bytes” — it reloads the tab under the debugger, which cannot run while DevTools is open.'}
+        {import.meta.env.FIREFOX ? t('nwExactHintFf') : t('nwExactHint')}
       </p>
 
       <Waterfall entries={tableEntries} />
@@ -379,16 +414,18 @@ function NetworkPanel() {
       <div className="table-scroll">
         <table className="net">
           <caption className="net__caption">
-            Network requests — {tableEntries.length} row
-            {tableEntries.length === 1 ? '' : 's'}, {byteLabel(view).toLowerCase()}.
+            {t(tableEntries.length === 1 ? 'nwCaptionOne' : 'nwCaptionOther', {
+              count: tableEntries.length,
+              label: byteLabel(t, view).toLowerCase(),
+            })}
           </caption>
           <thead>
             <tr>
-              <th scope="col">URL</th>
-              <th scope="col">Kind</th>
-              <th scope="col" className="num">Duration</th>
-              <th scope="col" className="num">Size</th>
-              <th scope="col">3rd&nbsp;party</th>
+              <th scope="col">{t('nwColUrl')}</th>
+              <th scope="col">{t('nwColKind')}</th>
+              <th scope="col" className="num">{t('nwColDuration')}</th>
+              <th scope="col" className="num">{t('nwColSize')}</th>
+              <th scope="col">{t('nwColThirdParty')}</th>
             </tr>
           </thead>
           <tbody>
@@ -401,7 +438,7 @@ function NetworkPanel() {
                   {e.transferSize === null ? (
                     <span
                       className="unmeasured"
-                      title="No size reported — a cross-origin resource that doesn't expose its size to the page."
+                      title={t('nwUnmeasuredCellTitle')}
                     >
                       —
                     </span>
@@ -409,7 +446,7 @@ function NetworkPanel() {
                     formatBytes(e.transferSize)
                   )}
                 </td>
-                <td>{e.thirdParty ? 'yes' : 'no'}</td>
+                <td>{e.thirdParty ? t('nwYes') : t('nwNo')}</td>
               </tr>
             ))}
           </tbody>
@@ -417,24 +454,22 @@ function NetworkPanel() {
       </div>
 
       <p className="note">
-        <span className="unmeasured">—</span> means the size is unknowable: the
-        resource didn't report one, so it is shown as blank, never as{' '}
+        <span className="unmeasured">—</span>
+        {t('nwDashMeans')}
         <code>0</code>.
       </p>
     </section>
   );
 }
 
-function caveatFor(view: ByteView): string {
+function caveatFor(t: TFn, view: ByteView): string {
   switch (view.mechanism) {
     case 'resource-timing':
-      return 'Some resources don’t report their size, so this total is a lower bound, not the full page weight.';
+      return t('nwCaveatRt');
     case 'devtools-har':
-      return view.approximate
-        ? 'These byte totals are approximate: this browser reports an uncompressed body size that excludes headers, not the exact bytes on the wire. Only requests seen while DevTools was open are included — reload to capture everything.'
-        : 'DevTools byte totals are accurate, but only requests seen while DevTools was open are included — reload the page to capture everything from the first byte.';
+      return view.approximate ? t('nwCaveatHarApprox') : t('nwCaveatHar');
     case 'cdp-debugger':
-      return 'Exact wire bytes, counted even for cross-origin resources. The debugging banner is shown while attached.';
+      return t('nwCaveatCdp');
   }
 }
 
@@ -472,12 +507,17 @@ function ExportButtons({
   csv: () => string;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [status, setStatus] = useState('');
 
   async function copy(kind: 'json' | 'csv') {
     const text = kind === 'json' ? json() : csv();
     const ok = await copyText(text);
-    setStatus(ok ? `${kind.toUpperCase()} copied to clipboard` : 'Copy failed');
+    setStatus(
+      ok
+        ? t(kind === 'json' ? 'exportCopiedJson' : 'exportCopiedCsv')
+        : t('exportCopyFailed'),
+    );
     globalThis.setTimeout(() => setStatus(''), 2500);
   }
 
@@ -489,20 +529,20 @@ function ExportButtons({
 
   return (
     <div className="export">
-      <span className="export__label" aria-hidden="true">Export</span>
-      <button className="btn btn--sm" disabled={disabled} aria-label="Copy as JSON" onClick={() => void copy('json')}>Copy JSON</button>
-      <button className="btn btn--sm" disabled={disabled} aria-label="Download as JSON" onClick={() => save('json')}>JSON</button>
-      <button className="btn btn--sm" disabled={disabled} aria-label="Copy as CSV" onClick={() => void copy('csv')}>Copy CSV</button>
-      <button className="btn btn--sm" disabled={disabled} aria-label="Download as CSV" onClick={() => save('csv')}>CSV</button>
+      <span className="export__label" aria-hidden="true">{t('exportLabel')}</span>
+      <button className="btn btn--sm" disabled={disabled} aria-label={t('exportCopyJsonAria')} onClick={() => void copy('json')}>{t('exportCopyJson')}</button>
+      <button className="btn btn--sm" disabled={disabled} aria-label={t('exportJsonAria')} onClick={() => save('json')}>{t('exportJson')}</button>
+      <button className="btn btn--sm" disabled={disabled} aria-label={t('exportCopyCsvAria')} onClick={() => void copy('csv')}>{t('exportCopyCsv')}</button>
+      <button className="btn btn--sm" disabled={disabled} aria-label={t('exportCsvAria')} onClick={() => save('csv')}>{t('exportCsv')}</button>
       <span className="export__status" role="status" aria-live="polite">{status}</span>
     </div>
   );
 }
 
-function ratingLabel(rating: VitalRating): string {
-  if (rating === 'good') return 'Good';
-  if (rating === 'needs-improvement') return 'Needs improvement';
-  return 'Poor';
+function ratingLabel(t: TFn, rating: VitalRating): string {
+  if (rating === 'good') return t('ratingGood');
+  if (rating === 'needs-improvement') return t('ratingNi');
+  return t('ratingPoor');
 }
 
 /** Format a threshold value in the metric's own unit (score / ms / s). */
@@ -519,12 +559,13 @@ function formatThreshold(name: WebVital['name'], v: number): string {
  * VITAL_THRESHOLDS so the panel and the rating logic can never disagree.
  */
 function ThresholdScale({ name, value }: { name: WebVital['name']; value: number }) {
-  const t = VITAL_THRESHOLDS[name];
+  const t = useT();
+  const th = VITAL_THRESHOLDS[name];
   // Scale runs 0 → poor × 1.5 so the poor band is always visible; clamp the marker.
-  const scaleMax = t.poor * 1.5;
+  const scaleMax = th.poor * 1.5;
   const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100));
-  const goodPct = (t.good / scaleMax) * 100;
-  const poorPct = (t.poor / scaleMax) * 100;
+  const goodPct = (th.good / scaleMax) * 100;
+  const poorPct = (th.poor / scaleMax) * 100;
   return (
     <div className="thresh">
       <div className="thresh__scale" aria-hidden="true">
@@ -540,8 +581,8 @@ function ThresholdScale({ name, value }: { name: WebVital['name']; value: number
         <span className="thresh__marker" style={{ insetInlineStart: `${pct}%` }} />
       </div>
       <div className="thresh__labels">
-        <span>Good ≤ {formatThreshold(name, t.good)}</span>
-        <span>Poor &gt; {formatThreshold(name, t.poor)}</span>
+        <span>{t('threshGood', { v: formatThreshold(name, th.good) })}</span>
+        <span>{t('threshPoor', { v: formatThreshold(name, th.poor) })}</span>
       </div>
     </div>
   );

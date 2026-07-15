@@ -4,6 +4,8 @@ import type { A11yReport } from '@blur/core';
 import { assembleSeoReportEx, type SeoReportEx } from '../utils/checks';
 import { extractSeoDom } from '../utils/extract-seo';
 import { indexabilityChecks } from '../utils/indexability';
+import { tAt, type TFn } from '../utils/i18n';
+import { localeItem } from '../utils/storage';
 import type { ContentRequest, ContentResponse } from '../utils/messages';
 
 // This declared, always-on `document_idle` content script is the extension's ONLY
@@ -26,9 +28,14 @@ import type { ContentRequest, ContentResponse } from '../utils/messages';
 const AUDIT_TIMEOUT_MS = 30_000;
 
 async function buildSeoReport(): Promise<SeoReportEx> {
+  // Resolve the user's chosen language so the check prose is stamped in it. This
+  // is presentation only — the locale never affects which checks run or their
+  // severities; a fresh install falls back to English.
+  const locale = await localeItem.getValue();
+  const t: TFn = (key, vars) => tAt(locale, key, vars);
   const dom = extractSeoDom();
-  const extraChecks = await indexabilityChecks(location.href, dom.favicon !== null);
-  return assembleSeoReportEx(dom, extraChecks);
+  const extraChecks = await indexabilityChecks(location.href, dom.favicon !== null, t);
+  return assembleSeoReportEx(dom, extraChecks, t);
 }
 
 interface A11yResultMessage {
@@ -61,7 +68,12 @@ function makeNonce(): string {
 // Inject the axe runner into the page and resolve with the report it posts back.
 // A one-time nonce ties the response to this request and rejects page-forged
 // messages. The runner is web-accessible (see wxt.config.ts).
-function runA11y(): Promise<A11yReport> {
+async function runA11y(): Promise<A11yReport> {
+  // Resolve the locale once so the two failure messages this owns (a forged/empty
+  // reply, and the timeout) are surfaced in the user's language. axe's OWN result
+  // text is left untouched. Presentation only — the nonce/timeout logic is intact.
+  const locale = await localeItem.getValue();
+  const t: TFn = (key, vars) => tAt(locale, key, vars);
   return new Promise<A11yReport>((resolve, reject) => {
     const nonce = makeNonce();
     // Kept in the DOM so `document.currentScript` is reliably the axe runner
@@ -80,12 +92,12 @@ function runA11y(): Promise<A11yReport> {
       if (!isA11yResult(data) || data.nonce !== nonce) return;
       cleanup();
       if (data.ok && data.report != null) resolve(data.report);
-      else reject(new Error(data.error ?? 'The accessibility audit failed.'));
+      else reject(new Error(data.error ?? t('errAuditFailed')));
     };
 
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('The accessibility audit timed out.'));
+      reject(new Error(t('errAuditTimedOut')));
     }, AUDIT_TIMEOUT_MS);
 
     window.addEventListener('message', onMessage);

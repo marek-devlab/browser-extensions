@@ -1,4 +1,5 @@
 import type { SeoCheck } from '@blur/core';
+import type { TFn } from './i18n';
 
 // Same-origin indexability probes. These run in the content script, where a
 // same-origin `fetch` needs NO host permission beyond the page the script is
@@ -107,32 +108,32 @@ function sitemapFromRobots(body: string): string | null {
   return match?.[1] ?? null;
 }
 
-function robotsCheckFrom(result: FetchResult | null): SeoCheck {
+function robotsCheckFrom(result: FetchResult | null, t: TFn): SeoCheck {
   if (result === null) {
     return {
       id: 'robots-txt',
-      label: 'robots.txt',
+      label: t('idxRobotsLabel'),
       severity: 'warning',
-      detail: 'Could not fetch /robots.txt (network error or blocked).',
+      detail: t('dRobotsCouldNotFetch'),
     };
   }
   if (!result.ok || result.body.trim().length === 0) {
     return {
       id: 'robots-txt',
-      label: 'robots.txt',
+      label: t('idxRobotsLabel'),
       severity: 'warning',
-      detail: 'No robots.txt found; crawlers get no crawl directives or sitemap hint.',
+      detail: t('dRobotsNone'),
     };
   }
   const disallowAll = starGroupBlocksAll(result.body);
   const hasSitemap = sitemapFromRobots(result.body) !== null;
   return {
     id: 'robots-txt',
-    label: 'robots.txt',
+    label: t('idxRobotsLabel'),
     severity: disallowAll ? 'error' : 'ok',
     detail: disallowAll
-      ? 'robots.txt blocks all crawlers from the whole site ("User-agent: *" + "Disallow: /").'
-      : `robots.txt found${hasSitemap ? ' and it references a Sitemap.' : ' (no Sitemap directive).'}`,
+      ? t('dRobotsBlocksAll')
+      : `${t('dRobotsFound')}${hasSitemap ? t('dRobotsSitemapYes') : t('dRobotsSitemapNo')}`,
   };
 }
 
@@ -144,6 +145,7 @@ function robotsCheckFrom(result: FetchResult | null): SeoCheck {
 async function sitemapCheck(
   origin: string,
   declaredUrl: string | null,
+  t: TFn,
 ): Promise<SeoCheck> {
   const url = declaredUrl ?? `${origin}/sitemap.xml`;
   const fromRobots = declaredUrl !== null;
@@ -163,9 +165,9 @@ async function sitemapCheck(
     if (!sameOrigin) {
       return {
         id: 'sitemap',
-        label: 'sitemap.xml',
+        label: t('idxSitemapLabel'),
         severity: 'ok',
-        detail: `robots.txt declares a Sitemap at ${url} (off-origin; not verified here).`,
+        detail: t('dSitemapOffOrigin', { url }),
       };
     }
   }
@@ -174,22 +176,24 @@ async function sitemapCheck(
   if (result === null) {
     return {
       id: 'sitemap',
-      label: 'sitemap.xml',
+      label: t('idxSitemapLabel'),
       severity: 'warning',
-      detail: `Could not fetch ${url} (network error or blocked).`,
+      detail: t('dSitemapCouldNotFetch', { url }),
     };
   }
   const looksLikeSitemap =
     result.ok && /<(urlset|sitemapindex)\b/i.test(result.body);
   return {
     id: 'sitemap',
-    label: 'sitemap.xml',
+    label: t('idxSitemapLabel'),
     severity: looksLikeSitemap ? 'ok' : 'warning',
     detail: looksLikeSitemap
-      ? `A sitemap is served at ${url}${fromRobots ? ' (declared in robots.txt).' : '.'}`
+      ? fromRobots
+        ? t('dSitemapServedRobots', { url })
+        : t('dSitemapServedPlain', { url })
       : fromRobots
-        ? `robots.txt declares a Sitemap at ${url}, but it did not return a valid sitemap.`
-        : 'No valid /sitemap.xml at the default location, and robots.txt declares none (it may live elsewhere).',
+        ? t('dSitemapInvalidRobots', { url })
+        : t('dSitemapNone'),
   };
 }
 
@@ -204,13 +208,14 @@ async function sitemapCheck(
 async function faviconCheck(
   origin: string,
   hasIconLink: boolean,
+  t: TFn,
 ): Promise<SeoCheck> {
   if (hasIconLink) {
     return {
       id: 'favicon',
-      label: 'Favicon',
+      label: t('idxFaviconLabel'),
       severity: 'ok',
-      detail: 'A favicon is declared via <link rel="icon">.',
+      detail: t('dFaviconDeclared'),
     };
   }
   let status: 'found' | 'missing' | 'unknown';
@@ -227,20 +232,16 @@ async function faviconCheck(
   if (status === 'missing') {
     return {
       id: 'favicon',
-      label: 'Favicon',
+      label: t('idxFaviconLabel'),
       severity: 'warning',
-      detail:
-        'No <link rel="icon"> and no /favicon.ico; browsers and search results fall back to a generic icon.',
+      detail: t('dFaviconMissing'),
     };
   }
   return {
     id: 'favicon',
-    label: 'Favicon',
+    label: t('idxFaviconLabel'),
     severity: 'ok',
-    detail:
-      status === 'found'
-        ? 'No <link rel="icon">, but a favicon is served at /favicon.ico.'
-        : 'No <link rel="icon"> declared (relying on a conventional /favicon.ico, not verified here).',
+    detail: status === 'found' ? t('dFaviconIco') : t('dFaviconUnknown'),
   };
 }
 
@@ -300,7 +301,7 @@ function parseXRobots(header: string): XRobotsParse {
  * bot-scoped `X-Robots-Tag: googlebot: noindex` is surfaced as a note, since it
  * does not necessarily apply to the page as navigated.
  */
-async function xRobotsCheck(pageUrl: string): Promise<SeoCheck | null> {
+async function xRobotsCheck(pageUrl: string, t: TFn): Promise<SeoCheck | null> {
   let res: Response;
   try {
     res = await fetch(pageUrl, {
@@ -319,24 +320,24 @@ async function xRobotsCheck(pageUrl: string): Promise<SeoCheck | null> {
   if (unscopedNoindex) {
     return {
       id: 'x-robots-tag',
-      label: 'X-Robots-Tag header',
+      label: t('idxXRobotsLabel'),
       severity: 'error',
-      detail: `Response header "X-Robots-Tag: ${header}" contains noindex — this page is excluded from search.`,
+      detail: t('dXRobotsNoindex', { header }),
     };
   }
   if (scopedNoindex) {
     return {
       id: 'x-robots-tag',
-      label: 'X-Robots-Tag header',
+      label: t('idxXRobotsLabel'),
       severity: 'warning',
-      detail: `Response header "X-Robots-Tag: ${header}" carries a bot-scoped noindex; it may exclude some crawlers (best-effort — read from a separate HEAD request).`,
+      detail: t('dXRobotsScoped', { header }),
     };
   }
   return {
     id: 'x-robots-tag',
-    label: 'X-Robots-Tag header',
+    label: t('idxXRobotsLabel'),
     severity: 'ok',
-    detail: `Response header present: "X-Robots-Tag: ${header}" (no noindex).`,
+    detail: t('dXRobotsPresent', { header }),
   };
 }
 
@@ -349,17 +350,18 @@ async function xRobotsCheck(pageUrl: string): Promise<SeoCheck | null> {
 export async function indexabilityChecks(
   pageUrl: string,
   hasIconLink: boolean,
+  t: TFn,
 ): Promise<SeoCheck[]> {
   const origin = new URL(pageUrl).origin;
   const robotsResult = await fetchText(`${origin}/robots.txt`);
   const declaredSitemap =
     robotsResult?.ok ? sitemapFromRobots(robotsResult.body) : null;
   const [sitemap, xRobots, favicon] = await Promise.all([
-    sitemapCheck(origin, declaredSitemap),
-    xRobotsCheck(pageUrl),
-    faviconCheck(origin, hasIconLink),
+    sitemapCheck(origin, declaredSitemap, t),
+    xRobotsCheck(pageUrl, t),
+    faviconCheck(origin, hasIconLink, t),
   ]);
-  const robots = robotsCheckFrom(robotsResult);
+  const robots = robotsCheckFrom(robotsResult, t);
   const checks = [robots, sitemap, favicon];
   return xRobots === null ? checks : [...checks, xRobots];
 }

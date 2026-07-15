@@ -11,6 +11,7 @@ import {
 import type { PsiAuditResult, PsiStrategy } from '../../utils/psi';
 import type { CruxFieldMetric } from '../../utils/perf-types';
 import { psiConfigItem } from '../../utils/storage';
+import { useT, type TFn } from '../../utils/i18n';
 
 // PageSpeed Insights section (PLAN.md §9/§14). Lighthouse cannot be bundled;
 // this is the allowed REST *data* path. Two hard rules surfaced in the UI:
@@ -19,6 +20,7 @@ import { psiConfigItem } from '../../utils/storage';
 //   - The API key is stored in storage.local, never sync (see utils/storage.ts).
 
 export function AuditPanel() {
+  const t = useT();
   const [apiKey, setApiKey] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -84,31 +86,29 @@ export function AuditPanel() {
         origins: ['https://www.googleapis.com/*'],
       });
       if (!granted) {
-        setError('Host access to googleapis.com was not granted.');
+        setError(t('auErrHostAccess'));
         return;
       }
       setResult(await runPsiAudit(url, apiKey || undefined, strategy));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'PSI request failed.');
+      setError(err instanceof Error ? err.message : t('auErrPsiFailed'));
     } finally {
       setRunning(false);
     }
   }
 
-  if (!loaded) return <p className="note">Loading…</p>;
+  if (!loaded) return <p className="note">{t('loading')}</p>;
 
   return (
     <section>
       <p className="note">
-        PageSpeed Insights runs Lighthouse on Google's servers and returns lab +
-        field data. Lighthouse itself cannot be bundled (Node app; MV3 bans remote
-        code), so this is the realistic path. <strong>Running an audit sends the URL
-        below — including any query string — to Google.</strong> Public URLs
-        only — localhost and pages behind auth are unreachable.
+        {t('auIntro1')}
+        <strong>{t('auIntroStrong')}</strong>
+        {t('auIntro2')}
       </p>
 
       <label className="field">
-        <span className="field__label">Google API key (optional, recommended)</span>
+        <span className="field__label">{t('auApiKeyLabel')}</span>
         <input
           className="field__input mono"
           type="password"
@@ -117,13 +117,14 @@ export function AuditPanel() {
           onChange={(e) => onKeyChange(e.target.value)}
         />
         <span className="field__hint">
-          Stored in <code>storage.local</code>, never synced. Limits without a key:
-          ~25,000/day, 400 per 100&nbsp;s.
+          {t('auApiKeyHint1')}
+          <code>storage.local</code>
+          {t('auApiKeyHint2')}
         </span>
       </label>
 
       <label className="field">
-        <span className="field__label">URL to audit (editable — sent to Google)</span>
+        <span className="field__label">{t('auUrlLabel')}</span>
         <input
           className="field__input mono"
           type="url"
@@ -133,25 +134,27 @@ export function AuditPanel() {
           onChange={(e) => setUrl(e.target.value)}
         />
         <span className="field__hint">
-          Defaults to the inspected page. <strong>The exact address you run is
-          sent to Google as-is</strong> — anything after <code>?</code> or{' '}
-          <code>#</code> (session tokens, password-reset links, search queries)
-          goes too. Edit it before auditing if it holds a secret.
+          {t('auUrlHint1')}
+          <strong>{t('auUrlHintStrong')}</strong>
+          {t('auUrlHint2')}
+          <code>?</code>
+          {t('auUrlHint3')}
+          <code>#</code>
+          {t('auUrlHint4')}
         </span>
       </label>
 
       {hasParams && (
         <p className="note" role="alert">
-          This address has query or fragment parameters that may contain private
-          data. They will be sent to Google unless you remove them.{' '}
+          {t('auHasParams')}
           <button className="btn btn--sm" type="button" disabled={running} onClick={onStripQuery}>
-            Domain and path only
+            {t('auDomainPathOnly')}
           </button>
         </p>
       )}
 
       <fieldset className="strategy" disabled={running}>
-        <legend className="strategy__legend">Device</legend>
+        <legend className="strategy__legend">{t('auDevice')}</legend>
         {(['mobile', 'desktop'] as PsiStrategy[]).map((s) => (
           <label key={s} className="strategy__option">
             <input
@@ -161,7 +164,7 @@ export function AuditPanel() {
               checked={strategy === s}
               onChange={() => setStrategy(s)}
             />
-            <span>{s === 'mobile' ? 'Mobile' : 'Desktop'}</span>
+            <span>{s === 'mobile' ? t('auMobile') : t('auDesktop')}</span>
           </label>
         ))}
       </fieldset>
@@ -169,51 +172,48 @@ export function AuditPanel() {
       {!verdict.ok && <p className="note" role="alert">{verdict.reason}</p>}
 
       {!accepted ? (
-        <div className="confirm" role="alertdialog" aria-label="PSI disclosure">
+        <div className="confirm" role="alertdialog" aria-label={t('auDisclosureAria')}>
           <p className="confirm__body">
-            <strong>This audit sends the URL to Google</strong>
+            <strong>{t('auDiscTitle')}</strong>
           </p>
           <p className="confirm__body">
-            To run PageSpeed Insights, the extension sends the{' '}
-            <strong>full address of this page, including the query parameters
-            after “?”</strong>, to Google's PageSpeed Insights API
-            (<code>www.googleapis.com</code>). Google loads and measures the page
-            and returns the results.
+            {t('auDisc2a')}
+            <strong>{t('auDisc2bStrong')}</strong>
+            {t('auDisc2c')}
+            <code>www.googleapis.com</code>
+            {t('auDisc2d')}
           </p>
           <p className="confirm__body">
-            ⚠️ Query parameters may contain private data — session tokens,
-            password-reset links, search queries. <strong>Review and, if needed,
-            edit the address above before running.</strong> Remove every
-            parameter with the “Domain and path only” button.
+            {t('auDisc3a')}
+            <strong>{t('auDisc3bStrong')}</strong>
+            {t('auDisc3c')}
           </p>
           <p className="confirm__body">
-            Sent only when you explicitly run an audit. The address passed to
-            Google is handled under{' '}
+            {t('auDisc4a')}
             <a
               href="https://policies.google.com/privacy"
               target="_blank"
               rel="noreferrer noopener"
             >
-              Google's privacy policy
+              {t('auDisc4Link')}
             </a>
-            . Fully local metrics (Web Vitals, resource timing, exact bytes) send
-            nothing.
+            {t('auDisc4b')}
           </p>
           <div className="confirm__actions">
             <button className="btn btn--primary" onClick={onAccept}>
-              I understand — send the address to Google
+              {t('auAccept')}
             </button>
           </div>
         </div>
       ) : (
         <>
           <button className="btn btn--primary" disabled={running || !verdict.ok} onClick={run}>
-            {running ? 'Auditing…' : 'Run PageSpeed audit'}
+            {running ? t('auAuditing') : t('auRunAudit')}
           </button>
           <p className="field__hint">
-            PSI disclosure accepted.{' '}
+            {t('auAccepted')}
             <button className="btn-link" type="button" disabled={running} onClick={onRevoke}>
-              Revoke consent
+              {t('auRevoke')}
             </button>
           </p>
         </>
@@ -229,8 +229,8 @@ export function AuditPanel() {
             </span>
             <span className="score__label">
               {result.performanceScore === null
-                ? 'Performance score unavailable'
-                : 'Performance score'}
+                ? t('auScoreUnavailable')
+                : t('auScore')}
             </span>
           </div>
           <div className="cards">
@@ -240,20 +240,17 @@ export function AuditPanel() {
                 <article key={v.name} className={`card rating--${rating}`}>
                   <header className="card__name">{v.name}</header>
                   <div className="card__value mono">{formatVital(v)}</div>
-                  <div className="card__rating">{ratingLabel(rating)}</div>
+                  <div className="card__rating">{ratingLabel(t, rating)}</div>
                 </article>
               );
             })}
           </div>
-          <p className="note">Lab data via PSI, strategy: {result.strategy}.</p>
+          <p className="note">{t('auLabData', { strategy: result.strategy })}</p>
 
-          <FieldData label="Field data — this URL (CrUX, real users, p75)" metrics={result.field.url} />
-          <FieldData label="Field data — whole origin (CrUX, real users, p75)" metrics={result.field.origin} />
+          <FieldData label={t('auFieldUrl')} metrics={result.field.url} />
+          <FieldData label={t('auFieldOrigin')} metrics={result.field.origin} />
           {result.field.url.length === 0 && result.field.origin.length === 0 && (
-            <p className="note">
-              No CrUX field data: this page/origin doesn't have enough real-user
-              samples in the Chrome UX Report. Lab data above still applies.
-            </p>
+            <p className="note">{t('auNoCrux')}</p>
           )}
         </div>
       )}
@@ -268,6 +265,7 @@ function formatField(m: CruxFieldMetric): string {
 }
 
 function FieldData({ label, metrics }: { label: string; metrics: CruxFieldMetric[] }) {
+  const t = useT();
   if (metrics.length === 0) return null;
   return (
     <div className="field-data">
@@ -277,7 +275,7 @@ function FieldData({ label, metrics }: { label: string; metrics: CruxFieldMetric
           <article key={m.name} className={`card rating--${m.rating}`}>
             <header className="card__name">{m.name}</header>
             <div className="card__value mono">{formatField(m)}</div>
-            <div className="card__rating">{ratingLabel(m.rating)}</div>
+            <div className="card__rating">{ratingLabel(t, m.rating)}</div>
           </article>
         ))}
       </div>
@@ -285,8 +283,8 @@ function FieldData({ label, metrics }: { label: string; metrics: CruxFieldMetric
   );
 }
 
-function ratingLabel(rating: VitalRating): string {
-  if (rating === 'good') return 'Good';
-  if (rating === 'needs-improvement') return 'Needs improvement';
-  return 'Poor';
+function ratingLabel(t: TFn, rating: VitalRating): string {
+  if (rating === 'good') return t('ratingGood');
+  if (rating === 'needs-improvement') return t('ratingNi');
+  return t('ratingPoor');
 }

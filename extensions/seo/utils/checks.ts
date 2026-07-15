@@ -5,6 +5,7 @@ import type {
   SeoSeverity,
   SocialPreview,
 } from '@blur/core';
+import type { TFn } from './i18n';
 
 // Pure, browser-free helpers so they stay trivially unit-testable. All guard
 // against `noUncheckedIndexedAccess` (on in the base tsconfig): array indexing
@@ -322,6 +323,10 @@ function sameDocumentUrl(a: string, b: string): boolean {
  */
 export function buildSeoChecks(
   dom: SeoDomData,
+  // Translator (locale-bound) so the check prose is emitted in the user's
+  // language at scan time; presentation only — the check ids/severities and all
+  // the logic below are unchanged.
+  t: TFn,
   // Precomputed JSON-LD validation, threaded in so it is not recomputed by the
   // Ex assembler. Defaults to computing it, so the function stays standalone.
   structuredData: StructuredDataItem[] = validateStructuredData(dom.jsonLd),
@@ -331,43 +336,43 @@ export function buildSeoChecks(
   const titleStatus = titleLengthStatus(dom.title);
   checks.push({
     id: 'title-length',
-    label: 'Title length',
+    label: t('chkTitleLength'),
     severity: titleStatus === 'ok' ? 'ok' : titleStatus === 'missing' ? 'error' : 'warning',
     detail:
       titleStatus === 'missing'
-        ? 'No <title>; the tab and search snippet have no headline.'
+        ? t('dTitleMissing')
         : titleStatus === 'short'
-          ? `${dom.title?.length ?? 0} characters — below the 30–60 target.`
+          ? t('dTitleShort', { n: dom.title?.length ?? 0 })
           : titleStatus === 'long'
-            ? `${dom.title?.length ?? 0} characters — above the 30–60 target; search engines truncate it.`
-            : `${dom.title?.length ?? 0} characters, within 30–60.`,
+            ? t('dTitleLong', { n: dom.title?.length ?? 0 })
+            : t('dTitleOk', { n: dom.title?.length ?? 0 }),
   });
 
   const descStatus = descriptionLengthStatus(dom.description);
   const descLen = dom.description?.length ?? 0;
   checks.push({
     id: 'meta-description',
-    label: 'Meta description',
+    label: t('chkMetaDescription'),
     severity:
       descStatus === 'missing' ? 'error' : descStatus === 'ok' ? 'ok' : 'warning',
     detail:
       descStatus === 'missing'
-        ? 'Missing entirely; search engines will synthesise a snippet.'
+        ? t('dDescMissing')
         : descStatus === 'short'
-          ? `${descLen} characters — below the 120–160 target; add detail to earn a fuller snippet.`
+          ? t('dDescShort', { n: descLen })
           : descStatus === 'long'
-            ? `${descLen} characters — above the 120–160 target; search engines truncate it.`
-            : `${descLen} characters, within 120–160.`,
+            ? t('dDescLong', { n: descLen })
+            : t('dDescOk', { n: descLen }),
   });
 
   checks.push({
     id: 'html-lang',
-    label: 'Language',
+    label: t('chkLanguage'),
     severity: dom.htmlLang === null ? 'warning' : 'ok',
     detail:
       dom.htmlLang === null
-        ? 'No <html lang>; assistive tech and search engines cannot detect the page language.'
-        : `Declared as <html lang="${dom.htmlLang}">.`,
+        ? t('dLangMissing')
+        : t('dLangOk', { lang: dom.htmlLang }),
   });
 
   // Favicon is checked asynchronously in indexability.ts (it probes
@@ -375,26 +380,24 @@ export function buildSeoChecks(
 
   checks.push({
     id: 'canonical',
-    label: 'Canonical URL',
+    label: t('chkCanonicalUrl'),
     severity:
       dom.canonicalCount > 1 ? 'error' : dom.canonical === null ? 'warning' : 'ok',
     detail:
       dom.canonicalCount > 1
-        ? `${dom.canonicalCount} conflicting <link rel="canonical"> elements; search engines may ignore all of them.`
+        ? t('dCanonicalConflict', { n: dom.canonicalCount })
         : dom.canonical === null
-          ? 'No rel="canonical"; duplicate URLs may split ranking signals.'
+          ? t('dCanonicalMissing')
           : sameDocumentUrl(dom.canonical, dom.currentUrl)
-            ? 'Matches the current URL.'
-            : `Points elsewhere (${dom.canonical}); this URL defers to it.`,
+            ? t('dCanonicalMatch')
+            : t('dCanonicalElsewhere', { url: dom.canonical }),
   });
 
   checks.push({
     id: 'indexability',
-    label: 'Indexability',
+    label: t('chkIndexability'),
     severity: dom.noindex ? 'error' : 'ok',
-    detail: dom.noindex
-      ? 'A robots directive (noindex/none, via robots or googlebot meta) excludes this page from search.'
-      : 'No noindex directive; the page is indexable.',
+    detail: dom.noindex ? t('dIndexNoindex') : t('dIndexOk'),
   });
 
   const h1Count = dom.headings.filter((h) => h.level === 1).length;
@@ -403,54 +406,51 @@ export function buildSeoChecks(
     h1Count === 0 || skipped.size > 0 ? 'warning' : h1Count > 1 ? 'warning' : 'ok';
   checks.push({
     id: 'heading-order',
-    label: 'Heading hierarchy',
+    label: t('chkHeadingHierarchy'),
     severity: headingSeverity,
     detail:
       h1Count === 0
-        ? 'No <h1> found; the page has no top-level heading.'
+        ? t('dHeadingNoH1')
         : h1Count > 1
-          ? `${h1Count} <h1> elements; a page should have exactly one.`
+          ? t('dHeadingMultiH1', { n: h1Count })
           : skipped.size > 0
-            ? `${skipped.size} heading level jump(s); an outline should not skip levels.`
-            : 'One <h1> and no skipped levels.',
+            ? t('dHeadingSkipped', { n: skipped.size })
+            : t('dHeadingOk'),
   });
 
   checks.push({
     id: 'img-alt',
-    label: 'Image alt text',
+    label: t('chkImageAlt'),
     severity: dom.imagesWithoutAlt > 0 ? 'warning' : 'ok',
     detail:
       dom.imagesWithoutAlt > 0
-        ? `${dom.imagesWithoutAlt} image(s) have no alt attribute (alt="" for decorative images is fine).`
-        : 'Every <img> has an alt attribute.',
+        ? t('dImgAltMissing', { n: dom.imagesWithoutAlt })
+        : t('dImgAltOk'),
   });
 
   if (dom.jsonLdErrors > 0) {
     checks.push({
       id: 'structured-data-parse',
-      label: 'Structured data validity',
+      label: t('chkSdValidity'),
       severity: 'error',
-      detail: `${dom.jsonLdErrors} JSON-LD block(s) contain invalid JSON and will be ignored.`,
+      detail: t('dSdParse', { n: dom.jsonLdErrors }),
     });
   }
   checks.push({
     id: 'structured-data',
-    label: 'Structured data',
+    label: t('chkStructuredData'),
     severity: dom.structuredDataBlocks === 0 ? 'warning' : 'ok',
     detail:
       dom.structuredDataBlocks === 0
-        ? 'No JSON-LD or microdata found; rich results are unavailable.'
-        : `${dom.structuredDataBlocks} block(s) found.`,
+        ? t('dSdNone')
+        : t('dSdBlocks', { n: dom.structuredDataBlocks }),
   });
 
   checks.push({
     id: 'og-image',
-    label: 'Social preview image',
+    label: t('chkSocialPreviewImage'),
     severity: dom.social.ogImage === null ? 'warning' : 'ok',
-    detail:
-      dom.social.ogImage === null
-        ? 'og:image is missing; link previews will be blank when shared.'
-        : 'og:image is set.',
+    detail: dom.social.ogImage === null ? t('dOgImageMissing') : t('dOgImageOk'),
   });
 
   // Structured-data validation: surface any known-type block that omits a
@@ -459,17 +459,24 @@ export function buildSeoChecks(
   const incomplete = structuredData.filter((i) => i.missingRequired.length > 0);
   if (incomplete.length > 0) {
     const detail = incomplete
-      .map((i) => `${i.types.join('/')} missing ${i.missingRequired.join(', ')}`)
+      .map((i) =>
+        t('dSdMissingItem', {
+          types: i.types.join('/'),
+          props: i.missingRequired.join(', '),
+        }),
+      )
       .join('; ');
     checks.push({
       id: 'structured-data-required',
-      label: 'Structured data completeness',
+      label: t('chkSdCompleteness'),
       severity: 'warning',
-      detail: `Required propert${
-        incomplete.length === 1 && incomplete[0]?.missingRequired.length === 1
-          ? 'y'
-          : 'ies'
-      } missing: ${detail}.`,
+      detail: t('dSdRequired', {
+        plural:
+          incomplete.length === 1 && incomplete[0]?.missingRequired.length === 1
+            ? 'y'
+            : 'ies',
+        detail,
+      }),
     });
   }
 
@@ -481,24 +488,24 @@ export function buildSeoChecks(
     (/user-scalable\s*=\s*(no|0)/i.test(viewport) || /maximum-scale\s*=\s*1(\.0+)?\b/i.test(viewport));
   checks.push({
     id: 'viewport',
-    label: 'Mobile viewport',
+    label: t('chkMobileViewport'),
     severity: viewport === null ? 'error' : !hasDeviceWidth || blocksZoom ? 'warning' : 'ok',
     detail:
       viewport === null
-        ? 'No <meta name="viewport">; the page will not adapt to mobile screens.'
+        ? t('dViewportMissing')
         : !hasDeviceWidth
-          ? 'Viewport is set but lacks width=device-width; mobile layout may be wrong.'
+          ? t('dViewportNoDeviceWidth')
           : blocksZoom
-            ? 'Viewport disables zoom (user-scalable=no / maximum-scale=1); this fails accessibility.'
-            : 'Responsive viewport with width=device-width.',
+            ? t('dViewportBlocksZoom')
+            : t('dViewportOk'),
   });
 
   if (dom.smallTapTargets > 0) {
     checks.push({
       id: 'tap-targets',
-      label: 'Tap target size',
+      label: t('chkTapTargetSize'),
       severity: 'warning',
-      detail: `${dom.smallTapTargets} interactive element(s) render below the 24px tap-target floor; they are hard to tap on mobile.`,
+      detail: t('dTapTargets', { n: dom.smallTapTargets }),
     });
   }
 
@@ -508,6 +515,7 @@ export function buildSeoChecks(
 /** Assemble the full `SeoReport` from raw DOM data plus its derived checks. */
 export function assembleSeoReport(
   dom: SeoDomData,
+  t: TFn,
   structuredData: StructuredDataItem[] = validateStructuredData(dom.jsonLd),
 ): SeoReport {
   return {
@@ -520,7 +528,7 @@ export function assembleSeoReport(
     imagesWithoutAlt: dom.imagesWithoutAlt,
     structuredDataBlocks: dom.structuredDataBlocks,
     social: dom.social,
-    checks: buildSeoChecks(dom, structuredData),
+    checks: buildSeoChecks(dom, t, structuredData),
   };
 }
 
@@ -534,11 +542,12 @@ export function assembleSeoReport(
 export function assembleSeoReportEx(
   dom: SeoDomData,
   extraChecks: SeoCheck[],
+  t: TFn,
 ): SeoReportEx {
   // Validate JSON-LD ONCE and reuse it for both the derived checks and the
   // report's `structuredData` field (it was previously computed twice).
   const structuredData = validateStructuredData(dom.jsonLd);
-  const base = assembleSeoReport(dom, structuredData);
+  const base = assembleSeoReport(dom, t, structuredData);
   const checks = [...base.checks, ...extraChecks].sort(
     (a, b) => severityRank(a.severity) - severityRank(b.severity),
   );

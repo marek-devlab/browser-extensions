@@ -5,7 +5,7 @@ Extension #9. **The logic is real.** The scaffold's two mocked fetches (`MOCK`,
 over `entrypoints/` and `utils/` returns nothing.
 
 Design source of truth: [`docs/design/whoami.md`](../../docs/design/whoami.md);
-constraints from [`PLAN-2.md`](../../PLAN-2.md) §5, §9, §10.3 and `TODO.md` §H.
+constraints from [`PLAN.md`](../../PLAN.md) (Часть II) §5, §9, §10.3 and `TODO.md` §H.
 
 Goal, non-negotiable: **«Показать мои соединение и устройство»**. The device half
 runs with `permissions: ["storage"]`, `host_permissions: []` and ZERO network.
@@ -122,7 +122,7 @@ code that would have called it: a host nothing calls must not sit in the allow-l
    "ipinfo-only", which is what is in the tree today. T0 + T1 is already a complete
    product; nothing is blocked on this.
 2. **ipinfo endpoint choice.** We call `https://ipinfo.io/json?token=…`, *not* the
-   Lite API at `https://api.ipinfo.io/lite/me` that PLAN-2 §5.2 names — because
+   Lite API at `https://api.ipinfo.io/lite/me` that PLAN.md (Часть II) §5.2 names — because
    `api.ipinfo.io` is a **different host**, and using it would mean the permission
    warning and the CSP entry say `api.ipinfo.io` while the product says "ipinfo.io".
    The classic endpoint keeps URL = CSP = host permission identical (one host, one

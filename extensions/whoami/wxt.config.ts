@@ -2,7 +2,7 @@ import { defineConfig } from 'wxt';
 
 // Extension #9 — "Connection & Device Info" (`@blur/whoami`).
 //
-// SINGLE PURPOSE (PLAN-2 §5): "Show my connection and device." The whole DEVICE
+// SINGLE PURPOSE (PLAN.md (Часть II) §5): "Show my connection and device." The whole DEVICE
 // half runs with `permissions: []`, `host_permissions: []` and ZERO network — that
 // is the product's main asset (design §0). The "what's my IP" category is spammy,
 // so manual review is near-guaranteed; our fast path through it is that a reviewer
@@ -31,7 +31,7 @@ export default defineConfig({
     // The default MV3 CSP does NOT restrict `connect-src` — an extension can fetch
     // anywhere by default. We close that ourselves: with this list, any attempt to
     // send data to a host NOT named here fails at the platform level (design §0.2).
-    // That is the "architecturally, not by promise" evidence PLAN-2 §5.3 asks for.
+    // That is the "architecturally, not by promise" evidence PLAN.md (Часть II) §5.3 asks for.
     // PRIVACY.md points at this line as the exhaustive host list.
     //   - one.one.one.one : Cloudflare trace (IP + country), no key, ACAO:*
     //                       → utils/network.ts TRACE_URL
@@ -81,7 +81,7 @@ export default defineConfig({
       // because the native browser prompt is a SECOND, un-fakeable disclosure and it
       // gives the user a native revoke path (chrome://extensions → uncheck), which
       // our UI reconciles via `permissions.contains()` on every open (design §0.1).
-      // `<all_urls>` here would be a near-guaranteed store rejection (PLAN-2 §5.2).
+      // `<all_urls>` here would be a near-guaranteed store rejection (PLAN.md (Часть II) §5.2).
       // Chrome MV3 splits optional origins into `optional_host_permissions`; Firefox
       // MV2 declares them under `optional_permissions`.
       ...(isFirefox
@@ -109,7 +109,7 @@ export default defineConfig({
                 // which is exactly why `autoFetchIp` defaults to false (design §6.3).
                 // `locationInfo` (IP → country/city) is OPTIONAL: it is gated behind
                 // an explicit gesture + `permissions.request()`. No `technicalAndInteraction`
-                // anywhere — there is no telemetry (PLAN-2 §9).
+                // anywhere — there is no telemetry (PLAN.md (Часть II) §9).
                 data_collection_permissions: {
                   required: ['none'],
                   optional: ['locationInfo'],

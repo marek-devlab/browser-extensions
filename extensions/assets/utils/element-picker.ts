@@ -1,6 +1,6 @@
 /**
  * Element picker — **copied from `extensions/adblock/utils/element-picker.ts`**
- * (the house picker; PLAN-2 / TODO §J: "reuse it, do not rewrite it") and extended
+ * (the house picker; PLAN.md (Часть II) / TODO §J: "reuse it, do not rewrite it") and extended
  * for the Asset Inspector. It is a copy rather than an import because
  * `extensions/*` are separate WXT apps with no shared picker package; only
  * `@blur/core` / `@blur/ui` cross the boundary. Attribution and the diff are here

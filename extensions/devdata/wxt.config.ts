@@ -152,7 +152,7 @@ export default defineConfig({
                   required: ['none'],
                 },
               },
-              // Firefox for Android is a target platform (design/PLAN-2 §8:
+              // Firefox for Android is a target platform (design/PLAN.md (Часть II) §8:
               // devdata is the best mobile candidate). Without gecko_android AMO
               // will not mark the add-on Android-compatible.
               gecko_android: {},

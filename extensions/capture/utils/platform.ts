@@ -1,7 +1,7 @@
 import { browser } from '#imports';
 import type { Pipeline } from './types';
 
-// RUNTIME capability probe (design capture.md §8, §12.1, PLAN-2 §1.5).
+// RUNTIME capability probe (design capture.md §8, §12.1, PLAN.md (Часть II) §1.5).
 //
 // 🔴 Desktop only, and we say so. Firefox for Android has NO tabCapture, NO
 // offscreen, NO windows.create and NO getDisplayMedia; WebCodecs is absent too.

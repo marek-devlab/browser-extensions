@@ -10,7 +10,7 @@ your browser; **nothing is ever sent anywhere.**
 
 ## Single purpose
 
-One phrase: **"Save page content to a file."** (`docs/design/export.md`, PLAN-2 §3.)
+One phrase: **"Save page content to a file."** (`docs/design/export.md`, PLAN.md (Часть II) §3.)
 
 ## Permissions — the honest version
 
@@ -39,7 +39,7 @@ permissions triggers the "read and change your data on all websites" line:
   warning-free.
 
 🔴 The listing never uses "download"/"downloader"/"save video"; there is no video
-handling at all (PLAN-2 §10.2, §4.1). We "save" and "open".
+handling at all (PLAN.md (Часть II) §10.2, §4.1). We "save" and "open".
 
 ## Run it
 

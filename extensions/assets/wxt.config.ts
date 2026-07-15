@@ -2,14 +2,14 @@ import { defineConfig } from 'wxt';
 
 // Extension #8 — "Asset Inspector" (assets).
 //
-// SINGLE PURPOSE (PLAN-2.md §4): "Find the source of any element on the page and
+// SINGLE PURPOSE (PLAN.md (Часть II) §4): "Find the source of any element on the page and
 // the requests that loaded it." An INSPECTOR, not a downloader. The whole product
 // hangs on ONE red line — the difference between "minimal-risk review" and a
 // store ban is a single Download button, and it is never added back (design §0,
-// PLAN-2.md §4.5). Everything below defends that boundary.
+// PLAN.md (Часть II) §4.5). Everything below defends that boundary.
 //
 // 🔴 FORBIDDEN, and DELIBERATELY ABSENT (do not re-add — each one re-categorises
-//    the product as a media downloader / grabber, PLAN-2.md §4, §10.5, design §13):
+//    the product as a media downloader / grabber, PLAN.md (Часть II) §4, §10.5, design §13):
 //   - `downloads`            : there is no save-to-disk path anywhere, mocked or
 //                              real. Export of the CARD is clipboard-only ("Copy
 //                              as JSON"), never a file.
@@ -41,7 +41,7 @@ export default defineConfig({
   //     "permissions": [..., "*://*/*"]      (Firefox MV2)
   // which is exactly `<all_urls>` — the "Read and change all your data on all
   // websites" install warning, the single thing this extension's whole architecture
-  // exists to avoid (design §9.4, §13 №6; PLAN-2 §4.2).
+  // exists to avoid (design §9.4, §13 №6; PLAN.md (Часть II) §4.2).
   //
   // We do not need it: `activeTab`, granted by the toolbar click / hotkey / context-
   // menu click, is what authorises `scripting.executeScript` on the current tab. So
@@ -135,7 +135,7 @@ export default defineConfig({
                 id: 'assets@blockaly.com',
                 // MANDATORY for new AMO submissions since 2025-11-03 (Firefox
                 // built-in data-consent panel). This extension has NO network path
-                // of any kind (no fetch/analytics/update-check, PLAN-2 §10.7) and
+                // of any kind (no fetch/analytics/update-check, PLAN.md (Часть II) §10.7) and
                 // stores nothing about pages — so it collects nothing: `none`.
                 data_collection_permissions: {
                   required: ['none'],

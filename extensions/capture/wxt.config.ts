@@ -2,7 +2,7 @@ import { defineConfig } from 'wxt';
 
 // Extension #5 — "Capture Studio" (capture).
 //
-// SINGLE PURPOSE (design capture.md §0, PLAN-2 §1): "Record a tab and export
+// SINGLE PURPOSE (design capture.md §0, PLAN.md (Часть II) §1): "Record a tab and export
 // media." Everything the extension does is an operation on ONE captured clip or
 // screenshot: recording, trim, redaction, watermark, format/resolution/target-
 // SIZE conversion. No feature has its own entry point (design §1.1) — it is all
@@ -35,7 +35,7 @@ import { defineConfig } from 'wxt';
 //
 // NETWORK: none, ever. The extension-pages CSP carries `connect-src 'none'` —
 // no analytics, no Sentry, no "check the Discord limit online", no remote fonts
-// (design §9.1). A privacy policy is STILL mandatory (design §9.1, PLAN-2 §1.4):
+// (design §9.1). A privacy policy is STILL mandatory (design §9.1, PLAN.md (Часть II) §1.4):
 // see IMPLEMENTATION.md.
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
@@ -56,7 +56,7 @@ export default defineConfig({
       // "Record" / "capture" / "export" language only — never "downloader" or
       // "grabber", which land the review in the wrong category (design §4.3, §8).
       // The mobile-impossibility line is deliberately in the description
-      // (design §8, PLAN-2 §1.5): screen recording does not exist in mobile
+      // (design §8, PLAN.md (Часть II) §1.5): screen recording does not exist in mobile
       // browsers, and hiding that would be dishonest.
       description:
         'Record a browser tab, take screenshots, then trim, redact, watermark and compress to a target format, resolution or FILE SIZE — 100% local, zero network. (Recording is not possible in mobile browsers.)',
@@ -186,7 +186,7 @@ export default defineConfig({
               // NO `gecko_android`. Unlike every other add-on in the suite, this
               // one is PHYSICALLY non-functional on mobile: Firefox for Android
               // has neither getDisplayMedia/tab capture nor WebCodecs (design §8,
-              // §12.1, PLAN-2 §1.5). Declaring gecko_android would tell AMO the
+              // §12.1, PLAN.md (Часть II) §1.5). Declaring gecko_android would tell AMO the
               // add-on is Android-compatible when it cannot record a single
               // frame there — that is exactly the "don't lie in the manifest"
               // rule (design §8). So it is omitted on purpose.

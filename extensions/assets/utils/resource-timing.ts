@@ -145,7 +145,7 @@ export function mediaFeedRequests(entries = resourceEntries()): PerformanceResou
 
 /**
  * Buffer accounting (design §10.5, §5.11). ⚠️ The spec is the opposite of the
- * naive assumption and of PLAN-2 §4.2: on overflow the browser **drops the NEW
+ * naive assumption and of PLAN.md (Часть II) §4.2: on overflow the browser **drops the NEW
  * entries and keeps the early ones**, then fires `resourcetimingbufferfull`. So
  * requests made *before* the inspector opened are present; it is the LATE ones on
  * a heavy page that vanish. `setResourceTimingBufferSize()` raises the cap for the

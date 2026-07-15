@@ -2,7 +2,7 @@
  *
  * This file replaces the two divergent :root token blocks that were copy-pasted
  * across the first four extensions (the perf/seo "--text/--good/--warn/--poor"
- * set and the blur/adblock "--fg/--sub/--ok" set). PLAN.md §18 / PLAN-2.md §7
+ * set and the blur/adblock "--fg/--sub/--ok" set). PLAN.md §18 / PLAN.md (Часть II) §7
  * called that duplication a blocker for the second wave; this is the fix. The
  * six new extensions import ONE token set:
  *

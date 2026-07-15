@@ -137,7 +137,7 @@ export function collectPrivacy(): FieldGroup {
       { label: 'Контраст ОС', field: forcedColors() },
       { label: 'Повышенный контраст', field: mq('(prefers-contrast: more)', 'да', 'нет') },
       // 🔴 NO WebRTC local-IP probe and NO entropy/fingerprint score here. The local
-      // address is unobtainable (mDNS obfuscation, PLAN-2 §5.2) — we do not attempt
+      // address is unobtainable (mDNS obfuscation, PLAN.md (Часть II) §5.2) — we do not attempt
       // it and we do not promise it. An entropy estimate would need a licensed
       // frequency table; inventing numbers is forbidden (design §8.3, §14.4).
     ],

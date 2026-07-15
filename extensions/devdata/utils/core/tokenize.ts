@@ -1,7 +1,7 @@
 // The tokenizer behind the syntax colouring.
 //
 // It returns nothing but OFFSET RANGES. It never builds markup. That is the
-// whole point (design §7.3, PLAN-2 §10.1): colouring is applied with the CSS
+// whole point (design §7.3, PLAN.md (Часть II) §10.1): colouring is applied with the CSS
 // Custom Highlight API over `Range`s on ONE flat text node, so
 //   - there is no HTML-injection surface at all — user text is never turned
 //     into elements, and

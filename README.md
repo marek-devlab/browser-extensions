@@ -11,8 +11,7 @@
 | Файл | Что внутри |
 |---|---|
 | [`TODO.md`](./TODO.md) | **Единый бэклог.** Что осталось по всем десяти. Начинать отсюда |
-| [`PLAN.md`](./PLAN.md) | Research и архитектура первых четырёх (blur, adblock, perf, seo) |
-| [`PLAN-2.md`](./PLAN-2.md) | Research и архитектура второй волны: capture, devdata, export, assets, whoami, compose |
+| [`PLAN.md`](./PLAN.md) | Research и архитектура всех десяти расширений (Часть I — blur, adblock, perf, seo; Часть II — capture, devdata, export, assets, whoami, compose) |
 | [`STORE.md`](./STORE.md) | Чеклист публикации, тексты листингов, обоснования разрешений |
 | [`PRIVACY.md`](./PRIVACY.md) | Privacy policy |
 | [`docs/design/`](./docs/design/) | Полные UX/UI-макеты шести новых расширений (по файлу на каждое) |

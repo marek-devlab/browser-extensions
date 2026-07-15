@@ -1,6 +1,6 @@
 # Asset Inspector — implementation notes
 
-Extension #8 (`@blur/assets`). Single purpose (PLAN-2.md §4): **"Find the source of
+Extension #8 (`@blur/assets`). Single purpose (PLAN.md (Часть II) §4): **"Find the source of
 any element on the page and the requests that loaded it."** An **inspector, not a
 downloader.** Spec: [`docs/design/assets.md`](../../docs/design/assets.md).
 
@@ -10,7 +10,7 @@ deleted. There is no `todoLogic` stub left in this extension.
 
 ---
 
-## 🔴 Permanent guardrails (never regress these — PLAN-2.md §4, §10.5; design §0, §13)
+## 🔴 Permanent guardrails (never regress these — PLAN.md (Часть II) §4, §10.5; design §0, §13)
 
 The difference between an inspector and a media downloader is **one button**, and it
 is never added back. Each guardrail below names the code that enforces it, because a
@@ -101,7 +101,7 @@ one implementation instead of a copy. Likewise a home for `resolveTransferSize`.
   `initiatorType`, null-preserving weight, `responseStatus` (null, never 200), the
   redirect tri-state (`occurred` / `none` / `unknown`), host grouping, and the buffer
   accounting.
-- **The buffer, correctly** (design §10.5, correcting PLAN-2 §4.2): on overflow the
+- **The buffer, correctly** (design §10.5, correcting PLAN.md (Часть II) §4.2): on overflow the
   browser **drops NEW entries and keeps the early ones**, then fires
   `resourcetimingbufferfull`. So requests made *before* the inspector opened are
   present; it is the **late** ones on a heavy page that vanish.

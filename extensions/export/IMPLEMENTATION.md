@@ -1,6 +1,6 @@
 # Page Content Exporter — implementation notes
 
-Extension #7 (`docs/design/export.md`, PLAN-2 §3 / §10.2, TODO §G).
+Extension #7 (`docs/design/export.md`, PLAN.md (Часть II) §3 / §10.2, TODO §G).
 **Status: the logic is real.** No mock data, no `TODO_LOGIC`, no `<MockBadge>`
 anywhere — `grep -r "TODO_LOGIC\|MOCK" utils entrypoints` returns nothing.
 

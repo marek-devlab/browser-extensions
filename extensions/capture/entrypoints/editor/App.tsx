@@ -121,7 +121,7 @@ export function App() {
         {theme && <ThemeToggle theme={theme} onChange={(t: Theme) => setTheme(t)} />}
       </header>
 
-      {/* One-time PROMINENT IN-UI DISCLOSURE (design §9.1, PLAN-2 §9 — mandatory
+      {/* One-time PROMINENT IN-UI DISCLOSURE (design §9.1, PLAN.md (Часть II) §9 — mandatory
           from 2026-08-01, and mandatory in the INTERFACE, not just the listing). */}
       {!prefs.disclosureAccepted && (
         <Callout tone="info" title="Что записывается и где это лежит">

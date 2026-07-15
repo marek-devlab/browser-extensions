@@ -2,7 +2,7 @@
 
 Extension #5. Single purpose: **"Record a tab and export media."**
 Authoritative spec: `docs/design/capture.md` (referenced as "§n" below), plus
-PLAN-2 §1 and PLAN.md §6.
+PLAN.md (Часть II) §1 and PLAN.md §6.
 
 **Status: the domain logic is REAL.** The mocks (`utils/mock-data.ts`,
 `<MockBadge>`, `mockAsync`, every `todoLogic()`) are gone. What remains
@@ -145,7 +145,7 @@ real Firefox, and several are the open questions from §14.2:
   microphone only on explicit opt-in), where it lives (IndexedDB in the browser
   profile), how long (until the user deletes it), where it goes (nowhere —
   `connect-src 'none'`). A privacy policy is required *even though* everything is
-  local (PLAN-2 §1.4).
+  local (PLAN.md (Часть II) §1.4).
 - **`THIRD-PARTY-NOTICES.md`** must list **mediabunny 1.50.x (MPL-2.0)**: weak
   copyleft — modifications *inside its files* must be published; linking need not.
   We do not modify it.

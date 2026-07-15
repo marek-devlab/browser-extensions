@@ -32,7 +32,7 @@ export default defineConfig({
     return {
       name: 'Page Content Exporter',
       // 🔴 The listing copy NEVER says "download" / "downloader" / "save video"
-      // (PLAN-2 §10.2, §4.1): CWS review reads intent from metadata, not just
+      // (PLAN.md (Часть II) §10.2, §4.1): CWS review reads intent from metadata, not just
       // code. We "save" and "open"; we never "download". No video handling at all.
       description:
         'Save selected text as .md/.txt, an HTML table as .csv/.xlsx, and copy or open image URLs. Everything is built locally in your browser; nothing is sent anywhere.',

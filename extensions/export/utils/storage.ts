@@ -24,7 +24,7 @@ export const DEFAULT_PREFS: ExportPrefs = {
   defaultTableFormat: 'xlsx',
   defaultTextFormat: 'md',
   csvDelimiter: 'auto',
-  csvEncoding: 'utf8-bom', // ⚠️ BOM mandatory or Excel mangles Cyrillic (PLAN-2 §3.2).
+  csvEncoding: 'utf8-bom', // ⚠️ BOM mandatory or Excel mangles Cyrillic (PLAN.md (Часть II) §3.2).
   csvEol: 'crlf',
   csvFormulaGuard: 'escape', // 🔴 default guard on (design §8.3).
   csvSepLine: false,

@@ -5,7 +5,7 @@
 > replace, Cyrillic→Latin transliteration and a character counter. **100% local,
 > zero network, zero telemetry.**
 
-Extension #10 of the family (PLAN-2.md §6, §10.6). Built on WXT 0.20 + React 19 +
+Extension #10 of the family (PLAN.md (Часть II) §6, §10.6). Built on WXT 0.20 + React 19 +
 TypeScript, MV3 (Chrome) / MV2 (Firefox). Shares the design system in
 [`@blur/ui`](../../packages/ui). Design doc:
 [`docs/design/compose.md`](../../docs/design/compose.md).

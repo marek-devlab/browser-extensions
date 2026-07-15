@@ -88,7 +88,7 @@ are all reported. A real table view is deferred.
 ## Deferred (not v1)
 
 - Diff tab (design §1.3 — a v2 tab, deliberately absent rather than disabled).
-- Side panel (`side_panel` vs `sidebar_action` unresolved, PLAN-2 §11).
+- Side panel (`side_panel` vs `sidebar_action` unresolved, PLAN.md (Часть II) §11).
 - Dedicated CSV table view.
 - Progress-by-bytes during parse: the Worker parses from a string, so there is no
   honest byte-progress to report and we show none rather than inventing a

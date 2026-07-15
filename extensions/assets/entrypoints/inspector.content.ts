@@ -82,7 +82,7 @@ function h(
   return el;
 }
 
-// @blur/ui is the single token source for the whole family (PLAN-2 §7). Inside a
+// @blur/ui is the single token source for the whole family (PLAN.md (Часть II) §7). Inside a
 // shadow root `:root` matches nothing, so the SAME stylesheet is re-scoped to
 // `:host` — one set of values, no second copy to drift.
 const TOKENS = tokensCss.replaceAll(':root', ':host');
@@ -1000,7 +1000,7 @@ function mseSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
         // 🔴 We show the FACT (EME active), never a guessed system name. Naming it
         // would require hooking requestMediaKeySystemAccess() before the player
         // starts, i.e. a script on every site — a permission we do not ask for
-        // (design §2.3, §7 №6). PLAN-2 §4.4's "DRM: Widevine" is not achievable and
+        // (design §2.3, §7 №6). PLAN.md (Часть II) §4.4's "DRM: Widevine" is not achievable and
         // is not printed.
         text: 'Decryption happens inside the browser’s own content decryption module — a binary component. No extension, and no other JavaScript, ever sees decrypted frames. We do not print the name of the protection system: learning it would require running a script on every site before the player starts, and we do not ask for that permission.',
       }),

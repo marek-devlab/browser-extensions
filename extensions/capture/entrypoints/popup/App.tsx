@@ -168,7 +168,7 @@ function SetupForm({ stale }: { stale: boolean }) {
   }
 
   // 🔴 A platform that cannot record says so plainly, and keeps what DOES work.
-  // Never a dead button, never a spinner that resolves to nothing (§8, PLAN-2 §1.5).
+  // Never a dead button, never a spinner that resolves to nothing (§8, PLAN.md (Часть II) §1.5).
   if (!caps.canRecord) {
     return (
       <>

@@ -2,7 +2,7 @@ import { defineConfig } from 'wxt';
 
 // Extension #10 — "Markdown Workbench".
 //
-// SINGLE PURPOSE (PLAN-2.md §6, §10.6): "Write and format text before pasting."
+// SINGLE PURPOSE (PLAN.md (Часть II) §6, §10.6): "Write and format text before pasting."
 // One phrase a reviewer can write down. Everything the extension does is an
 // operation on the ONE markdown draft that is open right now: the regex
 // find&replace, the transliterator and the character counter are TABS of the
@@ -85,7 +85,7 @@ export default defineConfig({
         : ['storage', 'contextMenus', 'clipboardWrite', 'activeTab', 'sidePanel'],
 
       // ── SIDE PANEL / SIDEBAR (design §1.2, S1 — the PRIMARY surface) ────────
-      // ✅ VERIFIED on a real build (design §12 / PLAN-2 §11 open question): WXT
+      // ✅ VERIFIED on a real build (design §12 / PLAN.md (Часть II) §11 open question): WXT
       // does NOT auto-generate either key from `entrypoints/sidepanel/`. These
       // manual declarations are what produce them, they do not double-declare,
       // and the built manifests come out exactly right:

@@ -19,7 +19,7 @@ import type { Clip } from '../../utils/types';
 // the Studio, with no icon, no context-menu item and no headline of its own
 // (design §4.3). 🔴 There is no "paste a video URL" field and never will be: that
 // one input turns the product into a downloader, i.e. a Prohibited Product
-// (design §4.3, PLAN-2 §4.5).
+// (design §4.3, PLAN.md (Часть II) §4.5).
 
 const ACCEPT =
   'video/mp4,video/webm,video/quicktime,video/x-matroska,image/png,image/jpeg,image/webp';

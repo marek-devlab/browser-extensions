@@ -10,7 +10,7 @@
 //  2. EXACT SOURCE TEXT. Scalars carry `raw` — the characters as they appear in
 //     the document. That is what lets the inspector show
 //     `12345678901234567890` instead of the double-rounded
-//     `12345678901234567000` (design §2.4, the PLAN-2 §10.1 differentiator).
+//     `12345678901234567000` (design §2.4, the PLAN.md (Часть II) §10.1 differentiator).
 //
 // The tree is stored PRE-ORDER and flat: node `i`'s descendants are exactly
 // `[i+1 .. i+subtree]`. That single invariant gives O(1) subtree skipping (for

@@ -14,7 +14,7 @@ Full notices for the whole suite: <https://github.com/marek-devlab/browser-exten
 `.xlsx` generation uses [write-excel-file](https://github.com/catamphetamine/write-excel-file),
 © catamphetamine. It is bundled and runs entirely in the browser; it is never
 fetched at runtime. Chosen over SheetJS (left npm) and exceljs (abandoned Oct 2023)
-per PLAN-2 §3.2.
+per PLAN.md (Часть II) §3.2.
 
 ## fflate — MIT
 

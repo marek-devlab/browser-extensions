@@ -8,7 +8,7 @@ import { sanitizeFilename } from './format';
 //      piped into the file, so nothing is duplicated in memory (design §10.3).
 //   2. `downloads.download` + `URL.createObjectURL` — the universal path, and the
 //      ONLY one on Firefox. ⚠️ The object URL MUST be revoked, or every export
-//      leaks its whole payload for the life of the page (PLAN-2 §3.1). We revoke
+//      leaks its whole payload for the life of the page (PLAN.md (Часть II) §3.1). We revoke
 //      on downloads.onChanged, and unconditionally after a timeout in case the
 //      event never arrives (a listener that never fires is how leaks ship).
 

@@ -27,10 +27,10 @@ import type {
 // mediabunny; they are not used. 🔴 ffmpeg.wasm is NOT bundled: its default
 // load() fetches the core from unpkg — remotely hosted code, an instant reject in
 // both stores — and even bundled it costs ~30 MB with a GPL-tainted core and an
-// AMO source review (PLAN-2 §1.2, design §12.2). If Firefox cannot encode H.264
+// AMO source review (PLAN.md (Часть II) §1.2, design §12.2). If Firefox cannot encode H.264
 // we say so and offer WebM. We do not smuggle in a compiler.
 //
-// VideoFrame lifetime (PLAN-2 §1.3, design §10.4): we never construct a raw
+// VideoFrame lifetime (PLAN.md (Часть II) §1.3, design §10.4): we never construct a raw
 // VideoFrame and never touch VideoEncoder directly. The `process` hook below is
 // handed a mediabunny `VideoSample`, draws it onto ONE reused OffscreenCanvas and
 // returns that canvas; mediabunny wraps it, encodes it and closes every frame it
@@ -39,11 +39,11 @@ import type {
 // moving" failure mode is designed out rather than guarded against.
 
 /** The one probe that decides whether Firefox gets MP4 at all (design §4.4, §8,
- *  §12.1, PLAN-2 §11). Runs BEFORE the option is shown — never "offer MP4, fail
+ *  §12.1, PLAN.md (Часть II) §11). Runs BEFORE the option is shown — never "offer MP4, fail
  *  after three minutes of encoding". Chrome always passes; Firefox is the open
  *  question, and this is the answer at runtime, on the user's actual machine. */
 export async function canEncodeH264(width = 1280, height = 720): Promise<boolean> {
-  // 1) The raw WebCodecs probe named in PLAN-2 §11.
+  // 1) The raw WebCodecs probe named in PLAN.md (Часть II) §11.
   try {
     const VE = (globalThis as { VideoEncoder?: typeof VideoEncoder }).VideoEncoder;
     if (VE?.isConfigSupported) {
@@ -417,7 +417,7 @@ async function runPass(
 }
 
 /**
- * The ITERATIVE manual 2-pass (design §6.4, PLAN-2 §1.2). There is no real 2-pass
+ * The ITERATIVE manual 2-pass (design §6.4, PLAN.md (Часть II) §1.2). There is no real 2-pass
  * rate control in any browser, so:
  *
  *   pass 1: bps₀ = the pre-computed budget bitrate (utils/budget.ts)

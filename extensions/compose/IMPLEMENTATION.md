@@ -11,7 +11,7 @@ returns nothing.
 
 ## ✅ Resolved: the `side_panel` vs `sidebar_action` open question
 
-The #1 build-time risk (design §12, PLAN-2 §11) is **answered on real builds**:
+The #1 build-time risk (design §12, PLAN.md (Часть II) §11) is **answered on real builds**:
 
 - WXT does **not** auto-generate either key from `entrypoints/sidepanel/`. The
   manual declarations in `wxt.config.ts` are what produce them, and they do not

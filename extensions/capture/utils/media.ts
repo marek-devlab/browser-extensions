@@ -4,7 +4,7 @@ import type { VideoFormat } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAPTURE — the platform-bound half of the product. Two pipelines, and that is
-// permanent (design capture.md §1.2, PLAN-2 §1.1):
+// permanent (design capture.md §1.2, PLAN.md (Часть II) §1.1):
 //
 //   CHROME   background: tabCapture.getMediaStreamId({targetTabId})
 //            offscreen:  getUserMedia({video:{mandatory:{chromeMediaSource:'tab',
@@ -243,7 +243,7 @@ export async function mixAudio(
  * Pick a MediaRecorder mimeType.
  *
  * Chrome 126+ writes MP4 (H.264 + AAC) straight out of MediaRecorder → on Chrome
- * an MP4 export needs NO transcoding at all (design §4.4, PLAN-2 §1.2). Firefox
+ * an MP4 export needs NO transcoding at all (design §4.4, PLAN.md (Часть II) §1.2). Firefox
  * cannot: it writes WebM only, so MP4 there is a MANDATORY re-encode at export
  * time. 🔴 We never write WebM bytes into a `.mp4` file — the returned type is
  * what is actually recorded, and the UI is told the truth (design §8).
@@ -278,7 +278,7 @@ const BITRATE_TIERS: Record<StartOptions['quality'], number> = {
 
 /** ⚠️ videoBitsPerSecond is a WISH, not a contract — the browser may ignore it.
  *  That is exactly why the target-size feature runs at EXPORT time and never at
- *  record time (design §3.1, §6.1, PLAN-2 §1.2). */
+ *  record time (design §3.1, §6.1, PLAN.md (Часть II) §1.2). */
 export function bitrateFor(quality: StartOptions['quality']): number {
   return BITRATE_TIERS[quality];
 }

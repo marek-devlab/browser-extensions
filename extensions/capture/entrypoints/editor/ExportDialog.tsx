@@ -97,7 +97,7 @@ export function ExportDialog({
 
   const res = resolutions[Math.min(resIdx, resolutions.length - 1)]!;
 
-  // ⚠️ THE PROBE (design §4.4, §8, §12.1, PLAN-2 §11): does THIS browser's
+  // ⚠️ THE PROBE (design §4.4, §8, §12.1, PLAN.md (Часть II) §11): does THIS browser's
   // VideoEncoder actually do H.264? Chrome: yes. Firefox: unconfirmed by any
   // primary source, so we ask the machine, BEFORE offering MP4 — never "offer MP4,
   // then fail after three minutes of encoding". If the answer is no, MP4 simply is

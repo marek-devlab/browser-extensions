@@ -31,7 +31,7 @@ const BIDI = /[\u202A-\u202E\u2066-\u2069\u200E\u200F]/g;
 const CONTROL = /[\u0000-\u001F\u007F]/g;
 
 // Minimal ICAO-style Cyrillic transliteration (design §2.5). 🔴 A full
-// transliterator belongs to `compose` (PLAN-2 §6.6) — this is only enough to keep
+// transliterator belongs to `compose` (PLAN.md (Часть II) §6.6) — this is only enough to keep
 // a filename portable, not a feature with its own entry point.
 const TRANSLIT: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',

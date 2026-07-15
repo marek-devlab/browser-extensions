@@ -1,7 +1,11 @@
 import { defineContentScript, browser } from '#imports';
-import type { ResourceCardModel, SrcsetVerdict } from '../utils/assets-types';
-import { inspectElement } from '../utils/inspect';
-import { formatDimensions, formatWeight, formatPercent, hostOf } from '../utils/format';
+import tokensCss from '@blur/ui/tokens.css?inline';
+import type { ResourceCardModel, SrcsetVerdict, InspectorStartMessage } from '../utils/assets-types';
+import { readResourceMetadata, isOpenable } from '../utils/inspect';
+import { startPicker, type PickerChrome, type PickerHandle } from '../utils/element-picker';
+import { bufferState, raiseBuffer, normalizeUrl } from '../utils/resource-timing';
+import { formatDimensions, formatWeight, formatPercent, hostOf, formatDuration } from '../utils/format';
+import { assetsPrefsItem, cardPositionItem, DEFAULT_PREFS, type AssetsPrefs } from '../utils/storage';
 
 // The injected inspector overlay — 🥇 THE CORE PRODUCT SURFACE (design §0 И3, §2).
 //
@@ -9,47 +13,62 @@ import { formatDimensions, formatWeight, formatPercent, hostOf } from '../utils/
 // so "open popup → click element → read result in popup" is physically impossible.
 // The result here is a SCREEN to read and compare against the page, so it must be
 // an in-page overlay. It renders inside a CLOSED shadow root so a hostile page can
-// neither restyle it nor read it (design §9.2).
+// neither restyle it, hide it, nor read it back (design §9.2).
 //
 // This is `registration: 'runtime'`: it is NOT auto-injected on any page. The
 // background injects it via scripting.executeScript on a user gesture (activeTab).
 //
-// 🔴 INVARIANTS enforced structurally in this file:
-//   - ZERO network. No fetch/XHR/img.src/video.src of any shown URL. The preview
-//     is `canvas.drawImage(theExistingElement)` — the browser already loaded it,
-//     so the preview costs zero requests (design §0 И1). We never call
-//     toDataURL/toBlob — there is no path to the bytes, so no download exists.
-//   - ZERO innerHTML. Every node is built with createElement + textContent; the
-//     whole card is page-controlled data (alt, URL, srcset) and must never be
-//     parsed as HTML (design §9.1).
-//   - Styles via a static constructed CSSStyleSheet + adoptedStyleSheets — never a
-//     template string with an interpolated URL (CSS injection, design §9.1).
-//   - "Open in new tab" is a real <a>, and its href is set ONLY after validating
-//     protocol ∈ {http,https}; blob:/data:/MSE disable the button (design §4.5, §9.1).
-//
-// The DOM/Resource-Timing reading is STUBBED (utils/inspect.ts returns mock models
-// with mock:true → a MockBadge renders). The picker interaction shell, the closed
-// shadow root, the canvas preview and the whole card layout are REAL.
+// 🔴 INVARIANTS ENFORCED STRUCTURALLY IN THIS FILE:
+//   - ZERO network. There is no fetch/XHR/img.src/video.src/link-preload of any URL
+//     we display, anywhere in the extension. The preview is
+//     `canvas.drawImage(theExistingElement)` — the browser already loaded it, so the
+//     preview costs zero requests (design §0 И1). We never call toDataURL/toBlob, so
+//     no code path to the bytes exists: "not a downloader" is true in the code, not
+//     just in the listing.
+//   - NO file is ever written. Export is `navigator.clipboard.writeText` only. There
+//     is no `downloads` permission, no `<a download>`, no createObjectURL (И2).
+//   - ZERO innerHTML. Every node is createElement + textContent. The whole card is
+//     page-CONTROLLED data (alt, URL, srcset, MIME): parsing any of it as HTML would
+//     be XSS in our own overlay (design §9.1).
+//   - Styles are a STATIC constructed CSSStyleSheet — never a template string with an
+//     interpolated URL (that is CSS injection, design §9.1).
+//   - "Open in new tab" is a real <a>, and href is assigned ONLY after the protocol
+//     is validated as http/https. A `javascript:` URL in a srcset is the one real
+//     attack vector on this card, and it dies here (design §9.1, §4.5).
+//   - No manifest is ever opened or parsed. An .m3u8/.mpd may APPEAR in the request
+//     list — that is a fact about the page — but nothing reads it (design §13 №2).
 
 const ACTIVE_FLAG = '__assetsInspectorActive';
+/** Set once per document: guards the runtime.onMessage registration against the
+ *  double-listener leak on re-injection (see main()). */
+const LISTENER_FLAG = '__assetsInspectorListener';
+/** The Resource Timing cap this document is actually running with (read by the
+ *  popup's counter script, which shares this isolated world). */
+const LIMIT_FLAG = '__assetsInspectorBufferLimit';
+/** Set once the `resourcetimingbufferfull` event has fired — the browser is now
+ *  dropping NEW entries. Published here so the popup's counter script (same
+ *  isolated world) can report it honestly instead of guessing. */
+const OVERFLOW_FLAG = '__assetsInspectorBufferOverflowed';
 
-interface OverlayState {
-  root: ShadowRoot;
+interface Overlay {
   host: HTMLElement;
+  root: ShadowRoot;
+  layer: HTMLElement;
   abort: AbortController;
-  ring: HTMLElement;
-  label: HTMLElement;
-  banner: HTMLElement;
-  status: HTMLElement;
-  crumbs: HTMLElement;
-  current: Element | null;
-  stackIndex: number;
-  pointer: { x: number; y: number };
-  returnFocusTo: Element | null;
+  picker: PickerHandle;
+  chrome: PickerChrome;
   card: HTMLElement | null;
+  cardObserver: MutationObserver | null;
+  returnFocusTo: Element | null;
+  prefs: AssetsPrefs;
+  overflowed: boolean;
+  prevCursor: string;
 }
 
-/** A tiny typed createElement helper. Text is set via textContent — never HTML. */
+let overlay: Overlay | null = null;
+
+/** createElement + textContent. The only node factory in this file — there is no
+ *  path here that turns a page string into markup. */
 function h(
   tag: string,
   props: { class?: string; text?: string; attrs?: Record<string, string> } = {},
@@ -63,432 +82,740 @@ function h(
   return el;
 }
 
-/** Whether an element currently carries a loaded resource (for the `R` key + crumbs). */
-function hasResource(el: Element): boolean {
-  const tag = el.tagName.toLowerCase();
-  if (tag === 'img' && (el as HTMLImageElement).currentSrc) return true;
-  if ((tag === 'video' || tag === 'audio') && (el as HTMLMediaElement).currentSrc) return true;
-  if (tag === 'video' && (el as HTMLVideoElement).poster) return true;
-  if (tag === 'iframe') return true;
-  const bg = getComputedStyle(el).backgroundImage;
-  return bg !== 'none' && bg.includes('url(');
-}
-
-/** A short human label for an element: `tag.class` (+ resource marker). */
-function elementLabel(el: Element): string {
-  const tag = el.tagName.toLowerCase();
-  const cls = el.classList[0] ? `.${el.classList[0]}` : '';
-  return `${tag}${cls}`;
-}
+// @blur/ui is the single token source for the whole family (PLAN-2 §7). Inside a
+// shadow root `:root` matches nothing, so the SAME stylesheet is re-scoped to
+// `:host` — one set of values, no second copy to drift.
+const TOKENS = tokensCss.replaceAll(':root', ':host');
 
 const STYLES = `
-:host { all: initial; }
+:host { all: initial; color-scheme: light dark; }
 .layer { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;
-  font: 13px/1.5 system-ui, sans-serif; color-scheme: light dark; }
-.ring { position: fixed; box-sizing: border-box; border: 2px solid #1d6fff;
-  outline: 1px solid rgba(0,0,0,.55); box-shadow: 0 0 0 1px #fff; border-radius: 2px;
-  pointer-events: none; }
-@media (prefers-reduced-motion: no-preference) { .ring { transition: all 40ms ease-out; } }
-.tag { position: fixed; background: #111; color: #fff; padding: 2px 6px;
-  border-radius: 3px; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; pointer-events: none; }
-.banner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
-  background: #111; color: #fff; padding: 8px 14px; border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.4); max-width: 92vw; text-align: center;
-  pointer-events: none; }
-.banner small { display: block; opacity: .8; margin-top: 3px; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  font: 13px/1.5 var(--sans); }
+.ring { position: fixed; box-sizing: border-box;
+  /* outline, NOT box-shadow: shadows vanish in forced-colors mode (design §11.3).
+     A light + dark double ring reads on both white and black pages (adblock). */
+  outline: 2px solid var(--accent); box-shadow: 0 0 0 1px #fff, 0 0 0 3px rgba(0,0,0,.55);
+  background: rgba(56,132,255,.16); border-radius: 2px; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .ring { transition: left 40ms ease-out, top 40ms ease-out, width 40ms ease-out, height 40ms ease-out; }
+}
+.tag { position: fixed; background: #111; color: #fff; padding: 3px 7px; border-radius: 4px;
+  max-width: 90vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none; font-size: 12px; }
+.banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  background: #111; color: #fff; padding: 8px 10px; border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.4); max-width: calc(100vw - 16px);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+  pointer-events: auto; text-align: center; }
+.banner .keys { opacity: .8; font-size: 12px; }
+.banner button { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.4); background: transparent; color: #fff;
+  font: inherit; cursor: pointer; }
+.banner button.primary { background: var(--accent); border-color: var(--accent);
+  color: var(--badge-fill-text); font-weight: 600; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .crumbs { position: fixed; pointer-events: auto; background: #111; color: #fff;
-  padding: 4px 8px; border-radius: 6px; max-width: 92vw; overflow-x: auto;
-  white-space: nowrap; }
-.crumbs button { all: unset; cursor: pointer; color: #9ecbff; padding: 0 2px; }
-.crumbs .muted { opacity: .5; }
-.crumbs .sep { opacity: .5; padding: 0 2px; }
+  padding: 4px 8px; border-radius: 8px; max-width: calc(100vw - 16px); overflow-x: auto;
+  white-space: nowrap; font-size: 12px; }
+.crumbs button { all: unset; cursor: pointer; color: #9ecbff; padding: 4px 3px; }
+.crumbs button.muted { opacity: .55; }
+.crumbs button[aria-current] { text-decoration: underline; font-weight: 700; }
+.crumbs .sep { opacity: .5; padding: 0 3px; }
 
-.card { position: fixed; pointer-events: auto; width: min(560px, 92vw);
-  max-height: 84vh; overflow: auto; background: Canvas; color: CanvasText;
-  border: 1px solid rgba(128,128,128,.4); border-radius: 12px;
+.card { position: fixed; pointer-events: auto; width: min(560px, calc(100vw - 16px));
+  max-height: 85vh; overflow: auto; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 12px 40px rgba(0,0,0,.35); }
-.card__head { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  border-bottom: 1px solid rgba(128,128,128,.25); cursor: grab; position: sticky;
-  top: 0; background: Canvas; }
-.card__title { font-weight: 600; flex: 1; }
+.card[data-collapsed="true"] .card__body { display: none; }
+.card__head { display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); cursor: grab; position: sticky; top: 0;
+  background: var(--bg); z-index: 1; }
+.card__title { font-weight: 600; flex: 1; font-size: 14px; }
+.card__head button { min-width: 44px; min-height: 44px; }
 .card__body { padding: 12px; display: grid; gap: 14px; }
-.mock { background: #7a5b00; color: #fff; font-size: 12px; padding: 4px 8px;
-  border-radius: 6px; }
-.sec h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase;
-  letter-spacing: .04em; opacity: .7; }
-.url { font-family: ui-monospace, monospace; word-break: break-all; font-size: 13px; }
-.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-.props { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
-.props dt { opacity: .7; } .props dd { margin: 0; }
-.warn { color: #a15c00; font-weight: 600; }
-.poor { color: #b3261e; font-weight: 600; }
-.callout { border: 1px solid rgba(128,128,128,.4); border-radius: 8px; padding: 8px 10px; }
-.bar { display: grid; grid-template-columns: max-content 1fr max-content; gap: 6px 8px;
-  align-items: center; }
-.bar .fill { height: 10px; background: #1d6fff; border-radius: 3px; }
+.sec > h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--text-dim); font-weight: 600; }
+.url { font-family: var(--mono); word-break: break-all; font-size: 13px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 8px; user-select: all; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.props { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; }
+.props dt { color: var(--text-dim); }
+.props dd { margin: 0; overflow-wrap: anywhere; }
+.warn { color: var(--warn-fg); font-weight: 600; }
+.poor { color: var(--poor-fg); font-weight: 600; }
+.callout { border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 8px 10px; background: var(--bg-elev); }
+.callout.warn { border-left-color: var(--warn); color: inherit; font-weight: 400; }
+.callout.poor { border-left-color: var(--poor); color: inherit; font-weight: 400; }
+.callout b { display: block; margin-bottom: 2px; }
+.bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 5px 8px;
+  align-items: center; font-size: 12px; }
+.bars .track { background: var(--bg-elev); border-radius: 3px; height: 10px; }
+.bars .fill { height: 10px; background: var(--accent); border-radius: 3px; }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
-th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid rgba(128,128,128,.25); }
-.preview { width: 96px; height: 72px; object-fit: contain; border-radius: 6px;
-  background: rgba(128,128,128,.15); flex: none; }
-button.act { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px;
-  border: 1px solid rgba(128,128,128,.5); }
-button.act[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
-a.act { text-decoration: none; }
-.hint { opacity: .7; font-size: 12px; }
+caption { text-align: left; color: var(--text-dim); padding-bottom: 4px; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere; }
+th { color: var(--text-dim); font-weight: 600; }
+tr[data-chosen="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.preview { width: 96px; height: 72px; border-radius: var(--radius-sm);
+  background: var(--bg-elev); border: 1px solid var(--border); flex: none; }
+button.act, a.act { display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font: inherit; cursor: pointer; text-decoration: none; }
+button.act.primary { background: var(--accent); border-color: var(--accent);
+  color: var(--badge-fill-text); font-weight: 600; }
+button.act[aria-disabled="true"], a.act[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+button.hint-btn { all: unset; cursor: pointer; color: var(--accent-fg); padding: 2px 6px;
+  border-radius: 4px; font-size: 12px; }
+.hint { color: var(--text-dim); font-size: 12px; }
+.hint-body { margin-top: 4px; font-size: 12px; color: var(--text-dim);
+  border-left: 2px solid var(--border); padding-left: 8px; }
+:host(*) button:focus-visible, :host(*) a:focus-visible, :host(*) [tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+@media (max-width: 420px) {
+  .card { left: 4px !important; right: 4px; top: 4px !important; transform: none !important;
+    width: auto; max-height: 92vh; }
+  .props { grid-template-columns: 1fr; gap: 2px 0; }
+  .props dt { margin-top: 6px; }
+}
 `;
 
-let state: OverlayState | null = null;
+/* ------------------------------------------------------------------ */
+/* Boot / teardown                                                     */
+/* ------------------------------------------------------------------ */
 
-function boot(): void {
-  // Idempotent (design §10.6): a second injection just restarts the picker.
-  if ((window as unknown as Record<string, unknown>)[ACTIVE_FLAG]) {
-    if (state) startPicker(state);
+async function boot(startMessage?: InspectorStartMessage): Promise<void> {
+  // Idempotent (design §10.6). A second executeScript (toolbar clicked twice, or a
+  // context-menu click on top of an open picker) must NOT plant a second overlay or
+  // a second set of listeners — it just re-arms the existing picker.
+  if ((window as unknown as Record<string, unknown>)[ACTIVE_FLAG] && overlay) {
+    closeCard(overlay);
+    armPicker(overlay);
+    if (startMessage?.srcUrl) void tryContextMenuMatch(overlay, startMessage.srcUrl);
     return;
   }
   (window as unknown as Record<string, unknown>)[ACTIVE_FLAG] = true;
 
+  const prefs = await loadPrefs();
+  // Raise the cap again with the user's value (the default was already applied
+  // synchronously at injection — see main()). The limit is published on the isolated
+  // world's global so the popup's counter script reports the REAL cap instead of
+  // assuming the browser default of 250.
+  raiseBuffer(prefs.bufferSize);
+  (window as unknown as Record<string, unknown>)[LIMIT_FLAG] = prefs.bufferSize;
+
   const host = h('div');
+  // 🔴 CLOSED: the page cannot reach `host.shadowRoot`, so it can neither read the
+  // card nor swap its contents for a spoofed one (design §9.2).
   const root = host.attachShadow({ mode: 'closed' });
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(STYLES);
+  sheet.replaceSync(TOKENS + STYLES);
   root.adoptedStyleSheets = [sheet];
+  applyTheme(host, prefs.theme);
 
   const abort = new AbortController();
   const layer = h('div', { class: 'layer' });
+
   const ring = h('div', { class: 'ring', attrs: { style: 'display:none' } });
-  const label = h('div', { class: 'tag', attrs: { style: 'display:none' } });
-  const banner = h('div', { class: 'banner', attrs: { role: 'status' } });
-  banner.append(
-    document.createTextNode('Hover an element · Enter to inspect · Esc to cancel'),
-    h('small', { text: '↑ parent  ↓ child  ← → siblings  [ ] stack under cursor  R nearest resource' }),
-  );
-  const status = h('div', { class: 'sr', attrs: { role: 'status', 'aria-live': 'polite' } });
+  const tag = h('div', { class: 'tag', attrs: { style: 'display:none' } });
+  const live = h('div', { class: 'sr', attrs: { role: 'status', 'aria-live': 'polite' } });
   const crumbs = h('div', { class: 'crumbs', attrs: { style: 'display:none' } });
-  layer.append(ring, label, banner, status, crumbs);
+
+  const confirm = h('button', {
+    class: 'primary',
+    text: 'Inspect this element',
+    attrs: { type: 'button', style: 'display:none' },
+  }) as HTMLButtonElement;
+  const cancel = h('button', {
+    text: 'Cancel',
+    attrs: { type: 'button', 'aria-label': 'Cancel the element picker' },
+  }) as HTMLButtonElement;
+  const banner = h('div', { class: 'banner', attrs: { role: 'status' } }, [
+    h('span', { text: 'Point at an element' }),
+    h('span', {
+      class: 'keys',
+      // Keys are listed for the desktop user; the two buttons are what a touch user
+      // (Firefox for Android — no hover, no Esc key) actually uses.
+      text: '↑ parent · ↓ child · ← → siblings · [ ] stack · R nearest resource · Enter select · Esc cancel',
+    }),
+    confirm,
+    cancel,
+  ]);
+
+  layer.append(ring, tag, banner, crumbs, live);
   root.append(layer);
   document.documentElement.append(host);
 
-  state = {
-    root, host, abort, ring, label, banner, status, crumbs,
-    current: null, stackIndex: 0, pointer: { x: 0, y: 0 },
-    returnFocusTo: document.activeElement, card: null,
+  const prevCursor = document.documentElement.style.cursor;
+  document.documentElement.style.cursor = 'crosshair';
+
+  const chrome: PickerChrome = { ring, tag, banner, crumbs, live, confirm, cancel };
+
+  const state: Overlay = {
+    host, root, layer, abort,
+    picker: null as unknown as PickerHandle,
+    chrome, card: null, cardObserver: null,
+    returnFocusTo: document.activeElement,
+    prefs, overflowed: false, prevCursor,
   };
+  overlay = state;
 
-  attachPickerListeners(state);
-  startPicker(state);
-}
+  // The buffer overflowed → the browser is now DROPPING NEW entries (it does NOT
+  // evict old ones — design §10.5). Recording that fact is the only way to be honest
+  // about a list that is silently truncated.
+  window.addEventListener('resourcetimingbufferfull', () => {
+    state.overflowed = true;
+    (window as unknown as Record<string, unknown>)[OVERFLOW_FLAG] = true;
+  }, {
+    signal: abort.signal,
+  });
+  // The document going away takes the overlay with it; this only tidies the flag for
+  // bfcache restores and SPA teardown.
+  window.addEventListener('pagehide', () => teardown(), { signal: abort.signal });
 
-function attachPickerListeners(s: OverlayState): void {
-  const { signal } = s.abort;
+  // Escape must work even when focus is somewhere in the page rather than in the
+  // card (the picker's own Escape handler is inactive while a card is open). Without
+  // this, a user who clicked the page after opening the card would have no keyboard
+  // way out — "always escapable" has to mean always.
   document.addEventListener(
-    'mousemove',
-    (e: MouseEvent) => {
-      if (s.card) return; // picking is paused while the card is open
-      s.pointer = { x: e.clientX, y: e.clientY };
-      const path = e.composedPath();
-      // composedPath()[0] pierces OPEN shadow DOM — event.target would only see the
-      // host (the adblock picker's blind spot, design §2.1). Skip our own overlay.
-      const target = path.find((n) => n instanceof Element && n !== s.host) as Element | undefined;
-      if (target) setCurrent(s, target);
-    },
-    { capture: true, signal },
-  );
-  document.addEventListener(
-    'click',
-    (e: MouseEvent) => {
-      if (s.card) return;
+    'keydown',
+    (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !state.card) return;
       e.preventDefault();
-      e.stopPropagation();
-      if (s.current) pick(s, s.current);
+      closeCard(state);
+      armPicker(state);
     },
-    { capture: true, signal },
+    { capture: true, signal: abort.signal },
   );
-  document.addEventListener('keydown', (e: KeyboardEvent) => onKey(s, e), { capture: true, signal });
-}
 
-function startPicker(s: OverlayState): void {
-  s.card?.remove();
-  s.card = null;
-  s.banner.style.display = '';
-  s.crumbs.style.display = '';
-  // Keyboard entry target: the focused element, else the current one.
-  const start = (document.activeElement && document.activeElement !== document.body
-    ? document.activeElement
-    : s.current) as Element | null;
-  if (start) setCurrent(s, start);
-}
-
-function setCurrent(s: OverlayState, el: Element): void {
-  s.current = el;
-  place(s, el);
-  renderCrumbs(s, el);
-  announce(s, el);
-}
-
-function place(s: OverlayState, el: Element): void {
-  const r = el.getBoundingClientRect();
-  Object.assign(s.ring.style, {
-    display: '', left: `${r.left}px`, top: `${r.top}px`,
-    width: `${r.width}px`, height: `${r.height}px`,
+  state.picker = startPicker({
+    host,
+    chrome,
+    signal: abort.signal,
+    showBreadcrumbs: prefs.showBreadcrumbs,
+    autoJumpToResource: prefs.autoJumpToResource,
+    onPick: (el) => openCard(state, el),
+    onCancel: () => teardown(),
   });
-  const res = hasResource(el) ? ' · 🎬 resource' : '';
-  s.label.textContent = `${elementLabel(el)} · ${Math.round(r.width)}×${Math.round(r.height)}${res}`;
-  Object.assign(s.label.style, {
-    display: '', left: `${Math.max(0, r.left)}px`, top: `${Math.max(0, r.top - 22)}px`,
-  });
+
+  if (startMessage?.srcUrl) void tryContextMenuMatch(state, startMessage.srcUrl);
 }
 
-function renderCrumbs(s: OverlayState, el: Element): void {
-  s.crumbs.replaceChildren();
-  const chain: Element[] = [];
-  let node: Element | null = el;
-  let depth = 0;
-  while (node && depth < 6) {
-    chain.unshift(node);
-    node = node.parentElement;
-    depth += 1;
+/**
+ * Context-menu path (design §4.9). `contextMenus.onClicked` hands us `info.srcUrl`
+ * but NOT the node — and the only way to know the node would be a persistent script
+ * on every site, i.e. the "read all your data on all websites" warning we refuse to
+ * pay. So we match the URL against the DOM after injection: exactly one match → open
+ * the card immediately; zero or many → leave the picker armed.
+ */
+async function tryContextMenuMatch(state: Overlay, srcUrl: string): Promise<void> {
+  const wanted = normalizeUrl(srcUrl);
+  const matches: Element[] = [];
+  for (const el of Array.from(document.querySelectorAll('img, video, audio, iframe'))) {
+    const candidates: string[] = [];
+    if (el instanceof HTMLImageElement) candidates.push(el.currentSrc, el.src);
+    if (el instanceof HTMLMediaElement) candidates.push(el.currentSrc);
+    if (el instanceof HTMLVideoElement && el.poster) candidates.push(el.poster);
+    if (el instanceof HTMLIFrameElement) candidates.push(el.src);
+    if (candidates.some((c) => c && normalizeUrl(c) === wanted)) matches.push(el);
   }
-  chain.forEach((node, i) => {
-    if (i > 0) s.crumbs.append(h('span', { class: 'sep', text: '›' }));
-    const btn = h('button', { text: elementLabel(node) + (hasResource(node) ? ' 🎬' : '') });
-    if (!hasResource(node)) btn.classList.add('muted');
-    btn.addEventListener('click', () => setCurrent(s, node));
-    s.crumbs.append(btn);
-  });
-  const r = el.getBoundingClientRect();
-  Object.assign(s.crumbs.style, { left: `${Math.max(4, r.left)}px`, top: `${Math.max(40, r.top - 52)}px` });
-}
-
-function announce(s: OverlayState, el: Element): void {
-  const r = el.getBoundingClientRect();
-  s.status.textContent = `${elementLabel(el)}, ${Math.round(r.width)} by ${Math.round(r.height)}${
-    hasResource(el) ? ', has resource' : ', no resource'
-  }`;
-}
-
-function onKey(s: OverlayState, e: KeyboardEvent): void {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    if (s.card) startPicker(s);
-    else teardown();
-    return;
-  }
-  if (s.card) return; // inside the card, Tab/arrows behave normally (design §11.1)
-  const cur = s.current;
-  if (!cur) return;
-  const move = (next: Element | null | undefined): void => {
-    if (next) { e.preventDefault(); setCurrent(s, next); }
-  };
-  switch (e.key) {
-    case 'ArrowUp': move(cur.parentElement); break;
-    case 'ArrowDown': move(cur.firstElementChild); break;
-    case 'ArrowLeft': move(cur.previousElementSibling); break;
-    case 'ArrowRight': move(cur.nextElementSibling); break;
-    case '[':
-    case ']': {
-      const stack = document.elementsFromPoint(s.pointer.x, s.pointer.y).filter((n) => n !== s.host);
-      if (stack.length === 0) break;
-      s.stackIndex = (s.stackIndex + (e.key === ']' ? 1 : -1) + stack.length) % stack.length;
-      move(stack[s.stackIndex]);
-      break;
-    }
-    case 'r':
-    case 'R': move(nearestResource(cur)); break;
-    case 'Enter':
-    case ' ': e.preventDefault(); pick(s, cur); break;
-  }
-}
-
-/** Walk up then down (bounded) to the first element carrying a resource (§10.3). */
-function nearestResource(el: Element): Element | null {
-  let up: Element | null = el;
-  for (let i = 0; up && i < 20; i += 1) { if (hasResource(up)) return up; up = up.parentElement; }
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
-  let node = walker.nextNode();
-  for (let i = 0; node && i < 200; i += 1) {
-    if (node instanceof Element && hasResource(node)) return node;
-    node = walker.nextNode();
-  }
-  return null;
-}
-
-function pick(s: OverlayState, el: Element): void {
-  s.banner.style.display = 'none';
-  s.crumbs.style.display = 'none';
-  s.ring.style.display = 'none';
-  s.label.style.display = 'none';
-  const model = inspectElement(el); // STUB → mock model (design §4.1 real reader is TODO_LOGIC)
-  s.card = buildCard(s, model, el);
-  s.root.querySelector('.layer')?.append(s.card);
-  // Focus the card title (dialog focus, design §11.2).
-  (s.card.querySelector('.card__title') as HTMLElement | null)?.focus();
+  if (matches.length === 1 && matches[0]) openCard(state, matches[0]);
 }
 
 function teardown(): void {
+  const state = overlay;
   if (!state) return;
-  state.abort.abort();
+  state.abort.abort(); // one abort removes EVERY listener the picker registered
+  state.cardObserver?.disconnect();
   state.host.remove();
-  const back = state.returnFocusTo;
-  if (back instanceof HTMLElement) back.focus();
+  // Never leave the page in a state we caused: the crosshair goes back to whatever
+  // the page had (usually '').
+  document.documentElement.style.cursor = state.prevCursor;
+  if (state.returnFocusTo instanceof HTMLElement) {
+    try {
+      state.returnFocusTo.focus();
+    } catch {
+      /* the node may be gone — not worth failing the teardown over */
+    }
+  }
   (window as unknown as Record<string, unknown>)[ACTIVE_FLAG] = false;
-  state = null;
+  overlay = null;
+}
+
+async function loadPrefs(): Promise<AssetsPrefs> {
+  try {
+    return await assetsPrefsItem.getValue();
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+/** Theme on the SHADOW HOST, never inherited from the page: a dark page under a
+ *  light OS must not produce an unreadable card (design §11.3). */
+function applyTheme(host: HTMLElement, theme: AssetsPrefs['theme']): void {
+  if (theme === 'auto') host.removeAttribute('data-theme');
+  else host.setAttribute('data-theme', theme);
 }
 
 /* ------------------------------------------------------------------ */
-/* Resource card                                                       */
+/* Card                                                                */
 /* ------------------------------------------------------------------ */
 
-function buildCard(s: OverlayState, m: ResourceCardModel, el: Element): HTMLElement {
-  const card = h('div', { class: 'card', attrs: { role: 'dialog', 'aria-modal': 'false', 'aria-label': 'Asset Inspector' } });
+function closeCard(state: Overlay): void {
+  state.card?.remove();
+  state.card = null;
+  state.cardObserver?.disconnect();
+  state.cardObserver = null;
+}
 
-  const title = h('span', { class: 'card__title', text: 'Asset Inspector', attrs: { tabindex: '-1' } });
-  const closeBtn = h('button', { class: 'act', text: '✕', attrs: { 'aria-label': 'Close inspector' } });
-  closeBtn.addEventListener('click', () => teardown());
-  const head = h('div', { class: 'card__head' }, [title, closeBtn]);
-  makeDraggable(card, head);
+/** Re-arm the picker AND put the crosshair back. The two always move together — the
+ *  page must never be left wearing a cursor we chose (robustness rule). */
+function armPicker(state: Overlay): void {
+  document.documentElement.style.cursor = 'crosshair';
+  state.picker.restart();
+}
 
-  const body = h('div', { class: 'card__body' });
-  if (m.mock) body.append(h('div', { class: 'mock', attrs: { 'data-mock': 'true', role: 'note' }, text: 'Demo data — logic not wired yet (scaffold).' }));
-
-  // Preview + element label + verdict
-  const previewWrap = h('div', { class: 'row' });
-  previewWrap.append(canvasPreview(el), h('div', {}, [h('div', { text: m.elementLabel }), verdictLine(m)]));
-  body.append(previewWrap);
-
-  // Variant-specific body
-  switch (m.variant) {
-    case 'image': body.append(...imageSections(m)); break;
-    case 'mse': body.append(...mseSections(m)); break;
-    case 'iframe-cross-origin': body.append(...iframeSections(m)); break;
-    case 'no-resource': body.append(...noResourceSections(m)); break;
-    default: body.append(...imageSections(m)); // blob/data/progressive/failed reuse the same builders
+function openCard(state: Overlay, el: Element): void {
+  closeCard(state);
+  // The card is a thing to read and to compare against the page — the page stays
+  // fully usable, so its own cursor comes back the moment picking stops.
+  document.documentElement.style.cursor = state.prevCursor;
+  let model: ResourceCardModel;
+  try {
+    model = readResourceMetadata(el, {
+      overweightThreshold: state.prefs.overweightThreshold,
+      buffer: bufferState(state.prefs.bufferSize, state.overflowed),
+      requestScope: state.prefs.requestScope,
+      measureIn: state.root,
+    });
+  } catch (err) {
+    // Degrade honestly, never throw into the page: a cross-origin element or a
+    // detached node must produce a card that says so, not a broken overlay.
+    state.chrome.live.textContent = 'This element could not be read.';
+    model = failureModel(el, err, state);
   }
 
-  // Footer
-  const again = h('button', { class: 'act', text: 'Inspect another element' });
-  again.addEventListener('click', () => startPicker(s));
-  body.append(h('div', { class: 'row' }, [again, copyAsButton(m)]));
+  const card = buildCard(state, model, el);
+  state.card = card;
+  state.layer.append(card);
+  void restorePosition(card);
+
+  // The element may be removed by the SPA while the card is open. We do NOT close
+  // the card — the URL is still what the user came for — we mark it as a snapshot
+  // (design §5.12). Scoped to the picked node's parent chain, never a global DOM
+  // observer (that is the blur/adblock rule engine's job, not ours — §10.2).
+  const observer = new MutationObserver(() => {
+    if (!el.isConnected) {
+      card.querySelector('[data-stale]')?.removeAttribute('hidden');
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  state.cardObserver = observer;
+
+  (card.querySelector('.card__title') as HTMLElement | null)?.focus();
+}
+
+function failureModel(el: Element, err: unknown, state: Overlay): ResourceCardModel {
+  return {
+    kind: 'none',
+    variant: 'no-resource',
+    elementLabel: `<${el.tagName.toLowerCase()}>`,
+    selector: '',
+    currentSrc: '',
+    urlOpenable: false,
+    openDisabledReason: 'no resource URL',
+    mime: { value: '—', certainty: 'unknown' },
+    weight: { kind: 'not-in-buffer' },
+    initiator: { type: '—', scriptKnown: false },
+    status: null,
+    requests: [],
+    requestsHeuristic: false,
+    redirects: { kind: 'unknown' },
+    buffer: bufferState(state.prefs.bufferSize, state.overflowed),
+    cssRule: err instanceof Error ? `could not read this element: ${err.name}` : 'could not read this element',
+  };
+}
+
+function buildCard(state: Overlay, m: ResourceCardModel, el: Element): HTMLElement {
+  const card = h('div', {
+    class: 'card',
+    attrs: {
+      role: 'dialog',
+      // NOT modal: the page stays usable, because comparing the card against the
+      // element on the page is the whole point (design §11.2).
+      'aria-modal': 'false',
+      'aria-label': 'Asset Inspector — resource card',
+      tabindex: '-1',
+    },
+  });
+
+  const title = h('span', { class: 'card__title', text: 'Asset Inspector', attrs: { tabindex: '-1' } });
+  const collapse = h('button', {
+    class: 'act',
+    text: '⌄',
+    attrs: { type: 'button', 'aria-label': 'Collapse the card', 'aria-expanded': 'true' },
+  });
+  collapse.addEventListener('click', () => {
+    const collapsed = card.getAttribute('data-collapsed') === 'true';
+    card.setAttribute('data-collapsed', String(!collapsed));
+    collapse.setAttribute('aria-expanded', String(collapsed));
+  });
+  const close = h('button', {
+    class: 'act',
+    text: '✕',
+    attrs: { type: 'button', 'aria-label': 'Close the inspector' },
+  });
+  close.addEventListener('click', () => teardown());
+  const head = h('div', { class: 'card__head' }, [title, collapse, close]);
+  makeDraggable(card, head, state);
+
+  const body = h('div', { class: 'card__body' });
+
+  const stale = h('div', { class: 'callout warn', attrs: { 'data-stale': '', hidden: '', role: 'status' } }, [
+    h('b', { text: '⚠️ The element was removed from the page.' }),
+    h('span', { text: 'Everything below is a snapshot taken when you picked it.' }),
+  ]);
+  body.append(stale);
+
+  if (m.buffer.overflowed || m.buffer.nearFull) body.append(bufferCallout(m));
+
+  // Preview + identity + the one verdict this product renders.
+  const headline = h('div', { class: 'row' });
+  if (state.prefs.preview) headline.append(canvasPreview(el));
+  headline.append(
+    h('div', { attrs: { style: 'flex:1;min-width:200px' } }, [
+      h('div', { text: m.elementLabel }),
+      h('div', { class: 'hint', text: identityLine(m) }),
+    ]),
+  );
+  body.append(headline);
+
+  switch (m.variant) {
+    case 'mse':
+      body.append(...mseSections(state, m));
+      break;
+    case 'iframe-cross-origin':
+    case 'iframe-same-origin':
+      body.append(...iframeSections(state, m));
+      break;
+    case 'no-resource':
+      body.append(...noResourceSections(m));
+      break;
+    case 'data':
+      body.append(...dataUriSections(state, m));
+      break;
+    default:
+      body.append(...resourceSections(state, m));
+      break;
+  }
+
+  const again = h('button', { class: 'act', text: 'Inspect another element', attrs: { type: 'button' } });
+  again.addEventListener('click', () => {
+    closeCard(state);
+    armPicker(state);
+  });
+  body.append(h('div', { class: 'row' }, [again, copyAsJsonButton(m)]));
 
   card.append(head, body);
-  // Restore centred (position persistence is a stubbed pref — coords only, design §3).
-  Object.assign(card.style, { left: '50%', top: '10vh', transform: 'translateX(-50%)' });
+
+  // Esc closes the card and re-arms the picker; the picker's own Esc exits fully.
+  card.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeCard(state);
+    armPicker(state);
+  });
+
   return card;
 }
 
-/** Real, zero-network preview: draw the ALREADY-LOADED element onto a canvas.
- *  Never toDataURL/toBlob — there is no path to the bytes (design §0 И1). */
+function identityLine(m: ResourceCardModel): string {
+  const parts: string[] = [];
+  const kindWord: Record<string, string> = {
+    image: 'Image', video: 'Video', audio: 'Audio', iframe: 'Frame',
+    'css-background': 'CSS background image', none: 'No resource',
+  };
+  parts.push(kindWord[m.kind] ?? m.kind);
+  if (m.mime.value !== '—') {
+    parts.push(
+      m.mime.certainty === 'guessed-extension'
+        ? `${m.mime.value} (by file extension)`
+        : m.mime.value,
+    );
+  }
+  if (m.declaredType) parts.push(`${m.declaredType} — declared by the markup, not verified`);
+  if (m.failure) parts.push('did not load');
+  return parts.join(' · ');
+}
+
+/**
+ * 🔴 THE zero-network preview (design §0 И1). We draw the element the browser has
+ * ALREADY decoded. We do not set an `img.src`, and we never call `toDataURL()` or
+ * `toBlob()` — so a tainted canvas cannot even throw here, because there is no code
+ * path that asks for the bytes. That absence is what makes "inspector, not
+ * downloader" a property of the code rather than a promise in the listing.
+ */
 function canvasPreview(el: Element): HTMLElement {
   const canvas = document.createElement('canvas');
   canvas.className = 'preview';
-  canvas.width = 96; canvas.height = 72;
+  canvas.width = 192;
+  canvas.height = 144;
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Preview drawn from the element already on the page');
   const ctx = canvas.getContext('2d');
   try {
-    if (el instanceof HTMLImageElement && el.naturalWidth > 0) ctx?.drawImage(el, 0, 0, 96, 72);
-    else if (el instanceof HTMLVideoElement && el.videoWidth > 0) ctx?.drawImage(el, 0, 0, 96, 72);
-    else drawPlaceholder(ctx);
+    if (el instanceof HTMLImageElement && el.naturalWidth > 0) {
+      drawContain(ctx, el, el.naturalWidth, el.naturalHeight);
+    } else if (el instanceof HTMLVideoElement && el.videoWidth > 0) {
+      drawContain(ctx, el, el.videoWidth, el.videoHeight);
+    } else {
+      placeholder(ctx, 'no frame');
+    }
   } catch {
-    // Tainted/DRM canvas throws on draw for protected content — an honest fact,
-    // not an error (design §4.3). We never called toDataURL, so no SecurityError
-    // path to the bytes exists; show a placeholder frame.
-    drawPlaceholder(ctx);
+    // Protected (EME) content refuses to be drawn. That is an honest fact about the
+    // platform, not an error in the inspector (design §4.3).
+    placeholder(ctx, 'frame unavailable: protected content');
   }
   return canvas;
 }
 
-function drawPlaceholder(ctx: CanvasRenderingContext2D | null): void {
+function drawContain(
+  ctx: CanvasRenderingContext2D | null,
+  src: CanvasImageSource,
+  w: number,
+  h: number,
+): void {
   if (!ctx) return;
-  ctx.fillStyle = 'rgba(128,128,128,.2)';
-  ctx.fillRect(0, 0, 96, 72);
-  ctx.fillStyle = 'rgba(128,128,128,.8)';
-  ctx.font = '10px system-ui';
-  ctx.fillText('no frame', 24, 40);
+  const scale = Math.min(192 / w, 144 / h);
+  const dw = Math.max(1, w * scale);
+  const dh = Math.max(1, h * scale);
+  ctx.drawImage(src, (192 - dw) / 2, (144 - dh) / 2, dw, dh);
 }
 
-function verdictLine(m: ResourceCardModel): HTMLElement {
-  const parts: string[] = [];
-  if (m.kind === 'image') parts.push('Image');
-  if (m.mime.value !== '—') parts.push(`${m.mime.value}${m.mime.certainty === 'guessed-extension' ? ' (by extension)' : ''}`);
-  const line = h('div', { class: 'hint', text: parts.join(' · ') });
-  return line;
+function placeholder(ctx: CanvasRenderingContext2D | null, text: string): void {
+  if (!ctx) return;
+  ctx.fillStyle = 'rgba(128,128,128,.18)';
+  ctx.fillRect(0, 0, 192, 144);
+  ctx.fillStyle = 'rgba(128,128,128,.9)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(text.slice(0, 30), 96, 76);
 }
 
 function section(title: string, ...children: (Node | string)[]): HTMLElement {
   return h('div', { class: 'sec' }, [h('h3', { text: title }), ...children]);
 }
 
-function urlSection(m: ResourceCardModel): HTMLElement {
-  const url = h('div', { class: 'url', text: m.currentSrc || '(none)' });
-  const copy = h('button', { class: 'act', text: 'Copy' });
+/* ---- URL ---------------------------------------------------------- */
+
+function urlSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const url = h('div', { class: 'url', text: m.currentSrc || '(no URL)' });
+  const copy = h('button', { class: 'act primary', text: 'Copy', attrs: { type: 'button' } });
   copy.addEventListener('click', () => {
-    // Direct clipboard write in the click handler (gesture + focus present, design
-    // §4.4). No clipboardWrite permission needed.
-    void navigator.clipboard.writeText(m.currentSrc).then(
-      () => { copy.textContent = 'Copied ✓'; setTimeout(() => (copy.textContent = 'Copy'), 1500); },
-      () => { copy.textContent = 'Copy failed'; },
-    );
+    // Straight from the click handler: gesture + focus are present, so no
+    // `clipboardWrite` permission is needed (design §4.4). One fewer manifest line.
+    void copyText(m.currentSrc, copy, 'Copy');
   });
-  const open = openLink(m);
-  return section('URL — what the browser actually loaded (currentSrc)', url, h('div', { class: 'row' }, [copy, open]));
+
+  const children: (Node | string)[] = [url, h('div', { class: 'row' }, [copy, openLink(m)])];
+  children.push(
+    h('div', {
+      class: 'hint',
+      text: 'This is what the browser ACTUALLY loaded (currentSrc) — not what the markup asked for.',
+    }),
+  );
+  if (m.markupSrc) {
+    children.push(
+      h('div', { class: 'hint', text: `The markup asked for: ${m.markupSrc}` }),
+    );
+  }
+  return section('URL', ...children);
 }
 
-/** A REAL <a> for "open in new tab", href set only after protocol validation. */
+/** A real <a target="_blank">. Works when the service worker is dead, needs no
+ *  permission, and supports middle-click for free (design §4.5). */
 function openLink(m: ResourceCardModel): HTMLElement {
-  const a = h('a', { class: 'act', text: 'Open ↗' });
-  let ok = m.urlOpenable;
-  try {
-    const proto = new URL(m.currentSrc).protocol;
-    if (proto !== 'http:' && proto !== 'https:') ok = false; // blocks javascript:/blob:/data: (design §9.1)
-  } catch {
-    ok = false;
-  }
-  if (ok) {
+  const a = h('a', { class: 'act', text: 'Open in a new tab ↗' });
+  // 🔴 Protocol validated BEFORE the href is assigned. `javascript:` / `vbscript:`
+  // inside a page-controlled srcset is the one genuine code-execution vector in this
+  // card, and it stops right here (design §9.1).
+  if (m.urlOpenable && isOpenable(m.currentSrc)) {
     a.setAttribute('href', m.currentSrc);
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
   } else {
-    a.setAttribute('aria-disabled', 'true');
     a.setAttribute('role', 'button');
+    a.setAttribute('aria-disabled', 'true');
+    a.setAttribute('tabindex', '0');
     if (m.openDisabledReason) a.setAttribute('title', m.openDisabledReason);
   }
   return a;
 }
 
-function imageSections(m: ResourceCardModel): HTMLElement[] {
-  const out: HTMLElement[] = [urlSection(m)];
-  if (m.overweight) out.push(overweightSection(m.overweight));
-  if (m.srcset) out.push(srcsetSection(m.srcset));
-  out.push(propsSection(m));
-  out.push(requestsSection(m));
-  out.push(redirectsSection(m));
+/* ---- Variant bodies ------------------------------------------------ */
+
+function resourceSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  if (m.failure) out.push(failureCallout(m));
+  if (m.variant === 'blob') out.push(blobCallout());
+  out.push(urlSection(state, m));
+  if (m.overweight) out.push(overweightSection(m));
+  if (m.srcset && m.srcset.candidates.length > 0) out.push(srcsetSection(state, m));
+  out.push(propsSection(state, m));
+  out.push(requestsSection(state, m));
+  out.push(redirectsSection(state, m));
   return out;
 }
 
-function overweightSection(o: NonNullable<ResourceCardModel['overweight']>): HTMLElement {
-  const cls = o.severity;
-  const header = h('div', { class: cls, text: `⚠️ OVERWEIGHT ${o.ratio.toFixed(1)}×` });
-  const bar = (label: string, px: number, max: number): HTMLElement =>
-    h('div', { class: 'bar' }, [
+function failureCallout(m: ResourceCardModel): HTMLElement {
+  return h('div', { class: 'callout poor', attrs: { role: 'status' } }, [
+    h('b', { text: `This resource did NOT load${m.failure?.code ? ` (${m.failure.code})` : ''}.` }),
+    h('span', { text: m.failure?.message ?? '' }),
+  ]);
+}
+
+function blobCallout(): HTMLElement {
+  return h('div', { class: 'callout' }, [
+    h('b', { text: 'blob: is not a file.' }),
+    h('span', {
+      text: 'It is a pointer to data held in this tab’s memory. Nothing exists at that address — not on a server, not on disk.',
+    }),
+  ]);
+}
+
+function bufferCallout(m: ResourceCardModel): HTMLElement {
+  const text = m.buffer.overflowed
+    ? `The request buffer is FULL (${m.buffer.recorded} of ${m.buffer.limit}). The browser has stopped recording — it drops NEW requests, it does not evict old ones, so the late ones on this page are simply missing. Reloading raises the cap for the next load; it cannot bring back what was already dropped.`
+    : `Recorded ${m.buffer.recorded} of ${m.buffer.limit} requests. Past the cap the browser stops recording new ones.`;
+  return h('div', { class: 'callout warn', attrs: { role: 'status' } }, [
+    h('b', { text: 'The request list may be incomplete.' }),
+    h('span', { text }),
+  ]);
+}
+
+function overweightSection(m: ResourceCardModel): HTMLElement {
+  const o = m.overweight!;
+  const header = h('div', {
+    class: o.severity,
+    text: `⚠️ OVERWEIGHT ${o.ratio.toFixed(1)}×`,
+  });
+  const max = Math.max(o.naturalWidth, o.neededWidth, o.displayedWidth);
+  const bars = h('div', { class: 'bars' });
+  const bar = (label: string, px: number, unit: string): void => {
+    bars.append(
       h('span', { text: label }),
-      h('span', {}, [h('span', { class: 'fill', attrs: { style: `width:${Math.round((px / max) * 100)}%` } })]),
-      h('span', { text: `${px} px` }),
-    ]);
-  const max = o.naturalWidth;
+      h('span', { class: 'track' }, [
+        h('span', { class: 'fill', attrs: { style: `width:${Math.round((px / max) * 100)}%` } }),
+      ]),
+      h('span', { text: `${px} ${unit}` }),
+    );
+  };
+  bar('natural', o.naturalWidth, 'px');
+  bar(`needed (DPR ${m.displayedSize?.dpr ?? 1})`, o.neededWidth, 'px');
+  bar('displayed', o.displayedWidth, 'css-px');
+
+  const wasted = 1 - o.neededWidth / o.naturalWidth;
+  const why = m.srcset?.sizesMissing
+    ? 'There is no `sizes` attribute, so the browser assumed the image fills the viewport (100vw) and picked the biggest candidate. That is the most common cause.'
+    : 'Usually one of two things: srcset has no candidate of a fitting size, or `sizes` told the browser the wrong slot width.';
   return section(
     'Overweight',
     header,
-    bar('natural', o.naturalWidth, max),
-    bar(`needed (DPR)`, o.neededWidth, max),
-    bar('displayed', o.displayedWidth, max),
-    h('div', { class: 'hint', text: `Wasted pixels: ${formatPercent(1 - o.neededWidth / o.naturalWidth)} at the current window size.` }),
+    bars,
+    // 🔴 Pixels only. We do not know the bytes (§7 №1), and a byte budget is `perf`
+    // (§8). "You are wasting 340 KB" would be a lie AND a boundary violation.
+    h('div', { class: 'hint', text: `${formatPercent(wasted)} of the pixels are wasted at the current window size. ${why}` }),
   );
 }
 
-function srcsetSection(sr: NonNullable<ResourceCardModel['srcset']>): HTMLElement {
+function srcsetSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  const sr = m.srcset!;
+  const children: (Node | string)[] = [];
+
+  // 🔴 We say it FIRST when our model and the browser disagree. `currentSrc` is the
+  // fact; the table below is only an explanation (design §6.2).
+  if (sr.modelDisagrees) {
+    children.push(
+      h('div', { class: 'callout warn' }, [
+        h('b', { text: '⚠️ The browser loaded something other than the rule predicts.' }),
+        h('span', {
+          text: 'The ✔ row is the FACT (currentSrc). Our recomputation is below it as an explanation — a candidate already in the cache, a reduced-data mode, or rounding can all override the rule.',
+        }),
+      ]),
+    );
+  }
+
+  children.push(
+    h('div', { class: 'hint' }, [
+      h('div', { text: `Viewport ${window.innerWidth} css-px · DPR ${sr.dpr}` }),
+      h('div', {
+        text: sr.sizesMissing
+          ? 'sizes: not set → the browser treats the slot as 100vw'
+          : `sizes: ${sr.sizesAttr ?? '—'} → slot ${sr.slotWidthCss === null ? 'not computable' : `${Math.round(sr.slotWidthCss)} css-px`}`,
+      }),
+    ]),
+  );
+
+  if (sr.sources.length > 0) children.push(sourcesTable(sr.sources));
+  children.push(candidatesTable(sr.candidates, sr.dpr));
+  children.push(
+    h('div', {
+      class: 'hint',
+      text: `The browser divides each w-descriptor by the slot width and takes the SMALLEST candidate whose density reaches the DPR (${sr.dpr}).`,
+    }),
+  );
+  children.push(
+    hint(state, 'srcset-model', 'Only ✔ CHOSEN is a fact — it comes from currentSrc. The densities and the "why" column are our reconstruction of the specification, and the browser is allowed to differ from it.'),
+  );
+
+  const details = h('details', sr.candidates.length <= 4 || state.prefs.srcsetExpanded ? { attrs: { open: '' } } : {});
+  details.append(
+    h('summary', { text: `What the browser chose from srcset — ${sr.candidates.length} candidates` }),
+    ...children.map((c) => (typeof c === 'string' ? document.createTextNode(c) : c)),
+  );
+  return h('div', { class: 'sec' }, [details]);
+}
+
+function sourcesTable(sources: NonNullable<ResourceCardModel['srcset']>['sources']): HTMLElement {
   const table = h('table');
   table.append(
-    h('caption', { class: 'sr', text: 'srcset candidates and why the browser chose one' }),
+    h('caption', { text: 'Stage 1 — which <source> of the <picture> won' }),
+    h('thead', {}, [
+      h('tr', {}, [
+        h('th', { attrs: { scope: 'col' }, text: 'type' }),
+        h('th', { attrs: { scope: 'col' }, text: 'media' }),
+        h('th', { attrs: { scope: 'col' }, text: 'Verdict' }),
+      ]),
+    ]),
+  );
+  const tbody = h('tbody');
+  for (const s of sources) {
+    const verdict = s.won
+      ? '✔ WON'
+      : !s.mediaMatches
+        ? '✘ media did not match'
+        : '✘ not reached / format not taken';
+    const row = h('tr', { attrs: { 'data-chosen': String(s.won) } }, [
+      h('td', { text: s.type ?? '—' }),
+      h('td', { text: s.media ?? '—' }),
+      h('td', { text: verdict }),
+    ]);
+    tbody.append(row);
+  }
+  table.append(tbody);
+  return table;
+}
+
+function candidatesTable(candidates: SrcsetVerdict[], dpr: number): HTMLElement {
+  const table = h('table');
+  table.append(
+    h('caption', { text: `Stage 2 — candidates, and why each won or lost (DPR ${dpr})` }),
     h('thead', {}, [
       h('tr', {}, [
         h('th', { attrs: { scope: 'col' }, text: 'Candidate' }),
@@ -499,181 +826,462 @@ function srcsetSection(sr: NonNullable<ResourceCardModel['srcset']>): HTMLElemen
     ]),
   );
   const tbody = h('tbody');
-  for (const v of sr.candidates) tbody.append(candidateRow(v));
-  table.append(tbody);
-
-  const children: (Node | string)[] = [];
-  if (sr.modelDisagrees) {
-    children.push(h('div', { class: 'callout warn' }, [
-      h('div', { text: '⚠️ The browser loaded a different file than the rule predicts.' }),
-      h('div', { class: 'hint', text: 'The fact (currentSrc) is marked ✔ above. Our recomputation is only an explanation — cache or Data Saver can override it.' }),
-    ]));
+  for (const v of candidates) {
+    // Never colour alone: the verdict is a symbol AND a word (WCAG 1.4.1, §11.2).
+    const verdict = v.chosen ? '✔ CHOSEN' : v.modelWinner ? '● our model would pick this' : `✘ ${v.reason}`;
+    tbody.append(
+      h('tr', { attrs: { 'data-chosen': String(v.chosen) } }, [
+        h('td', { text: fileNameOf(v.candidate.url) }),
+        h('td', { text: v.candidate.descriptor }),
+        h('td', { text: v.effectiveDensity === null ? '—' : `× ${v.effectiveDensity.toFixed(2)}` }),
+        h('td', { class: v.chosen ? 'warn' : '', text: verdict }),
+      ]),
+    );
   }
-  const ctx = h('div', { class: 'hint', text:
-    `Slot: ${sr.slotWidthCss ?? '—'} css-px · DPR ${sr.dpr}${sr.sizesAttr ? ` · sizes="${sr.sizesAttr}"` : ' · no sizes → slot = 100vw'}` });
-  return section(`What the browser chose from srcset — ${sr.candidates.length} candidates`, ctx, table, ...children);
+  table.append(tbody);
+  return table;
 }
 
-function candidateRow(v: SrcsetVerdict): HTMLElement {
-  const mark = v.chosen ? '✔ CHOSEN' : v.modelWinner ? '● model pick' : v.reason;
-  const name = v.candidate.url.split('/').pop() ?? v.candidate.url;
-  const row = h('tr', {}, [
-    h('td', { text: name }),
-    h('td', { text: v.candidate.descriptor }),
-    h('td', { text: v.effectiveDensity === null ? '—' : `× ${v.effectiveDensity.toFixed(2)}` }),
-    h('td', { class: v.chosen ? 'warn' : '', text: mark }),
-  ]);
-  return row;
+function fileNameOf(url: string): string {
+  try {
+    const path = new URL(url, location.href).pathname;
+    return path.split('/').pop() || url;
+  } catch {
+    return url;
+  }
 }
 
-function propsSection(m: ResourceCardModel): HTMLElement {
+function propsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
   const dl = h('dl', { class: 'props' });
-  const add = (k: string, v: Node | string): void => { dl.append(h('dt', { text: k }), h('dd', {}, [typeof v === 'string' ? document.createTextNode(v) : v]) ); };
-  add('Type', h('span', {}, [
-    document.createTextNode(m.mime.value),
-    m.mime.certainty === 'guessed-extension' ? h('span', { class: 'hint', text: '  ⓘ by file extension' }) : document.createTextNode(''),
-  ]));
-  if (m.naturalSize) add('Natural', formatDimensions(m.naturalSize.w, m.naturalSize.h));
-  if (m.displayedSize) add('Displayed', `${formatDimensions(m.displayedSize.w, m.displayedSize.h)} css-px · DPR ${m.displayedSize.dpr}`);
-  add('Weight', weightValue(m));
-  if (m.attributes) add('Attributes', Object.entries(m.attributes).map(([k, v]) => `${k}=${v}`).join(' · '));
-  if (m.alt !== undefined) add('alt', `«${m.alt}»`);
+  const add = (k: string, v: Node | string): void => {
+    dl.append(h('dt', { text: k }), h('dd', {}, [typeof v === 'string' ? document.createTextNode(v) : v]));
+  };
+
+  add(
+    'Type',
+    h('span', {}, [
+      document.createTextNode(m.mime.value),
+      ...(m.mime.certainty === 'guessed-extension'
+        ? [h('span', { class: 'hint', text: '  ⓘ guessed from the file extension — the exact MIME is only in the DevTools panel' })]
+        : []),
+    ]),
+  );
+  if (m.declaredType) {
+    add('Declared format', `${m.declaredType} ⓘ claimed by the markup, not verified`);
+  }
+  if (m.naturalSize) add('Natural size', formatDimensions(m.naturalSize.w, m.naturalSize.h));
+  if (m.displayedSize) {
+    const d = m.displayedSize;
+    add('Displayed', `${formatDimensions(d.w, d.h)} css-px · DPR ${d.dpr} → ${formatDimensions(Math.round(d.w * d.dpr), Math.round(d.h * d.dpr))} device px`);
+  }
+  if (m.video?.duration !== undefined && m.video.duration !== null) {
+    add('Duration', formatDuration(m.video.duration));
+  }
+  if (m.video?.frames) {
+    add('Frames', `${m.video.frames.rendered} rendered · ${m.video.frames.dropped} dropped ⓘ getVideoPlaybackQuality()`);
+  }
+
+  // 🔴 Never a fabricated 0: an unmeasured weight is words, and the words name the
+  // reason (design §7 №1, §5.4).
+  const weight = h('span', {}, [document.createTextNode(formatWeight(m.weight, state.prefs.units))]);
+  if (m.weight.kind === 'unmeasured') {
+    weight.append(
+      h('span', { class: 'hint', text: `  ⓘ ${m.weight.reason}` }),
+      hint(state, 'tao', 'The server did not send a `Timing-Allow-Origin` header, so the browser hides the size and the timings of that other origin from this page. The exact size is visible in the DevTools panel (HAR `_transferSize`).'),
+    );
+  }
+  add('Weight', weight);
+
+  add('HTTP status', m.status === null ? 'not measured ⓘ cross-origin without Timing-Allow-Origin' : String(m.status));
+
+  if (m.attributes && Object.keys(m.attributes).length > 0) {
+    add('Attributes', Object.entries(m.attributes).map(([k, v]) => `${k}=${v}`).join(' · '));
+  }
+  if (m.alt !== undefined) add('alt', m.alt === '' ? '(empty — decorative)' : `«${m.alt}»`);
+  add('Selector', m.selector || '—');
   return section('Properties', dl);
 }
 
-function weightValue(m: ResourceCardModel): HTMLElement {
-  const span = h('span', {}, [document.createTextNode(formatWeight(m.weight))]);
-  if (m.weight.kind === 'unmeasured') span.append(h('span', { class: 'hint', text: `  ⓘ ${m.weight.reason} [?]` }));
-  return span;
-}
-
-function requestsSection(m: ResourceCardModel): HTMLElement {
+function requestsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
   const list = h('div', {});
   if (m.requests.length === 0) {
-    list.append(h('div', { class: 'hint', text: 'No request record found (may be cache, cleared timings, or a full buffer).' }));
+    // 🔴 "0 requests" would be a lie; "no record found" is the truth, with the three
+    // reasons it can happen (design §5.3, §7 №9).
+    list.append(
+      h('div', { class: 'hint', text: 'No request record found for this URL. It can mean: the page called performance.clearResourceTimings() (SPA frameworks do); the buffer filled up and the browser stopped recording; or it came from the cache before the buffer was raised.' }),
+    );
   } else {
     for (const g of m.requests) {
-      list.append(h('div', { class: 'row' }, [
-        h('span', { text: `● ${g.host}` }),
-        h('span', { class: 'hint', text: `${g.kind} · ${g.count} request${g.count === 1 ? '' : 's'}${g.crossOrigin ? ' · cross-origin' : ''}` }),
-      ]));
+      list.append(
+        h('div', { class: 'row' }, [
+          h('span', { text: `● ${g.host}` }),
+          h('span', {
+            class: 'hint',
+            text: `${g.kind} · ${g.count} request${g.count === 1 ? '' : 's'}${g.crossOrigin ? ' · cross-origin' : ' · same origin'}`,
+          }),
+        ]),
+      );
     }
-    list.append(h('div', { class: 'hint', text: `initiator type: ${m.initiator.type} · which script — only in DevTools [?]` }));
+    list.append(
+      h('div', { class: 'row' }, [
+        h('span', { class: 'hint', text: `initiator type: ${m.initiator.type} — which script, at which line, is not available outside DevTools` }),
+        hint(state, 'initiator', 'A page can only see the initiator TYPE (img / css / script / fetch). The actual script and line live in the HAR `_initiator`, which no extension API exposes. Open DevTools → the "Assets" panel → reload the page.'),
+      ]),
+    );
   }
-  const title = `Requests that loaded it${m.requestsHeuristic ? ' · heuristic ⓘ' : ''}`;
-  const sec = section(title, list);
-  if (m.requestsHeuristic) sec.append(h('div', { class: 'hint', text: 'Matched by type + host, not by fact. Two players on one page cannot be told apart — exact attribution needs the DevTools panel. [?]' }));
+  const sec = section(
+    `Requests that loaded it${m.requestsHeuristic ? ' — heuristic' : ''}`,
+    list,
+  );
+  if (m.requestsHeuristic) {
+    sec.append(
+      h('div', { class: 'hint', text: '⚠️ Matched by request type and host, not by fact. With two players on one page these cannot be told apart. Exact attribution exists only in the DevTools panel.' }),
+    );
+  }
   return sec;
 }
 
-function redirectsSection(m: ResourceCardModel): HTMLElement {
+function redirectsSection(state: Overlay, m: ResourceCardModel): HTMLElement {
+  // Three genuinely different facts get three different sentences (design §5.7).
   let text: string;
-  if (m.redirects.kind === 'chain') text = `${m.redirects.steps.length} steps (see DevTools panel)`;
-  else if (m.redirects.kind === 'occurred') text = 'A redirect happened — intermediate URLs only in the DevTools panel. [?]';
-  else text = 'unknown — cross-origin without Timing-Allow-Origin. Chain visible only in the DevTools panel. [?]';
-  return section('Redirects', h('div', { class: 'hint', text }));
+  switch (m.redirects.kind) {
+    case 'chain':
+      text = `${m.redirects.steps.length} steps`;
+      break;
+    case 'occurred':
+      text = 'There WAS a redirect (the timings say so). The intermediate URLs are not in Resource Timing at all — only the DevTools panel has them.';
+      break;
+    case 'none':
+      text = 'No redirect.';
+      break;
+    default:
+      text = 'Unknown — this is a cross-origin resource without Timing-Allow-Origin, so the browser will not even tell the page whether a redirect happened. The chain is visible in the DevTools panel.';
+  }
+  return section('Redirects', h('div', { class: 'row' }, [
+    h('span', { class: 'hint', text }),
+    ...(m.redirects.kind === 'unknown' || m.redirects.kind === 'occurred'
+      ? [hint(state, 'redirects', 'Resource Timing only ever reports the FINAL URL. The DevTools HAR keeps the 30x records and the `redirectURL` of each hop — that is why the chain is a panel feature.')]
+      : []),
+  ]));
 }
 
-function mseSections(m: ResourceCardModel): HTMLElement[] {
+function mseSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
   const mse = m.mse!;
   const banner = h('div', { class: 'callout' }, [
-    h('div', { text: 'This video has NO direct URL.' }),
-    h('div', { class: 'hint', text: 'The player assembles it from in-memory segments (MSE). blob: is a pointer to RAM, not a file — there is nothing to open.' }),
+    h('b', { text: 'This video has NO direct URL.' }),
+    h('span', {
+      text: 'The player assembles it in memory from thousands of small segments (Media Source Extensions). There is no single file to point at — that is how adaptive streaming works, and it is a property of the platform, not a limit of this inspector.',
+    }),
   ]);
-  const source = section('Source',
-    (() => { const dl = h('dl', { class: 'props' });
-      dl.append(h('dt', { text: 'currentSrc' }), h('dd', { class: 'url', text: mse.blobUrl }));
-      dl.append(h('dt', { text: 'Mechanism' }), h('dd', { text: 'Media Source Extensions (MSE)' }));
-      if (mse.resolution) dl.append(h('dt', { text: 'Resolution' }), h('dd', { text: `${formatDimensions(mse.resolution.w, mse.resolution.h)} (current quality)` }));
-      if (mse.frames) dl.append(h('dt', { text: 'Frames' }), h('dd', { text: `${mse.frames.rendered} rendered · ${mse.frames.dropped} dropped ⓘ` }));
-      return dl; })(),
+
+  const dl = h('dl', { class: 'props' });
+  dl.append(h('dt', { text: 'currentSrc' }), h('dd', { class: 'url', text: mse.blobUrl || '(none)' }));
+  dl.append(h('dt', { text: 'Mechanism' }), h('dd', { text: 'Media Source Extensions (MSE)' }));
+  if (mse.resolution) {
+    dl.append(
+      h('dt', { text: 'Resolution' }),
+      h('dd', { text: `${formatDimensions(mse.resolution.w, mse.resolution.h)} — the current quality; the player changes it on the fly` }),
+    );
+  }
+  if (mse.frames) {
+    dl.append(
+      h('dt', { text: 'Frames' }),
+      h('dd', { text: `${mse.frames.rendered} rendered · ${mse.frames.dropped} dropped` }),
+    );
+  }
+  const source = section('Source', dl);
+
+  const drm = section(
+    'Content protection',
+    h('div', {}, [
+      h('div', { text: mse.drmActive ? 'DRM detected: EME is active (video.mediaKeys is set).' : 'No EME detected on this element.' }),
+      h('div', {
+        class: 'hint',
+        // 🔴 We show the FACT (EME active), never a guessed system name. Naming it
+        // would require hooking requestMediaKeySystemAccess() before the player
+        // starts, i.e. a script on every site — a permission we do not ask for
+        // (design §2.3, §7 №6). PLAN-2 §4.4's "DRM: Widevine" is not achievable and
+        // is not printed.
+        text: 'Decryption happens inside the browser’s own content decryption module — a binary component. No extension, and no other JavaScript, ever sees decrypted frames. We do not print the name of the protection system: learning it would require running a script on every site before the player starts, and we do not ask for that permission.',
+      }),
+    ]),
   );
-  const drm = section('Content protection', h('div', {}, [
-    h('div', { text: mse.drmActive ? 'DRM detected: EME active (video.mediaKeys ≠ null)' : 'No EME detected' }),
-    h('div', { class: 'hint', text: 'Decryption runs in the browser’s CDM binary — no extension or other JS sees decrypted frames. The system name (Widevine/PlayReady/FairPlay) is NOT shown: knowing it needs a script on every site before the player starts, which we do not request.' }),
-  ]));
-  const explain = section('Why it works this way', h('div', { class: 'hint', text: 'Streaming is thousands of small segments instead of one file, so quality can adapt on the fly. This is how the platform is built — not a limit of the inspector.' }));
-  return [banner, source, drm, requestsSection(m), explain];
+
+  const explain = section(
+    'Why it works this way',
+    h('div', {
+      class: 'hint',
+      text: 'Streaming means thousands of small segments instead of one file, so quality can adapt to the network in real time. The manifest may appear in the request list below as a fact about the page — this inspector never opens it and never parses it.',
+    }),
+  );
+
+  return [banner, source, drm, requestsSection(state, m), explain];
 }
 
-function iframeSections(m: ResourceCardModel): HTMLElement[] {
+function iframeSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
   const f = m.iframe!;
-  const banner = h('div', { class: 'callout' }, [
-    h('div', { text: 'We do not look inside this frame.' }),
-    h('div', { class: 'hint', text: `It is loaded from ${hostOf(f.src)}, a different origin than the page. The browser isolates other origins — neither an extension nor the page’s own scripts can see its contents. This is protection, not breakage.` }),
-  ]);
-  const dl = h('dl', { class: 'props' });
-  dl.append(h('dt', { text: 'Frame URL' }), h('dd', { class: 'url', text: f.src }));
-  dl.append(h('dt', { text: 'Size' }), h('dd', { text: `${formatDimensions(f.size.w, f.size.h)} css-px` }));
-  for (const [k, v] of Object.entries(f.attributes)) dl.append(h('dt', { text: k }), h('dd', { text: v }));
-  const next = section('What you can do', h('div', { class: 'hint', text: 'Open the frame URL in a new tab (↗ above) — there it becomes an ordinary page and the inspector works as everywhere.' }));
-  return [banner, urlSection(m), dl, next];
+  const out: HTMLElement[] = [];
+
+  if (!f.sameOrigin) {
+    // The best screen in the product: a dead end turned into a next step (design §4.8).
+    out.push(
+      h('div', { class: 'callout' }, [
+        h('b', { text: 'We do not look inside this frame.' }),
+        h('span', {
+          text: `It is loaded from ${hostOf(f.src) || 'another origin'}, while the page is ${location.hostname}. The browser isolates origins from each other: neither an extension nor the page’s own scripts can see inside. That is protection, not breakage.`,
+        }),
+      ]),
+    );
+  } else {
+    out.push(
+      h('div', { class: 'callout' }, [
+        h('b', { text: 'Same-origin frame.' }),
+        h('span', { text: 'This frame shares the page’s origin. Re-run the picker inside it to inspect its elements.' }),
+      ]),
+    );
+  }
+
+  out.push(urlSection(state, m));
+  out.push(propsSection(state, m));
+  out.push(requestsSection(state, m));
+  if (!f.sameOrigin) {
+    out.push(
+      section(
+        'What you can do',
+        h('div', {
+          class: 'hint',
+          text: 'Open the frame URL in a new tab (the button above). There it becomes an ordinary page, and the inspector works exactly as it does everywhere else.',
+        }),
+      ),
+    );
+  }
+  return out;
 }
 
 function noResourceSections(m: ResourceCardModel): HTMLElement[] {
-  const banner = h('div', { class: 'callout' }, [
-    h('div', { text: 'This element has NO loaded resource.' }),
-    h('div', { class: 'hint', text: `It is painted by CSS: ${m.cssRule ?? 'a style rule'} — code in the stylesheet, not a file.` }),
-  ]);
-  return [banner, requestsSection(m)];
+  const out: HTMLElement[] = [
+    h('div', { class: 'callout' }, [
+      h('b', { text: 'This element has NO loaded resource.' }),
+      h('span', { text: `It is painted by CSS: ${m.cssRule ?? 'a style rule'} — code in a stylesheet, not a file.` }),
+    ]),
+  ];
+  if (m.nestedHint) {
+    out.push(
+      h('div', { class: 'hint', text: `There IS a resource on a nested element: ${m.nestedHint}. Press R in the picker to jump to the nearest one.` }),
+    );
+  }
+  if (m.closedShadow) {
+    out.push(
+      h('div', { class: 'callout warn' }, [
+        h('b', { text: 'This element renders content we cannot reach.' }),
+        h('span', {
+          text: 'It is a custom element with nothing in its light DOM, which means its content lives in a CLOSED shadow root. The browser hides those from every script — this extension included. That is the site’s decision, not a limitation of the inspector.',
+        }),
+      ]),
+    );
+  }
+  return out;
 }
 
-/** "Copy as JSON / Markdown" — clipboard ONLY. 🔴 Never a file (design §0 И2). */
-function copyAsButton(m: ResourceCardModel): HTMLElement {
-  const btn = h('button', { class: 'act', text: 'Copy as JSON ⌄' });
+function dataUriSections(state: Overlay, m: ResourceCardModel): HTMLElement[] {
+  const d = m.dataUri!;
+  const out: HTMLElement[] = [
+    h('div', { class: 'callout' }, [
+      h('b', { text: 'The bytes are embedded in the page.' }),
+      h('span', { text: 'A data: URI carries its own content — no network request was ever made for it, so it does not appear in the request list, and it never will.' }),
+    ]),
+  ];
+  const dl = h('dl', { class: 'props' });
+  dl.append(h('dt', { text: 'Prefix' }), h('dd', { class: 'url', text: d.prefix }));
+  dl.append(h('dt', { text: 'Length' }), h('dd', { text: `${d.length.toLocaleString()} characters` }));
+  dl.append(h('dt', { text: 'Head' }), h('dd', { class: 'url', text: `${d.head}…` }));
+  out.push(section('Embedded data', dl));
+  out.push(propsSection(state, m));
+  if (m.overweight) out.push(overweightSection(m));
+  return out;
+}
+
+/* ---- Hints, copy, drag --------------------------------------------- */
+
+/**
+ * The ONLY form of "you'd see more in DevTools" allowed by the design: a quiet [?]
+ * next to the missing value, at the moment it is missing. 🔴 No banners, no toasts,
+ * no badge on the icon, no repeated nagging (design §1.3). Dismissed once → never
+ * shown again (Options can bring them back).
+ */
+function hint(state: Overlay, id: string, text: string): HTMLElement {
+  if (!state.prefs.hints || state.prefs.hintsDismissed.includes(id)) return h('span');
+  const wrap = h('span');
+  const btn = h('button', {
+    class: 'hint-btn',
+    text: '[?]',
+    attrs: { type: 'button', 'aria-expanded': 'false', 'aria-label': 'Why is this value missing?' },
+  });
+  const body = h('div', { class: 'hint-body', attrs: { hidden: '' } }, [
+    h('div', { text }),
+  ]);
+  const dismiss = h('button', { class: 'hint-btn', text: 'Don’t show these hints again', attrs: { type: 'button' } });
+  dismiss.addEventListener('click', () => {
+    body.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', 'false');
+    const dismissed = [...state.prefs.hintsDismissed, id];
+    state.prefs = { ...state.prefs, hintsDismissed: dismissed };
+    void assetsPrefsItem.getValue().then((p) => assetsPrefsItem.setValue({ ...p, hintsDismissed: dismissed }));
+  });
+  body.append(dismiss);
   btn.addEventListener('click', () => {
-    const json = JSON.stringify(
-      { elementLabel: m.elementLabel, currentSrc: m.currentSrc, mime: m.mime, weight: m.weight },
-      null, 2,
-    );
-    void navigator.clipboard.writeText(json).then(
-      () => { btn.textContent = 'Copied ✓'; setTimeout(() => (btn.textContent = 'Copy as JSON ⌄'), 1500); },
-      () => { btn.textContent = 'Copy failed'; },
-    );
+    const open = body.hasAttribute('hidden');
+    if (open) body.removeAttribute('hidden');
+    else body.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  wrap.append(btn, body);
+  return wrap;
+}
+
+/**
+ * 🔴 Export is the CLIPBOARD, always. No file is ever written: no `downloads`
+ * permission, no `<a download>`, no `URL.createObjectURL` (design §0 И2). The word
+ * "save" does not appear here, in an aria-label or in a tooltip — a "Save" button
+ * next to a media URL is the screenshot we never want a reviewer to see.
+ */
+function copyAsJsonButton(m: ResourceCardModel): HTMLElement {
+  const btn = h('button', { class: 'act', text: 'Copy as JSON', attrs: { type: 'button' } });
+  btn.addEventListener('click', () => {
+    const payload = {
+      element: m.elementLabel,
+      selector: m.selector,
+      currentSrc: m.currentSrc,
+      mime: m.mime,
+      declaredType: m.declaredType ?? null,
+      naturalSize: m.naturalSize ?? null,
+      displayedSize: m.displayedSize ?? null,
+      overweight: m.overweight ?? null,
+      weight: m.weight,
+      status: m.status,
+      initiator: m.initiator,
+      requests: m.requests,
+      redirects: m.redirects,
+      srcset: m.srcset
+        ? {
+            slotWidthCss: m.srcset.slotWidthCss,
+            dpr: m.srcset.dpr,
+            sizes: m.srcset.sizesAttr,
+            candidates: m.srcset.candidates.map((c) => ({
+              url: c.candidate.url,
+              descriptor: c.candidate.descriptor,
+              effectiveDensity: c.effectiveDensity,
+              chosen: c.chosen,
+              modelWinner: c.modelWinner,
+            })),
+            modelDisagrees: m.srcset.modelDisagrees,
+          }
+        : null,
+    };
+    void copyText(JSON.stringify(payload, null, 2), btn, 'Copy as JSON');
   });
   return btn;
 }
 
-function makeDraggable(card: HTMLElement, handle: HTMLElement): void {
-  handle.addEventListener('mousedown', (e: MouseEvent) => {
-    const startX = e.clientX; const startY = e.clientY;
+async function copyText(text: string, btn: HTMLElement, restore: string): Promise<void> {
+  const done = (label: string): void => {
+    btn.textContent = label;
+    setTimeout(() => { btn.textContent = restore; }, 1500);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done('Copied ✓');
+  } catch {
+    // Fallback for an unfocused document / older Firefox: a textarea inside OUR
+    // closed shadow root + execCommand. Deprecated, but it needs no permission and
+    // never touches the page's DOM (design §4.4).
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('aria-hidden', 'true');
+    btn.parentElement?.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    done(ok ? 'Copied ✓' : 'Copy failed');
+  }
+}
+
+function makeDraggable(card: HTMLElement, handle: HTMLElement, state: Overlay): void {
+  handle.addEventListener('pointerdown', (e: PointerEvent) => {
+    if ((e.target as Element).closest('button')) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
     const rect = card.getBoundingClientRect();
-    const onMove = (ev: MouseEvent): void => {
+    handle.setPointerCapture(e.pointerId);
+
+    const onMove = (ev: PointerEvent): void => {
       card.style.transform = 'none';
-      card.style.left = `${rect.left + (ev.clientX - startX)}px`;
-      card.style.top = `${rect.top + (ev.clientY - startY)}px`;
+      card.style.left = `${clamp(rect.left + (ev.clientX - startX), 0, window.innerWidth - 60)}px`;
+      card.style.top = `${clamp(rect.top + (ev.clientY - startY), 0, window.innerHeight - 40)}px`;
     };
     const onUp = (): void => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      // TODO_LOGIC: persist cardPosition (coords only) via cardPositionItem.
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      // 🔴 COORDINATES ONLY. Never the URL, never the host, never anything about the
+      // page (design §3, §9.3).
+      const r = card.getBoundingClientRect();
+      void cardPositionItem.setValue({ x: Math.round(r.left), y: Math.round(r.top) });
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
+    handle.addEventListener('pointermove', onMove, { signal: state.abort.signal });
+    handle.addEventListener('pointerup', onUp, { signal: state.abort.signal });
+  }, { signal: state.abort.signal });
+}
+
+async function restorePosition(card: HTMLElement): Promise<void> {
+  Object.assign(card.style, { left: '50%', top: '8vh', transform: 'translateX(-50%)' });
+  try {
+    const pos = await cardPositionItem.getValue();
+    if (!pos) return;
+    Object.assign(card.style, {
+      left: `${clamp(pos.x, 0, window.innerWidth - 60)}px`,
+      top: `${clamp(pos.y, 0, window.innerHeight - 40)}px`,
+      transform: 'none',
+    });
+  } catch {
+    /* keep the centred default */
+  }
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
 }
 
 export default defineContentScript({
-  // 🔴 registration:'runtime' → NOT in the manifest, NOT auto-injected on any page.
-  // The background injects this on a user gesture under activeTab (design §1.4, §13
-  // №7). matches is required by the type but is inert for runtime registration.
+  // 🔴 registration:'runtime' → NOT in the manifest's content_scripts, NOT injected
+  // on any page automatically. The background injects it on a user gesture under
+  // activeTab. That is what buys us a permission set with no install warning
+  // (design §1.4, §13 №7).
   matches: ['*://*/*'],
   registration: 'runtime',
   runAt: 'document_idle',
   main() {
-    // Raise the Resource Timing buffer FIRST, before any UI, so later requests are
-    // at least recorded (design §4.1 step 3, §10.5). Effect is on the next load.
-    try {
-      performance.setResourceTimingBufferSize(1500);
-    } catch {
-      // Not available / already large — harmless.
+    // Raise the Resource Timing cap FIRST, before any UI (design §4.1 step 3). The
+    // default is applied synchronously; boot() re-applies the user's pref once
+    // storage answers. ⚠️ This can only help FUTURE requests: an overflowed buffer
+    // has already thrown the late entries away, and nothing brings them back.
+    raiseBuffer(DEFAULT_PREFS.bufferSize);
+
+    // ⚠️ main() runs again on EVERY executeScript. Registering the message listener
+    // unguarded would add a second, third, fourth… listener on every toolbar click —
+    // the classic re-injection leak. One flag, set once per document, and it is
+    // deliberately NOT the same flag as ACTIVE_FLAG (which is cleared on teardown).
+    const globals = window as unknown as Record<string, unknown>;
+    if (!globals[LISTENER_FLAG]) {
+      globals[LISTENER_FLAG] = true;
+      browser.runtime.onMessage.addListener((msg: InspectorStartMessage) => {
+        if (msg?.type === 'assets:start') void boot(msg);
+      });
     }
-    // Start on inject, and also on the background's assets:start message (carries
-    // the context-menu srcUrl). ONLY the picked URL ever leaves the page, and only
-    // on user action (design §9.3).
-    browser.runtime.onMessage.addListener((msg: { type?: string }) => {
-      if (msg?.type === 'assets:start') boot();
-    });
-    boot();
+    void boot();
   },
 });

@@ -1,40 +1,44 @@
-import { MOCK, mockAsync, todoLogic } from '@blur/ui';
-import { MOCK_SCHEMA_ERRORS } from './mock-data';
-import type { SchemaError } from './types';
-import type { SchemaDraftPref } from './storage';
-
-// JSON Schema validation — STUBBED on mocks for the scaffold phase.
+// JSON Schema validation (design §2.8, §4.5).
 //
-// Validator (design §2.8, §10.2): `@cfworker/json-schema` — NOT ajv. ajv builds
-// validators with `new Function()`, which MV3 CSP forbids; @cfworker evaluates
-// the schema without codegen. Consequences to surface honestly (design §4.5):
-//   - external `$ref` (https URL) → EXPLICIT error, not a silent skip (no network).
-//   - `format:` is an annotation, checked only when the pref is on.
-//   - run in a Worker with a 5s timeout → `worker.terminate()` on a runaway
-//     `pattern` (ReDoS), with an honest "validation was cancelled" message.
+// Validator: `@cfworker/json-schema` — NOT ajv. ajv compiles schemas with
+// `new Function()`, which MV3's CSP forbids outright; there is no flag, no
+// workaround, and a manifest `sandbox` page (the usual escape hatch) does not
+// exist in Firefox (design §10.2). @cfworker evaluates the schema instead of
+// generating code, so it runs under the strict CSP unchanged.
+//
+// The validation itself runs in the Worker with a 5 s budget: a schema is
+// user-supplied, and a `pattern` with catastrophic backtracking is a ReDoS that
+// no amount of care in *our* code prevents. `terminate()` is the only cure
+// (utils/worker/client.ts).
+
+import { runJob, type RunningJob } from './worker/client';
+import { sourceOf } from './format';
+import type { ValidateResponse } from './worker/protocol';
+import type { DevdataPrefs } from './storage';
+import type { ParsedDoc, SchemaIssue } from './types';
 
 export interface SchemaValidation {
   valid: boolean;
-  errors: SchemaError[];
+  errors: SchemaIssue[];
+  /** What was and was NOT checked — shown, never assumed (design §4.5). */
+  notes: string[];
 }
 
-/** Validate `dataText` against `schemaText`. Stubbed. */
-export async function validateSchema(
-  dataText: string,
+export function validateSchema(
+  doc: ParsedDoc,
   schemaText: string,
-  draft: SchemaDraftPref,
-): Promise<SchemaValidation> {
-  if (!MOCK) {
-    // TODO_LOGIC: devdata — validate via @cfworker/json-schema in a Worker with
-    // a 5s timeout; map errors to { instancePath, message, schemaPath }; reject
-    // external $ref with an explicit message (design §4.5).
-    throw todoLogic('devdata: validate JSON Schema');
-  }
-  void dataText;
-  void draft;
-  if (schemaText.trim() === '') {
-    return mockAsync({ valid: true, errors: [] }, 200);
-  }
-  // Exercise the loading + Cancel state (design §5.1) against mock errors.
-  return mockAsync({ valid: false, errors: MOCK_SCHEMA_ERRORS }, 700);
+  prefs: DevdataPrefs,
+): RunningJob<SchemaValidation> {
+  const job = runJob<ValidateResponse>({
+    op: 'validate',
+    source: sourceOf(doc, prefs),
+    schemaText,
+    draft: prefs.schemaDraft,
+    checkFormats: prefs.schemaFormats,
+  });
+
+  const promise = job.promise.then(
+    (r): SchemaValidation => ({ valid: r.valid, errors: r.errors, notes: r.notes }),
+  );
+  return { promise, cancel: job.cancel };
 }

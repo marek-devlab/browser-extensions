@@ -1,125 +1,143 @@
-# Page Content Exporter — implementation notes (scaffold phase)
+# Page Content Exporter — implementation notes
 
-UI-complete scaffold of extension #7 (`docs/design/export.md`, PLAN-2 §3 / §10.2).
-Surfaces, navigation, and settings persistence are real; domain logic is stubbed on
-realistic mock data. This file is the map: surfaces, real-vs-mocked, every
-`TODO_LOGIC`, the wiring tasks, and the design-section mapping.
+Extension #7 (`docs/design/export.md`, PLAN-2 §3 / §10.2, TODO §G).
+**Status: the logic is real.** No mock data, no `TODO_LOGIC`, no `<MockBadge>`
+anywhere — `grep -r "TODO_LOGIC\|MOCK" utils entrypoints` returns nothing.
 
 ## Surface map
 
-| Surface | File | Real? | Notes |
-|---|---|---|---|
-| Context-menu tree | `entrypoints/background.ts` | **REAL** | Exact tree from design §2.1 (one root + per-context children). Registered on install/startup. |
-| Menu → routing | `entrypoints/background.ts` `handleMenuClick` | **REAL wiring** | "Open image in new tab" (`tabs.create`) and "Settings" (`openOptionsPage`) fully work; the rest calls `injectEngine` (stub payload). |
-| Injected picker overlay | `entrypoints/engine.ts` | **REAL UI, stub logic** | Closed shadow root, keyboard-operable, aria-live, focus-visible, zero innerHTML. Renders mock candidates; scan + confirm are `TODO_LOGIC`. |
-| Second-stage xlsx | `entrypoints/xlsx.ts` | **STUB** | No-op; documents the second-injection rationale. |
-| Popup inventory | `entrypoints/popup/` | **REAL layout, mock data** | Selection / tables / images / iframe + shadow warnings / empty state (demo toggle). |
-| Preview dialog | `utils/preview-dialog.tsx` + `entrypoints/preview/` | **REAL UI on mock table** | Format, filename (live sanitizer), CSV knobs, headers, column include/type, raw-bytes tab, formula-guard highlight, merged-cell notice. |
-| Options | `entrypoints/options/` | **REAL persistence** | Every control writes `prefsItem`. Tabs: Таблицы / Текст / Имена файлов / О расширении. `downloads` opt-in via `permissions.request`. |
-| Theme | `utils/theme.ts` + `@blur/ui` | **REAL** | `useThemeController` + `seedTheme('blur-export:theme')`, flash-free. |
-| Storage | `utils/storage.ts` | **REAL** | `sync:prefs`, version 1. |
-
-## Real logic implemented (not stubs)
-
-- **`utils/csv-guard.ts`** — CSV-injection guard (design §8.3): a cell whose
-  trimmed first char is `= + - @` / TAB / CR is prefixed with `'`, **except** valid
-  numbers (`-5`, `+3.14`, `-1 234,56`) which are never escaped. Plus RFC-4180
-  quoting, `sep=` line, EOL, and the mandatory **BOM** (PLAN-2 §3.2). The preview's
-  "raw bytes" tab shows the actual output of this module.
-- **`utils/filename.ts`** — sanitizer (design §8.2): strips bidi/RTL-override and
-  control chars, replaces path separators, collapses `..` traversal, NFC-normalizes,
-  optional Cyrillic translit, neutralizes reserved Windows names (incl. `CON.csv`),
-  trims trailing dots/spaces, clamps to 80, `export` fallback. Extension is added
-  from the FORMAT, never from user input. Demonstrated live in the options
-  "Имена файлов" tab and the preview filename.
-
-## Every TODO_LOGIC (the backlog — `grep -r TODO_LOGIC`)
-
-| Location | What it must do | Design |
+| Surface | File | Notes |
 |---|---|---|
-| `utils/table-extract.ts` `scanPageInventory` | Real scan: `deepQuerySelectorAll('table')` (@blur/core) + data-vs-layout scoring + `Intl.Segmenter` selection count | §4.2 / §1.2 |
-| `utils/table-extract.ts` `extractTable` | Build the grid **matrix** honouring colspan/rowspan (anchor+shadow, clamp runaway), headers/caption/links/`<br>`/checkboxes, conservative number parse | §6.1–6.7 |
-| `utils/table-extract.ts` `extractSelection` | `getSelection().getRangeAt(0).cloneContents()` → `DocumentFragment` → `TreeWalker` → Markdown. 🔴 zero innerHTML; handle truncated nodes | §4.1 / §8.1 |
-| `utils/file-writer.ts` `saveTextFile` | Blob + `<a download>` + the cross-origin ladder + revoke (60 s & `pagehide`) | §5.9 / §9.4 |
-| `utils/file-writer.ts` `saveXlsxFile` | `write-excel-file` → typed-cell Blob; refuse >200k cells / >1,048,576 rows | §9.1 |
-| `utils/file-writer.ts` `copyImageUrl` | `clipboard.writeText` with `execCommand` fallback; `currentSrc` for `srcset` | §4.3 / §5.6 |
-| `entrypoints/engine.ts` (candidates) | Replace mock candidate list with the real scan | §4.2 |
-| `entrypoints/engine.ts` `confirmPick` | Extract chosen table + mount the preview dialog **on the page** in a closed shadow root | §2.3 |
-| `entrypoints/xlsx.ts` | `import('write-excel-file')`, receive grid, produce Blob, size guards | §0 / §9.1 |
-| `entrypoints/background.ts` `injectEngine` | Deliver the `EngineCommand` to the injected engine and route its result (toast / preview / picker) | §4 |
-| `entrypoints/background.ts` onInstalled | Dedicated one-screen onboarding page (currently opens options) | §1.2 |
+| Context-menu tree | `entrypoints/background.ts` | Exact tree from design §2.1 (one root + per-context children). ⚠️ Feature-detected: absent on Firefox for Android. |
+| Menu → routing | `entrypoints/background.ts` | Injects `engine.js` under the `activeTab` grant, then `tabs.sendMessage`s the command. `frameId` honoured for same-origin iframes (§4.1). |
+| Privileged services | `entrypoints/background.ts` `serve()` | The engine has no `tabs`/`downloads`/`permissions`/`scripting` — it asks the background for all four. |
+| Injected engine | `entrypoints/engine.ts` | Scan, selection read, picker, dialog, toasts, image actions. Idempotent (§9.5). |
+| Second-stage xlsx | `entrypoints/xlsx.ts` | `write-excel-file` → typed-cell `Blob`. Injected **only** when `.xlsx` is chosen. |
+| Picker overlay | `utils/picker.ts` | Generic: tables **and** images. Closed shadow root, keyboard-first, zero innerHTML. |
+| Export dialog | `utils/export-dialog.ts` | The core screen (§2.3), mounted **on the page** — that is where the bytes are born. |
+| Popup inventory | `entrypoints/popup/` | Live scan on open. **Also the complete mobile UI** (see below). |
+| `save.html` | `entrypoints/save/` | The §5.5 escape hatch: rebuild the Blob on **our** origin when the site's CSP forbids downloads. |
+| Options | `entrypoints/options/` | Every control persists; `downloads` opt-in/opt-out via `permissions.request`/`remove`. |
 
-## Wiring task — the cross-origin `<a download>` ladder (design §5.9)
+## 🔴 Blocker 1 — `<a download>` is ignored cross-origin
 
-`saveTextFile` / image save must try, in order:
+`utils/file-writer.ts`. `<a download>` **silently drops the `download` attribute for
+cross-origin `href`s** and the browser *navigates* there instead of saving. A naive
+implementation therefore throws the user's page away and writes no file.
 
-1. **same-origin** resource → `<a download>` works → done.
-2. **CORS-enabled** resource → `fetch(url)` returns a body with
-   `Access-Control-Allow-Origin` → `Blob` → `<a download>` → done.
-3. **otherwise** → 🔴 honest refusal. `<a download>` ignores the `download`
-   attribute for cross-origin URLs (the browser navigates instead of saving), so
-   show: "the browser won't save an image from `cdn…` without the Downloads
-   permission — [Open image] or [Enable permission]".
+The ladder (`saveImage`), in order:
 
-Plus the Blob-URL lifecycle: collect every created URL in a `Set`; revoke via
-`setTimeout(60_000)` **and** on `pagehide`; 🔴 never revoke immediately after
-`.click()` (Firefox race). If `downloads` is later granted, revoke on
-`downloads.onChanged` (`complete`/`interrupted`) instead of the timer.
+1. **same-origin** (or `data:`) → `<a download>` is honoured → done.
+2. **`downloads` permission already granted** (optional, opt-in) → `downloads.download()`
+   from the background — the only API that can save a cross-origin URL outright.
+3. **cross-origin with CORS** → `fetch(url, {mode:'cors', credentials:'omit'})` → `Blob`
+   → `blob:` URL (which **is** same-origin with the page, so the attribute is honoured
+   again) → `<a download>`. **This is the only network request the extension can make**,
+   and it fetches exactly the asset the user asked for.
+4. **otherwise** → 🔴 **honest refusal.** We do *not* click the anchor. The toast names
+   the domain, explains that the attribute is ignored and that clicking would have
+   navigated instead of saved, and offers *[Открыть картинку]* / *[Включить разрешение…]*.
 
-The CSP-blocked fallback (§5.5) reuses the `preview.html` extension page: stash the
-bytes in `storage.session`, open our own page (our origin, our CSP), build the Blob
-there. The preview surface already renders on our origin, so it doubles as this
-route.
+Bytes **we** generate (csv/md/txt/xlsx) are always `blob:` URLs of the page's own
+origin, so they always take rung 1. Only remote images can reach rung 4.
 
-## Libraries to wire
+**Blob-URL lifecycle** (§9.4): every URL goes into a `Set`; revoked at **60 s** *and* on
+`pagehide`. 🔴 Never right after `.click()` — Firefox has not started the download yet and
+would cancel it silently.
 
-| Package | Why | When it loads |
-|---|---|---|
-| `write-excel-file` (MIT) | `.xlsx` — typed cells are formula-immune (§8.3) | injected as `xlsx.js`, **only** when `.xlsx` chosen (§0) |
-| `fflate` (MIT) | transitive dep of write-excel-file; reused for v2 ZIP | with `write-excel-file` |
-| — (no lib) | CSV: hand-rolled RFC-4180 + BOM (`csv-guard.ts`) — **done** | n/a |
-| — (no lib) | Markdown: own converter (turndown does `innerHTML` → AMO flag, §8.1) | `TODO_LOGIC` |
-| 🔴 SheetJS / exceljs | rejected (left npm / abandoned) — PLAN-2 §3.2 | never |
+## 🔴 Blocker 2 — CSV injection
 
-## Storage & the design §3 discrepancy
+`utils/csv-guard.ts`. A cell whose first non-space char is `=` `+` `-` `@` `TAB` `CR` is
+executed as a **formula** by Excel/LibreOffice/Sheets — and the source is an arbitrary web
+page, i.e. untrusted by definition.
 
-`utils/storage.ts` puts the small scalar prefs in **`sync`** (per the build brief:
-delimiter, encoding, formula-guard, filename template, default format, theme — all
-well under the 8 KB per-item cap) and reserves `local` for anything growable.
-Design §3 argues for `local`-only ("sync never") because of growable lists; this
-scaffold has **no** growable list and keeps that door explicitly closed in a
-comment. Revisit before release if any pref becomes a list (filename history,
-per-site defaults).
+- Default `csvFormulaGuard = 'escape'` → prefix `'`.
+- 🔴 **Except valid numbers.** `isPlainNumber` clears `-5`, `+3.14`, `-1 234,56`,
+  `−0,22` (U+2212). Escaping those is *the* bug in other implementations: every negative
+  rate in an accounting table becomes `'-5`.
+- Modes `keep` (data untouched) and `warn` (blocks Save until acknowledged) exist, and the
+  dialog shows the exact count plus the **raw-bytes tab** where `'=2+2` is visible.
+- ✅ **`.xlsx` is structurally immune** — in OOXML a formula is an `<f>` element and we
+  only ever emit typed string/number cells. That, not "richer format", is why `.xlsx` is
+  the recommended default, and the dialog and options say so in those words.
 
-## House-convention compliance
+## Mobile (Firefox for Android)
 
-- 🔴 **Zero `innerHTML`** anywhere: the on-page overlay uses `createElement` +
-  `textContent` + `append`; React auto-escapes; page data reaches the UI only as
-  text.
-- No persistent content script, no host permissions, `downloads` optional (§0).
-- `@blur/ui` for tokens/theme/primitives/mock helpers; `<MockBadge/>` on the popup
-  and preview; `todoLogic('export: …')` in every stub; `mockAsync` for loading.
-- `#imports` / `wxt/browser`; Firefox gecko id `export@blockaly.com` +
-  `data_collection_permissions: { required: ['none'] }` + `gecko_android: {}`.
-- Icons: `public/icon/.gitkeep` + TODO (no PNGs generated).
+⚠️ On Android, `browser.contextMenus` **does not exist** and there is no right-click at
+all (and Chrome for Android has no extensions). So:
 
-## Build order (when logic lands)
+- `background.ts` **feature-detects** `browser.contextMenus?.create` — never a UA sniff —
+  and simply registers no menus when it is absent.
+- **Every** context-menu capability is also in the popup: export selection to `.md`/`.txt`,
+  copy as Markdown, open a table's dialog, "выбрать на странице", "все таблицы", and
+  **"выбрать картинку на странице"** (`pickImage`) → the same three image actions
+  (copy URL / open / save) that the image context menu offers. No dead feature.
+- Popup width is `min(360px, 100vw)`; every control is ≥44 px; hover is never the only
+  affordance (`:focus-visible` carries the same styling); the on-page overlay is
+  responsive to 360 px.
+- The download ladder degrades identically on Android — rung 4's refusal is the same
+  honest toast.
 
-1. `types.ts` (done) → 2. `csv-guard.ts` + `filename.ts` (done, real) →
-3. `table-extract.ts` scan+matrix → 4. `engine.ts` overlay→preview mount →
-5. `file-writer.ts` ladder → 6. `xlsx.ts` writer → 7. background payload delivery →
-8. `compile` + `build` (+ firefox), verify write-excel-file is absent from
-`engine.js`/popup/background chunks (only in `xlsx.js`).
+## Table semantics (design §6)
 
-## Not honored in a scaffold (called out honestly)
+- **Grid matrix** with anchor + shadow cells for `colspan`/`rowspan`; runaway spans clamped
+  (`MAX_SPAN`/`MAX_COLS`) so `colspan="9999"` cannot birth 10 000 columns.
+- **Headers**: `<thead>` → all-`<th>` first row → `th[scope=col]` → else none (and then the
+  dialog's "первая строка — заголовки" toggle defaults to **off**, so a data row is never
+  eaten). Multi-level headers join with ` / `; empties become `Колонка N`; dupes get ` (2)`.
+- **Nested tables**: flattened to `a / b · c · d` and *flagged* (`⊞`). 🔴 Never expanded
+  into extra parent rows.
+- **Numbers**: conservative. `1,234` is ambiguous → stays **text**. Percent/currency stay
+  text. `parseDates` is off by default because `05.06` is unresolvable.
+- **Cells**: `<br>`→`\n`, `<img>`→`alt`, checkbox→`да`/`нет`, `<select>`→ chosen option,
+  `<button>`/`<svg>`→ empty, hidden sr-only text skipped. `textContent` + normalization,
+  never `innerText` (which forces a reflow per cell).
+- **Size guards**: >50 k cells → chunked + warned; >200 k → `.xlsx` refused with CSV
+  offered; >1 048 576 rows → refused (Excel's own limit, and we say so).
 
-- The preview dialog is rendered as an **extension page** (`preview.html`) for
-  viewability; production mounts the same component **on the page** in a closed
-  shadow root (§2.3). Component is shared, so this is a mounting-point swap.
-- The picker overlay renders a **mock** candidate list; live table detection,
-  nested-table "вложена в ①" relationships, and cross-origin-frame greying (§2.2/
-  §5.7) are `TODO_LOGIC`.
-- Menu items beyond "open image"/"settings" wire to a stubbed injection — no file
-  is actually produced yet.
-- Firefox `menus.getTargetElement` precise targeting (§13 open question) is not
-  attempted.
+## Security posture
+
+- 🔴 **Zero `innerHTML`/`outerHTML`/`insertAdjacentHTML`/`eval`** in our source
+  (`grep` confirms only comments match). The on-page UI is `createElement` +
+  `textContent`; React auto-escapes; the manual-copy dialog uses `textarea.value`.
+- 🔴 **No `turndown`** — its `RootNode` does `div.innerHTML = input` and the AMO linter
+  flags bytes, not code paths. `utils/selection-md.ts` is our own fragment walker.
+- **Filenames** (`utils/filename.ts`): bidi/RTL-override stripped (the `отчет‮exe.xslx`
+  vector), control chars, path separators, `..` traversal, reserved Windows names incl.
+  `CON.csv`, trailing dots/spaces, 80-char clamp. The **extension always comes from the
+  format**, never from user input — enforced again in `file-writer.safeFilename`.
+- **URL schemes**: `isSafeAssetUrl` / `isSafeTabUrl` allow only `http(s):` and
+  `data:image/`. `javascript:` and `file:` are refused in the engine *and* re-checked in
+  the background before `tabs.create`.
+- 🔴 **No `web_accessible_resources`.** `executeScript({files})` does not need it, and
+  declaring `engine.js` as WAR would let any page fingerprint the user as an installee.
+- `storage.session` stash for the §5.5 route is **deleted on read**.
+- No analytics, no telemetry, no remote code, no `externally_connectable`.
+
+## Permissions — every one is used
+
+```
+permissions:          contextMenus  activeTab  scripting  storage  clipboardWrite
+optional_permissions: downloads          (requested from options, revocable)
+host_permissions:     —   content_scripts: —   web_accessible_resources: —
+```
+
+`contextMenus` = the primary desktop surface. `activeTab` = the gesture grant.
+`scripting` = the on-demand injection of `engine.js`/`xlsx.js`. `storage` = prefs + the
+§5.5 session stash. `clipboardWrite` = the `execCommand` fallback (a menu click gives the
+page **no** transient activation, so `navigator.clipboard.writeText` usually throws).
+None produces an install warning.
+
+## Known limits / open questions (unchanged from the design)
+
+- §13.4 — there is **no reliable detector** for "the page's CSP sandbox silently dropped
+  the download". We ship **no fake heuristic**: the toast always offers
+  "Файл не появился? → Сохранить через вкладку расширения" (`save.html`).
+- §13.1 — Firefox's `menus.getTargetElement` precise targeting is **not** attempted; the
+  picker is the answer in both browsers.
+- §13.5/§13.6 — `write-excel-file` merge support is not promised, and the 200 k-cell xlsx
+  threshold is **still unmeasured** (taken with margin). Profile before relying on it.
+- `.xlsx` cannot be rebuilt on the `save.html` route (the writer lives in the page); that
+  route falls back to `.csv` and **says so**.
+- `storage.session` falls back to `storage.local` on engines without it; the key is still
+  removed on read.

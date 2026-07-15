@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { browser } from '#imports';
-import { ThemeToggle, MockBadge, Callout } from '@blur/ui';
+import { ThemeToggle, Callout } from '@blur/ui';
 import {
   collectBrowser,
   collectHardware,
@@ -12,8 +12,8 @@ import {
   type AsyncDevice,
 } from '../../utils/device';
 import { FieldRow } from '../../utils/field';
-import { ConnectionSection } from '../../utils/connection';
-import { reportToMarkdown, reportToJson, downloadText } from '../../utils/export';
+import { ConnectionSection, type ConnectionSnapshot } from '../../utils/connection';
+import { reportToMarkdown, reportToJson, downloadText, networkGroup } from '../../utils/export';
 import { useSettings, useThemeSetter } from '../../utils/settings';
 
 // FULL REPORT (design §2.6): every field, grouped, with a filter, per-group copy,
@@ -26,6 +26,14 @@ export function App() {
   const { theme, setTheme } = useThemeSetter(settings, update);
   const [filter, setFilter] = useState('');
   const [async, setAsync] = useState<AsyncDevice | null>(null);
+
+  // 🔴 The network values the user fetched in THIS tab, held in component state so
+  // the export can include them. They are not persisted anywhere: reload the tab and
+  // they are gone, exactly like in the popup (design §0).
+  const [net, setNet] = useState<ConnectionSnapshot>({ trace: null, isp: null });
+  const [includeNetwork, setIncludeNetwork] = useState(true);
+  const [hideIp, setHideIp] = useState(false);
+  const onSnapshot = useCallback((snap: ConnectionSnapshot) => setNet(snap), []);
 
   const [base] = useState(() => [
     collectBrowser(),
@@ -73,6 +81,11 @@ export function App() {
   }));
 
   const exportOpts = { includeUnavailable: showUnavailable };
+  const hasNet = net.trace !== null || net.isp !== null;
+  const netGroup = hasNet && includeNetwork ? networkGroup(net.trace, net.isp, { maskIp: hideIp }) : null;
+  // The export is exactly what is on screen, plus the network block IF the user
+  // fetched it and left it ticked. Nothing is added behind the user's back.
+  const exportGroups = netGroup ? [...groups, netGroup] : groups;
 
   return (
     <main className="report">
@@ -151,51 +164,91 @@ export function App() {
 
           <section id="network" className="report__section">
             <h2>Сеть (IP)</h2>
-            <ConnectionSection settings={settings} update={update} />
+            <ConnectionSection settings={settings} update={update} onSnapshot={onSnapshot} />
           </section>
         </div>
       </div>
 
       <section className="report__export">
         <h2>Экспорт</h2>
-        <MockBadge note="Экспорт покрывает device-поля. Сетевой блок (IP/ISP) в экспорт ещё не подключён (scaffold)." />
         <div className="report__exportrow">
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => void navigator.clipboard.writeText(reportToMarkdown(groups, exportOpts))}
+            onClick={() => void copy(reportToMarkdown(exportGroups, exportOpts))}
           >
             Скопировать Markdown
           </button>
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => void navigator.clipboard.writeText(reportToJson(groups, exportOpts))}
+            onClick={() => void copy(reportToJson(exportGroups, exportOpts))}
           >
             Скопировать JSON
           </button>
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => downloadText('whoami.md', reportToMarkdown(groups, exportOpts), 'text/markdown')}
+            onClick={() =>
+              downloadText('whoami.md', reportToMarkdown(exportGroups, exportOpts), 'text/markdown')
+            }
           >
             Скачать .md
           </button>
           <button
             type="button"
             className="ui-btn ui-btn--sm"
-            onClick={() => downloadText('whoami.json', reportToJson(groups, exportOpts), 'application/json')}
+            onClick={() =>
+              downloadText('whoami.json', reportToJson(exportGroups, exportOpts), 'application/json')
+            }
           >
             Скачать .json
           </button>
         </div>
+
+        {/* 🔴 The IP is in an export only if the user fetched it AND leaves this on.
+            "Hide IP" exists because the real use of "copy everything" is a support
+            ticket — the one moment you least want to hand over your address. */}
+        <div className="report__exportopts">
+          <label className={hasNet ? 'report__toggle' : 'report__toggle report__toggle--off'}>
+            <input
+              type="checkbox"
+              checked={hasNet && includeNetwork}
+              disabled={!hasNet}
+              onChange={(e) => setIncludeNetwork(e.target.checked)}
+            />
+            Включить сетевые данные (IP, страна, ISP)
+            {!hasNet && <small> — нечего включать: сетевой запрос не выполнялся</small>}
+          </label>
+          <label className={hasNet && includeNetwork ? 'report__toggle' : 'report__toggle report__toggle--off'}>
+            <input
+              type="checkbox"
+              checked={hideIp}
+              disabled={!hasNet || !includeNetwork}
+              onChange={(e) => setHideIp(e.target.checked)}
+            />
+            Скрыть IP (заменить на <span dir="ltr">203.0.113.x</span>) — для баг-репортов и поддержки
+          </label>
+        </div>
+
         <Callout tone="info">
-          Кнопка «Скрыть IP» (для баг-репортов) появится, когда сетевой экспорт будет подключён.
-          IP, страна, PoP и ISP относятся к местоположению и будут вырезаться вместе.
+          Отчёт собирается в этом окне и никуда не отправляется — экспорт делает файл через
+          <span dir="ltr"> Blob + &lt;a download&gt;</span>, без разрешения на загрузки. 🔴 Токен
+          ipinfo.io в экспорт и в буфер обмена не попадает никогда.
         </Callout>
       </section>
     </main>
   );
+}
+
+/** Clipboard write from a user gesture — no `clipboardWrite` permission is needed
+ *  from an extension document. A failure is swallowed, never thrown into the void. */
+async function copy(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard denied (rare, e.g. no focus) — the download buttons still work.
+  }
 }
 
 function mergeAsync(groups: FieldGroup[], a: AsyncDevice): FieldGroup[] {

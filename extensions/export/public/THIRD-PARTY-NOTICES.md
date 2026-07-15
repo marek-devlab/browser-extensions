@@ -7,12 +7,6 @@ license grants rights over that material.
 
 Full notices for the whole suite: <https://github.com/marek-devlab/browser-extensions/blob/main/THIRD-PARTY-NOTICES.md>
 
-> **Scaffold note:** `write-excel-file` and `fflate` are declared as dependencies
-> and reserved for the `.xlsx` writer, but the byte-generation logic is not yet
-> wired (see IMPLEMENTATION.md). They are injected on demand as a second file
-> (`xlsx.js`) and only when the user chooses `.xlsx` — a plain CSV export loads
-> neither.
-
 ---
 
 ## write-excel-file — MIT

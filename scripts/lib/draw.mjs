@@ -476,6 +476,19 @@ export const BRAND = {
   adblock: { light: [248, 113, 113], base: [220, 38, 38], deep: [185, 28, 28], name: 'Ad & Tracker Blocker' },
   perf: { light: [52, 211, 153], base: [16, 163, 90], deep: [4, 120, 87], name: 'Page Performance & Network' },
   seo: { light: [167, 139, 250], base: [124, 58, 237], deep: [91, 33, 182], name: 'SEO & Accessibility Auditor' },
+  // Second wave. Same rules: own hue, own silhouette, readable at 16x16.
+  //   devdata amber   chevrons        (< >, the only opposed pair)
+  //   export  teal    arrow into tray (the only downward arrow)
+  //   assets  pink    crosshair       (the only reticle)
+  //   whoami  indigo  signal arcs     (the only stack of arcs)
+  //   capture orange  record dot      (the only solid dot in brackets)
+  //   compose cyan    text lines      (the only stack of bars)
+  devdata: { light: [252, 211, 77], base: [245, 158, 11], deep: [180, 83, 9], name: 'Data Format Toolkit' },
+  export: { light: [45, 212, 191], base: [13, 148, 136], deep: [15, 118, 110], name: 'Page Content Exporter' },
+  assets: { light: [244, 114, 182], base: [219, 39, 119], deep: [157, 23, 77], name: 'Asset Inspector' },
+  whoami: { light: [129, 140, 248], base: [79, 70, 229], deep: [55, 48, 163], name: 'Connection & Device Info' },
+  capture: { light: [251, 146, 60], base: [234, 88, 12], deep: [154, 52, 18], name: 'Capture Studio' },
+  compose: { light: [103, 232, 249], base: [8, 145, 178], deep: [14, 116, 144], name: 'Markdown Workbench' },
 };
 
 /** The shared background plate: rounded square, brand diagonal gradient. */
@@ -562,11 +575,121 @@ function markSeo(c, x, y, S) {
   fillRing(c, cx, cy, rOuter, rInner, WHITE, 1);
 }
 
+// devdata -- opposed chevrons. Silhouette: two arrowheads pointing away from a
+// gap. Strokes are fat (0.11*S) because two thin V's would mush together at 16px.
+function markDevdata(c, x, y, S) {
+  const w = S * 0.1;
+  const midY = y + S * 0.5;
+  const dy = S * 0.16;
+  // Left chevron "<".
+  strokeLine(c, x + S * 0.4, midY - dy, x + S * 0.24, midY, w, WHITE, 1);
+  strokeLine(c, x + S * 0.24, midY, x + S * 0.4, midY + dy, w, WHITE, 1);
+  // Right chevron ">".
+  strokeLine(c, x + S * 0.6, midY - dy, x + S * 0.76, midY, w, WHITE, 1);
+  strokeLine(c, x + S * 0.76, midY, x + S * 0.6, midY + dy, w, WHITE, 1);
+  // Center slash: what turns "<>" into "data between delimiters" rather than a tag.
+  strokeLine(c, x + S * 0.54, midY - dy - S * 0.04, x + S * 0.46, midY + dy + S * 0.04, S * 0.07, WHITE, 0.75);
+}
+
+// export -- an arrow dropping into an open tray. Silhouette: down arrow above a
+// U. The tray is open at the top so it never reads as a closed box (that's the
+// "save" gesture, not "download to disk").
+function markExport(c, x, y, S) {
+  const cx = x + S * 0.5;
+  const shaftTop = y + S * 0.2;
+  const shaftBottom = y + S * 0.5;
+  strokeLine(c, cx, shaftTop, cx, shaftBottom, S * 0.1, WHITE, 1);
+  fillTriangle(c, cx - S * 0.17, shaftBottom - S * 0.02, cx + S * 0.17, shaftBottom - S * 0.02, cx, y + S * 0.68, WHITE, 1);
+  // Tray: two shoulders + a floor.
+  const trayY = y + S * 0.58;
+  const floorY = y + S * 0.78;
+  const half = S * 0.27;
+  strokeLine(c, cx - half, trayY, cx - half, floorY, S * 0.09, WHITE, 1);
+  strokeLine(c, cx + half, trayY, cx + half, floorY, S * 0.09, WHITE, 1);
+  strokeLine(c, cx - half, floorY, cx + half, floorY, S * 0.09, WHITE, 1);
+}
+
+// assets -- a reticle over the picked element. Silhouette: ring with four ticks
+// breaking out of it, plus a solid center. Nothing else in the suite is a
+// symmetric cross.
+function markAssets(c, x, y, S) {
+  const cx = x + S * 0.5;
+  const cy = y + S * 0.5;
+  const rOuter = S * 0.27;
+  const rInner = S * 0.19;
+  fillRing(c, cx, cy, rOuter, rInner, WHITE, 1);
+  fillCircle(c, cx, cy, S * 0.075, WHITE, 1);
+  const t = S * 0.085;
+  const reach = S * 0.36;
+  strokeLine(c, cx, cy - rOuter + S * 0.02, cx, cy - reach, t, WHITE, 1);
+  strokeLine(c, cx, cy + rOuter - S * 0.02, cx, cy + reach, t, WHITE, 1);
+  strokeLine(c, cx - rOuter + S * 0.02, cy, cx - reach, cy, t, WHITE, 1);
+  strokeLine(c, cx + rOuter - S * 0.02, cy, cx + reach, cy, t, WHITE, 1);
+}
+
+// whoami -- signal arcs rising from a point. Silhouette: a fan of nested arcs
+// over a dot: "this device, and what it reaches".
+function markWhoami(c, x, y, S) {
+  const cx = x + S * 0.5;
+  const cy = y + S * 0.74;
+  fillCircle(c, cx, cy, S * 0.085, WHITE, 1);
+  strokeEllipseArc(c, cx, cy, S * 0.19, S * 0.19, S * 0.085, 200, 340, WHITE, 1);
+  strokeEllipseArc(c, cx, cy, S * 0.3, S * 0.3, S * 0.085, 205, 335, WHITE, 0.78);
+  strokeEllipseArc(c, cx, cy, S * 0.41, S * 0.41, S * 0.085, 210, 330, WHITE, 0.5);
+}
+
+// capture -- record dot inside viewfinder brackets. Silhouette: solid disc with
+// four corner ticks. The disc is the only fully solid circle in the suite.
+function markCapture(c, x, y, S) {
+  const cx = x + S * 0.5;
+  const cy = y + S * 0.5;
+  fillCircle(c, cx, cy, S * 0.17, WHITE, 1);
+  const t = S * 0.075;
+  const a = S * 0.2; // bracket start (from edge)
+  const b = S * 0.34; // bracket arm length
+  const near = S * 0.22;
+  const far = S * 0.78;
+  // Top-left / top-right / bottom-left / bottom-right corner brackets.
+  strokeLine(c, x + near, y + near, x + near + (b - a), y + near, t, WHITE, 0.9);
+  strokeLine(c, x + near, y + near, x + near, y + near + (b - a), t, WHITE, 0.9);
+  strokeLine(c, x + far, y + near, x + far - (b - a), y + near, t, WHITE, 0.9);
+  strokeLine(c, x + far, y + near, x + far, y + near + (b - a), t, WHITE, 0.9);
+  strokeLine(c, x + near, y + far, x + near + (b - a), y + far, t, WHITE, 0.9);
+  strokeLine(c, x + near, y + far, x + near, y + far - (b - a), t, WHITE, 0.9);
+  strokeLine(c, x + far, y + far, x + far - (b - a), y + far, t, WHITE, 0.9);
+  strokeLine(c, x + far, y + far, x + far, y + far - (b - a), t, WHITE, 0.9);
+}
+
+// compose -- lines of text with a caret. Silhouette: a stack of bars of
+// unequal length (a paragraph being written), with the last one short and a
+// solid cursor block after it.
+function markCompose(c, x, y, S) {
+  const left = x + S * 0.24;
+  const t = S * 0.095;
+  const rows = [
+    [0.3, 0.52], // y fraction, bar width fraction
+    [0.44, 0.44],
+    [0.58, 0.52],
+  ];
+  for (const [fy, fw] of rows) {
+    strokeLine(c, left, y + S * fy, left + S * fw, y + S * fy, t, WHITE, 1);
+  }
+  // Short final line + caret block: the "still typing" beat.
+  strokeLine(c, left, y + S * 0.72, left + S * 0.22, y + S * 0.72, t, WHITE, 1);
+  fillRect(c, left + S * 0.28, y + S * 0.66, S * 0.075, S * 0.13, WHITE, 1);
+}
+
 export const MARKS = {
   blur: markBlur,
   adblock: markAdblock,
   perf: markPerf,
   seo: markSeo,
+  devdata: markDevdata,
+  export: markExport,
+  assets: markAssets,
+  whoami: markWhoami,
+  capture: markCapture,
+  compose: markCompose,
 };
 
 /** Full icon = shared plate + product mark, drawn at (x, y) with side S. */

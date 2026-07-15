@@ -15,9 +15,17 @@ import { browser } from 'wxt/browser';
 // stubbed elsewhere is what we DO with a grant (registering the content script,
 // running the in-page formatter) — see utils/format-page.ts.
 
-/** Does the extension currently hold the optional `scripting` permission?
- *  (Firefox MV2 does not need it — see wxt.config.ts — so treat "true" there.) */
+/**
+ * Does the extension currently hold the optional `scripting` permission?
+ *
+ * ⚠️ Firefox MV2 has no `scripting` API and no `scripting` permission:
+ * `tabs.executeScript` runs straight from `activeTab`. Asking for it there would
+ * throw (unknown permission) and the popup button would sit disabled forever
+ * with a lie under it. So on MV2 the honest answer is "yes, we can already do
+ * this" — because we can.
+ */
 export async function hasScripting(): Promise<boolean> {
+  if (!('scripting' in browser)) return true; // Firefox MV2: activeTab is enough
   try {
     return await browser.permissions.contains({ permissions: ['scripting'] });
   } catch {
@@ -36,6 +44,7 @@ export async function hasAllUrls(): Promise<boolean> {
 
 /** Request `scripting` (permission-only — no host, so no scary prompt). */
 export async function requestScripting(): Promise<boolean> {
+  if (!('scripting' in browser)) return true; // nothing to ask for on MV2
   try {
     return await browser.permissions.request({ permissions: ['scripting'] });
   } catch {

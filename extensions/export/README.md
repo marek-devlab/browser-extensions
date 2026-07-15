@@ -4,10 +4,9 @@ Save page content to a file — selected text as **.md/.txt**, an HTML **table**
 **.csv/.xlsx**, and copy or open **image** URLs. Everything is built locally in
 your browser; **nothing is ever sent anywhere.**
 
-> **Status: UI-complete scaffold.** Every surface, navigation path, and the
-> settings persistence are real. The domain logic (DOM table extraction, CSV/xlsx
-> byte generation, the download ladder) is stubbed on realistic mock data and
-> marked with `TODO_LOGIC`. See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md).
+> **Status: implemented.** Table extraction, CSV/xlsx/Markdown writing, the
+> cross-origin download ladder and the CSV-injection guard are all real. No mock
+> data anywhere. See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md).
 
 ## Single purpose
 
@@ -20,6 +19,7 @@ permissions:          ['contextMenus', 'activeTab', 'scripting', 'storage', 'cli
 optional_permissions: ['downloads']            // requested only if you opt in
 host_permissions:     []                        // none
 content_scripts:      []                        // none — nothing runs until you ask
+web_accessible_res.:  []                        // none — nothing to fingerprint
 ```
 
 🥇 **The product's core asset is zero install warnings.** None of the baseline
@@ -53,57 +53,71 @@ npm run build:export          # production build (add the script if missing)
 
 ## Surfaces
 
-- **Context menu** — 🥇 the primary surface. Selection → .md/.txt / copy-as-MD;
-  image → copy URL / open in a new tab / save; page → export table(s). Registered
-  for real in `entrypoints/background.ts` (the exact tree from design §2.1).
-- **Popup** — the page **inventory**: "3 tables, 48 images, 1 240-char selection".
-  Scanned fresh on open (no badge — that would need a content script). Mock data.
-- **Preview dialog** — the core screen (`utils/preview-dialog.tsx`): format,
-  filename, CSV delimiter/encoding/EOL, headers, column include/type, the **raw
-  bytes** tab, and the **formula-guard** highlight, all on a mock table. Viewable
-  at the `preview.html` page; in production engine.js mounts it on the page.
-- **Picker overlay** — an injectable, **keyboard-operable** table picker in a
-  closed shadow root (`entrypoints/engine.ts`): Tab / 1–9 / ↑↓ / Enter / Esc,
-  aria-live, focus-visible double ring, zero innerHTML.
-- **Options** — persisted defaults (`entrypoints/options`).
+- **Context menu** — 🥇 the primary surface on desktop. Selection → .md/.txt /
+  copy-as-MD; image → copy URL / open in a new tab / save; page → export table(s).
+- **Popup** — the page **inventory**: "3 tables, 48 images, 1 240-char selection",
+  scanned fresh on open (no badge — that would need a content script). It is also
+  the **complete mobile UI** (see below).
+- **Picker overlay** — injected on a gesture into a **closed shadow root**. Every
+  table (or image) is ringed and numbered at once — the candidate set is finite and
+  known, so there is no hunt-with-the-mouse. Tab / 1–9 / ↑↓ / Enter / Esc, roving
+  tabindex, `aria-live`, double contrast ring, zero innerHTML.
+- **Export dialog** — the core screen, mounted **on the page** (that is where the
+  bytes are born): format, filename, CSV delimiter/encoding/EOL, header toggle,
+  column include/type, the **raw-bytes tab** and the **formula-guard** count.
+  *The preview is the specification*: what it shows is byte-for-byte what is written.
+- **`save.html`** — the escape hatch when a site's CSP forbids downloads: the bytes
+  are rebuilt into a Blob on **our** origin, under **our** CSP.
+- **Options** — persisted defaults, plus the revocable `downloads` opt-in.
 
-## What is real vs. mocked
+## Two things worth knowing
 
-**Real now:** the context-menu tree + routing, popup inventory layout, the preview
-dialog (all controls, the raw-bytes CSV, the formula-guard highlight), the keyboard
-picker overlay, options persistence, theme, all UI states, plus two genuinely
-implemented pieces of logic:
+**`<a download>` is ignored for cross-origin URLs** — the browser *navigates* there
+instead of saving. So saving a remote image walks a ladder: same-origin → anchor;
+`downloads` permission (if you opted in) → downloads API; CORS-enabled → fetch → blob
+→ anchor; otherwise an **honest refusal** that names the domain and offers to open the
+image or enable the permission. We never navigate your page away by accident.
 
-- **CSV-injection guard + RFC-4180 escaping + BOM** — `utils/csv-guard.ts`.
-- **Filename sanitizer** (bidi/RTL, control chars, path traversal, reserved
-  Windows names, clamp, translit) — `utils/filename.ts`.
+**A CSV cell starting with `= + - @` executes as a formula in Excel** — and the data
+comes from an arbitrary web page. By default we prefix it with `'`, **except for valid
+numbers** (`-5` stays `-5`). `.xlsx` has no such hole at all — a formula there is a
+separate element of the file, and a text cell can never become one. That is why
+**.xlsx is the default format**, and the UI says exactly that.
 
-**Mocked/stubbed:** DOM table extraction, CSV/xlsx byte writing, the cross-origin
-download ladder, the real page scan. All throw or return `TODO_LOGIC`.
+## Mobile
+
+Firefox for Android has **no `contextMenus` and no right-click** (Chrome for Android
+has no extensions at all). Everything the menu can do is therefore also in the popup —
+including picking an image on the page for the three image actions. Feature-detected,
+never UA-sniffed. Touch targets ≥44 px, responsive to 360 px, no hover-only affordance.
 
 ## Structure
 
 ```
 entrypoints/
-  background.ts      # context-menu tree (REAL) + routing + on-demand injection (stub)
-  engine.ts          # injected on gesture: keyboard picker overlay (REAL UI) + scan (stub)
-  xlsx.ts            # second injection, only for .xlsx: write-excel-file writer (stub)
-  popup/             # page inventory (mock data)
-  options/           # persisted defaults (REAL persistence)
-  preview/           # the export preview dialog page (core screen, mock table)
+  background.ts      # context-menu tree + routing + injection + privileged services
+  engine.ts          # injected on gesture: scan, selection, picker, dialog, toasts
+  xlsx.ts            # second injection, ONLY for .xlsx: write-excel-file → Blob
+  popup/             # page inventory + the complete mobile UI
+  options/           # persisted defaults, downloads opt-in
+  save/              # save.html — the CSP-blocked fallback route
 utils/
-  types.ts           # shared data types
-  storage.ts         # sync:prefs (versioned)
+  types.ts           # shared data types + the named size limits
+  storage.ts         # sync:prefs (versioned, migrated)
   theme.ts           # wires @blur/ui theme controller to prefs
-  csv-guard.ts       # 🔴 REAL: formula guard + RFC-4180 + BOM
-  filename.ts        # 🔴 REAL: filename sanitizer + template
-  table-extract.ts   # STUB: scan + matrix build
-  file-writer.ts     # STUB: Blob + <a download> ladder
-  mock-data.ts       # fabricated inventory + parsed table
-  messages.ts        # menu IDs + engine command protocol
-  preview-dialog.tsx # the core preview screen (shared component)
+  csv-guard.ts       # 🔴 formula guard + RFC-4180 + BOM
+  filename.ts        # 🔴 filename sanitizer (bidi/RTL, traversal, CON/PRN, clamp)
+  file-writer.ts     # 🔴 Blob + <a download> ladder + blob-URL lifecycle + clipboard
+  table-extract.ts   # scan, data-vs-layout scoring, colspan/rowspan grid matrix
+  selection-md.ts    # DocumentFragment → Markdown/TXT (zero innerHTML, no turndown)
+  overlay.ts         # closed shadow root, toast, rings, focus trap, styles
+  picker.ts          # the generic on-page picker (tables and images)
+  export-dialog.ts   # the core screen
+  xlsx-bridge.ts     # engine.js ⇄ xlsx.js contract + Excel sheet-name rules
+  inject.ts          # popup/background → page injection (with an MV2 fallback)
+  messages.ts        # menu IDs + the engine/background protocols
 ```
 
-Uses `@blur/ui` (tokens, theme, primitives, mock helpers) and `@blur/core`
-(`collectOpenShadowRoots` for shadow traversal in the real scan). Icons are TODO
+Uses `@blur/ui` (tokens, theme, primitives) and `@blur/core` (`deepQuerySelectorAll`
+for open shadow roots, `yieldToMain` for chunked extraction). Icons are TODO
 (`public/icon/.gitkeep`).

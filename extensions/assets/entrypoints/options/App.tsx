@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { browser } from '#imports';
 import { ThemeToggle } from '@blur/ui';
 import { usePrefs, useAssetsTheme } from '../../utils/use-prefs';
 import type { OverweightThreshold, Units, RequestScope, BufferSize } from '../../utils/storage';
@@ -100,9 +101,23 @@ export function App() {
   );
 }
 
+/**
+ * The ONE correct way to rebind: the browser's own shortcuts page. We deliberately
+ * ship no in-app rebind form — it would only create the illusion of control, since
+ * the binding lives in the browser (design §13 №16).
+ *
+ * The URL differs per engine, and we pick it by FEATURE, not by user-agent string:
+ * an extension's own origin tells us which engine is hosting it. `about:addons` is
+ * the Firefox equivalent (and the only shortcuts entry point on Firefox for
+ * Android, where `chrome://` does not exist at all).
+ */
 function openShortcuts(): void {
-  // TODO_LOGIC: chrome.tabs.create('chrome://extensions/shortcuts'). We ship no
-  // in-app rebind form on purpose (design §13 №16).
+  const isGecko = browser.runtime.getURL('').startsWith('moz-extension://');
+  const url = isGecko ? 'about:addons' : 'chrome://extensions/shortcuts';
+  void browser.tabs.create({ url }).catch(() => {
+    // Some builds refuse to open a privileged page from an extension page. Nothing
+    // to recover — the user can reach it from the browser menu.
+  });
 }
 
 function parseThreshold(v: string): OverweightThreshold {

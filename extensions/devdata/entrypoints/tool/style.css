@@ -175,24 +175,119 @@ body {
   line-height: 1.5;
   overflow: auto;
   white-space: pre;
+  max-height: 320px;
 }
 
-.code--wrap {
+/* ---------------- Virtualised text pane ----------------
+   ONE flat <pre> holding ONE text node. Colour is applied with the CSS Custom
+   Highlight API over Ranges (utils/highlight.ts) — never with generated <span>s.
+   That is both the performance story (no 40 000-node DOM) and the security story
+   (user text is never turned into markup). The line-height here is the LINE_H
+   constant in DataTab.tsx; they must stay in step or the virtualiser drifts. */
+
+.textpane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  overflow: auto;
+  max-height: 480px;
+  /* Skip layout/paint for the parts of the window that are off-screen. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+.textpane__win {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 8px;
+}
+
+.code__gutter,
+.code__body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px; /* = LINE_H */
+  white-space: pre;
+  tab-size: 2;
+}
+
+.code__gutter {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--text-dim);
+  user-select: none;
+  flex: none;
+}
+
+.code__body {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+
+.code__body--wrap {
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.code__line {
-  display: block;
+/* ::highlight() may only set colour-ish properties — `font-weight` is NOT
+   allowed (design §9.1), so keys are told apart by colour plus the quotes and
+   colon they already carry. Never by bold. */
+::highlight(dd-key) {
+  color: var(--accent-fg);
+}
+::highlight(dd-string) {
+  color: var(--good-fg);
+}
+::highlight(dd-number) {
+  color: var(--warn-fg);
+}
+::highlight(dd-bool) {
+  color: var(--poor-fg);
+}
+::highlight(dd-null) {
+  color: var(--text-dim);
+}
+::highlight(dd-punct) {
+  color: var(--text-dim);
+}
+::highlight(dd-comment) {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+::highlight(dd-tag) {
+  color: var(--accent-fg);
+}
+::highlight(dd-attr) {
+  color: var(--warn-fg);
+}
+::highlight(dd-search) {
+  background-color: var(--warn);
+  color: var(--badge-fill-text);
+}
+::highlight(dd-current) {
+  background-color: var(--accent);
+  color: var(--badge-fill-text);
 }
 
-.code__gutter {
-  display: inline-block;
-  width: 3ch;
-  margin-right: 10px;
-  text-align: right;
-  color: var(--text-dim);
-  user-select: none;
+::highlight(dd-jwt-header) {
+  color: var(--poor-fg);
+}
+::highlight(dd-jwt-payload) {
+  color: var(--accent-fg);
+}
+::highlight(dd-jwt-signature) {
+  color: var(--good-fg);
+}
+
+/* Windows High Contrast strips custom colours entirely. The text must stay
+   readable and the structure understandable without any of the above. */
+@media (forced-colors: active) {
+  .textpane,
+  .code {
+    forced-color-adjust: auto;
+  }
 }
 
 /* ---------------- Data tab ---------------- */
@@ -767,9 +862,76 @@ body {
   margin-top: 12px;
 }
 
-/* ---------------- Narrow / mobile (design §2.9) ---------------- */
+/* ---------------- Drag & drop, notices, misc ---------------- */
 
-@media (max-width: 720px) {
+.data {
+  position: relative;
+  min-height: 60vh;
+}
+
+.dropoverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  border: 3px dashed var(--accent);
+  font-size: 18px;
+  pointer-events: none;
+}
+
+.statusline {
+  min-height: 16px;
+}
+
+.searchbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.partial__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  max-height: 220px;
+  overflow: auto;
+  opacity: 0.75;
+}
+
+.jwt__mirror {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-dim);
+}
+
+.linkish {
+  background: none;
+  border: none;
+  padding: 8px 0;
+  min-height: 44px;
+  color: var(--accent-fg);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* ---------------- Narrow / mobile (design §2.9) ----------------
+   Firefox for Android is a target platform (Chrome for Android has no extension
+   support at all). Everything below 720px collapses to one column; every control
+   is at least 44px tall; nothing depends on hover. */
+
+@media (max-width: 900px) {
   .workspace {
     grid-template-columns: 1fr;
     grid-template-areas: 'tree' 'text' 'inspector';
@@ -783,5 +945,63 @@ body {
 
   .topbar {
     flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .panel {
+    padding: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .tab {
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+
+  .ui-btn,
+  .chip,
+  .seg,
+  .theme-toggle__btn {
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .trow {
+    height: auto;
+    min-height: 32px;
+  }
+
+  .toolbar__row {
+    gap: 8px;
+  }
+
+  .search,
+  .field select,
+  .settings select {
+    min-height: 44px;
+    font-size: 16px; /* < 16px makes iOS/Android zoom the page on focus */
+  }
+
+  .jwt__secret,
+  .jwt__token,
+  .jwt__key,
+  .schema__input {
+    font-size: 16px;
+  }
+
+  .textpane {
+    max-height: 55vh;
+  }
+
+  .tree {
+    max-height: 45vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }

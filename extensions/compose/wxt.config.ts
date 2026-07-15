@@ -52,8 +52,8 @@ export default defineConfig({
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // public/icon/{16,32,48,128}.png; action.default_icon is NOT derived from
-      // those files, so it is wired explicitly here. (Icons are not generated
-      // yet — see public/icon/.gitkeep.) The action opens the SIDE PANEL, it is
+      // those files, so it is wired explicitly here. (The PNGs ship in
+      // public/icon/.) The action opens the SIDE PANEL, it is
       // NOT a popup: there is no `default_popup` key. On Chrome, clicking the
       // action opens the side panel via the background's
       // `sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
@@ -68,7 +68,7 @@ export default defineConfig({
       },
 
       // Permission budget (design §0 header):
-      //   storage       — drafts + history (local:) and prefs (sync:).
+      //   storage       — drafts + history and prefs (all local:).
       //   contextMenus  — the ONE "Add selection to draft" item (design §S4).
       //   clipboardWrite— "Copy for <platform>" / "Copy as HTML" (design §4.1).
       //   activeTab     — read-only: window.getSelection() + active-tab URL, by
@@ -85,11 +85,14 @@ export default defineConfig({
         : ['storage', 'contextMenus', 'clipboardWrite', 'activeTab', 'sidePanel'],
 
       // ── SIDE PANEL / SIDEBAR (design §1.2, S1 — the PRIMARY surface) ────────
-      // ⚠️ UNVERIFIED (design §12, PLAN-2 §11): does WXT emit BOTH of these from
-      // the single entrypoints/sidepanel/ entry, or does it already generate one
-      // of them itself (WXT has first-class "sidepanel" support)? These manual
-      // keys may DOUBLE-declare and conflict with WXT's own output. This is the
-      // #1 thing to check on first build — see IMPLEMENTATION.md.
+      // ✅ VERIFIED on a real build (design §12 / PLAN-2 §11 open question): WXT
+      // does NOT auto-generate either key from `entrypoints/sidepanel/`. These
+      // manual declarations are what produce them, they do not double-declare,
+      // and the built manifests come out exactly right:
+      //   chrome-mv3  → "side_panel": { "default_path": "sidepanel.html" }
+      //                 + "sidePanel" in permissions
+      //   firefox-mv2 → "sidebar_action": { "default_panel": "sidepanel.html" }
+      //                 and NO side_panel / sidePanel leakage.
       //
       // Chrome MV3: side_panel.default_path. Firefox MV2: sidebar_action.
       // Both reference the same built shell (sidepanel.html). The panel is
@@ -133,12 +136,41 @@ export default defineConfig({
                   required: ['none'],
                 },
               },
-              // Firefox for Android also renders the sidebar; without
-              // gecko_android AMO will not mark the add-on Android-compatible.
+              // ⚠️ Firefox for Android has NO SIDEBAR — `sidebar_action` is
+              // ignored there, and Chrome for Android has no extensions at all.
+              // That is why `entrypoints/workbench/` (a full extension PAGE)
+              // exists and why the toolbar action feature-detects and opens it
+              // in a tab when no panel/sidebar API is present
+              // (utils/surface.ts). Without gecko_android AMO will not mark the
+              // add-on Android-compatible.
               gecko_android: {},
             },
           }
         : {}),
+
+      // 🔴 ZERO NETWORK, MECHANICALLY (design §7.4). `connect-src 'none'` makes
+      // fetch/XHR/WebSocket impossible from every extension page — it is not a
+      // promise in a README, it is enforced by the browser. The parser, the
+      // sanitizer, the transliteration tables and the emoji data all ship inside
+      // the bundle; there is no CDN and no remote code (which would also be an
+      // instant store rejection).
+      //
+      // `img-src 'self' data:` is the OTHER half of "no network": `connect-src`
+      // does not govern `<img>`, so without this a preview of `![](http://x/p.gif)`
+      // would silently fetch a remote pixel from a privileged page — a tracking
+      // egress that contradicts the "100% local" claim. Local and data-URI images
+      // still render; a remote image shows as broken rather than phoning home.
+      ...(isFirefox
+        ? {
+            content_security_policy:
+              "script-src 'self'; object-src 'self'; img-src 'self' data:; connect-src 'none'",
+          }
+        : {
+            content_security_policy: {
+              extension_pages:
+                "script-src 'self'; object-src 'self'; img-src 'self' data:; connect-src 'none'",
+            },
+          }),
     };
   },
 });

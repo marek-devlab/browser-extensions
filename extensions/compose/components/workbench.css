@@ -5,13 +5,16 @@
  * Adaptivity uses `container-type: inline-size` + `@container` (design §5.8): a
  * panel is NOT the viewport, so @media is wrong. The tabs-vs-split RENDER choice
  * is made in JS (ResizeObserver) since it changes the DOM/aria; the CSS handles
- * everything visual. */
+ * everything visual.
+ *
+ * Touch: every control is ≥44px on a coarse pointer (Firefox for Android is a
+ * first-class surface here), and no affordance is hover-only. */
 
 .cw-root {
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   min-width: 300px;
   background: var(--bg);
   color: var(--text);
@@ -20,13 +23,9 @@
 .cw-root[data-surface='workbench'] {
   max-width: 1600px;
   margin: 0 auto;
-  height: 100vh;
 }
 
-.cw-loading {
-  padding: 24px;
-  color: var(--text-dim);
-}
+.cw-loading { padding: 24px; color: var(--text-dim); }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .cw-header {
@@ -45,12 +44,13 @@
   font-size: 11px;
   color: var(--text-dim);
 }
-.cw-header select {
+.cw-header select,
+.cw-panel select {
   background: var(--bg-elev);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 3px 6px;
+  padding: 4px 6px;
   max-width: 160px;
   font-size: 12px;
 }
@@ -64,66 +64,129 @@
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  align-items: center;
 }
+.cw-toolbar__spacer { flex: 1 1 auto; }
 .cw-tool {
   appearance: none;
-  min-width: 26px;
-  height: 26px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 .cw-tool:hover { background: var(--bg-elev); border-color: var(--border); }
-.cw-tool--inline { min-width: 22px; height: 22px; }
+.cw-tool--inline { min-width: 26px; min-height: 26px; }
+.cw-tool--text { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.cw-tool__text { font-size: 11px; }
+
+/* Touch: ≥44px targets, and nothing that only appears on hover. */
+@media (pointer: coarse) {
+  .cw-tool { min-width: 44px; min-height: 44px; }
+  .cw-tool--inline { min-width: 40px; min-height: 40px; }
+  .cw-tab { min-height: 44px; }
+  .cw-menu-item { min-height: 44px; }
+  .cw-emoji__btn { min-width: 40px; min-height: 40px; font-size: 20px; }
+}
 
 /* ── View tabs (narrow) + drawer tabs ───────────────────────────────────── */
 .cw-viewtabs,
-.cw-tablist { display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.cw-tablist {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
 .cw-tab {
   appearance: none;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-dim);
-  padding: 4px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
 }
-.cw-tab--active { background: var(--bg-elev); color: var(--text); border-color: var(--border); font-weight: 600; }
+.cw-tab--active {
+  background: var(--bg-elev);
+  color: var(--text);
+  border-color: var(--border);
+  font-weight: 600;
+}
 
 /* ── Panes ──────────────────────────────────────────────────────────────── */
-.cw-panes { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.cw-panes { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 .cw-panes--split { flex-direction: row; }
-.cw-panes--split > * { flex: 1 1 50%; min-width: 0; border-right: 1px solid var(--border); overflow: auto; }
+.cw-panes > * { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; }
+.cw-panes--split > * { flex: 1 1 50%; border-right: 1px solid var(--border); }
 .cw-panes--split > *:last-child { border-right: none; }
 
-.cw-editor {
-  width: 100%;
-  height: 100%;
-  min-height: 160px;
-  box-sizing: border-box;
-  border: none;
-  resize: none;
-  padding: 10px 12px;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.5;
+.cw-editorcol { display: flex; flex-direction: column; min-height: 0; }
+
+/* The editor: a <textarea> on top of a <pre> mirror that carries the regex
+ * highlights (CSS Custom Highlight API). Both must share identical typography
+ * and box metrics or the highlights drift off the glyphs. */
+.cw-editor-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 180px;
+  display: flex;
 }
-@supports (field-sizing: content) {
-  .cw-root[data-surface='workbench'] .cw-editor { field-sizing: content; }
+.cw-editor,
+.cw-editor-mirror {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  width: 100%;
+  min-height: 100%;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  tab-size: 2;
+}
+.cw-editor-mirror {
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  overflow: auto;
+  pointer-events: none;
+  user-select: none;
+}
+.cw-editor {
+  position: relative;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  overflow: auto;
+}
+.cw-editor:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ⚠️ ::highlight() supports ONLY color / background-color / text-decoration /
+ * text-shadow — font-weight is not settable, so the CURRENT match is marked by a
+ * different background + underline (design §2.5). */
+::highlight(cw-match) { background-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+::highlight(cw-current) {
+  background-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration: underline;
 }
 
-.cw-preview-wrap { padding: 10px 12px; }
-.cw-preview { line-height: 1.5; }
-.cw-preview h2 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
-.cw-preview pre { background: var(--bg-elev); padding: 8px; border-radius: var(--radius-sm); overflow-x: auto; font-family: var(--mono); }
-.cw-preview .cw-task-list { list-style: none; padding-left: 4px; }
-.cw-preview details { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; }
+.cw-preview-wrap { padding: 10px 12px; overflow: auto; }
+.cw-preview-manual {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.cw-removed { white-space: pre-wrap; font-size: 11px; margin-top: 6px; }
 
 /* ── CounterStrip ───────────────────────────────────────────────────────── */
 .cw-counter {
@@ -134,11 +197,40 @@
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-dim);
+  flex-wrap: wrap;
 }
-.cw-counter__compat { flex: 1 1 auto; }
+.cw-counter__compat { flex: 1 1 auto; text-align: left; }
+
+.cw-linklike {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-fg);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
 
 /* ── Drawer / panels ────────────────────────────────────────────────────── */
-.cw-drawer { border-top: 1px solid var(--border); max-height: 45vh; overflow: auto; background: var(--bg-elev); }
+.cw-drawer {
+  border-top: 1px solid var(--border);
+  max-height: 45vh;
+  overflow: auto;
+  background: var(--bg-elev);
+}
+@container (max-width: 559px) {
+  /* On a narrow panel the drawer OVERLAYS the editor — docking it would leave
+   * three lines of draft visible (design §5.8). */
+  .cw-drawer {
+    position: absolute;
+    inset: auto 0 64px 0;
+    max-height: 70vh;
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 0.25);
+    z-index: 5;
+  }
+  .cw-root { position: relative; }
+}
 .cw-panel { padding: 8px 10px; }
 .cw-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); margin: 6px 0; }
 .cw-input {
@@ -146,33 +238,66 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 7px;
+  padding: 7px;
   font-size: 12px;
   width: 100%;
+  box-sizing: border-box;
 }
 .cw-flags, .cw-sim { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 11px; margin: 6px 0; }
 .cw-hint { font-size: 10px; color: var(--text-dim); line-height: 1.4; margin: 4px 0; }
-.cw-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.cw-preview-list { list-style: none; padding: 6px; margin: 4px 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; }
+.cw-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.cw-preview-list {
+  list-style: none;
+  padding: 6px;
+  margin: 4px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  max-height: 120px;
+  overflow: auto;
+}
 .cw-invalid { color: var(--warn-fg); }
-.cw-invalid pre { white-space: pre-wrap; }
+.cw-invalid pre { white-space: pre-wrap; font-size: 11px; }
 
 .cw-std { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
-.cw-std__row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.cw-std__row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; flex-wrap: wrap; }
 .cw-std__ex { margin-left: auto; color: var(--text-dim); }
-.cw-result { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; margin: 4px 0; }
+.cw-result {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: 4px 0;
+  word-break: break-word;
+}
 
 .cw-stats__table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.cw-stats__table th, .cw-stats__table td { text-align: right; padding: 2px 6px; }
+.cw-stats__table th, .cw-stats__table td { text-align: right; padding: 3px 6px; }
 .cw-stats__table td:first-child, .cw-stats__table th:first-child { text-align: left; color: var(--text-dim); }
 .cw-limits { list-style: none; padding: 0; margin: 4px 0; }
-.cw-limit { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 2px 0; }
-.cw-bar { flex: 1 1 auto; height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.cw-limit { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 3px 0; flex-wrap: wrap; }
+.cw-bar { flex: 1 1 60px; height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
 .cw-bar__fill { display: block; height: 100%; background: var(--accent); }
+.cw-bar__fill--over { background: var(--poor); }
 
-/* ── Copy bar ───────────────────────────────────────────────────────────── */
+/* ── Copy bar + toast ───────────────────────────────────────────────────── */
 .cw-copybar { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
-.cw-copybar .ui-btn { flex: 1 1 auto; }
+.cw-copybar .ui-btn { flex: 1 1 auto; min-height: 40px; }
+
+.cw-toast {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.2);
+  z-index: 10;
+}
 
 /* ── Popovers (Popover API) ─────────────────────────────────────────────── */
 .cw-popover {
@@ -182,7 +307,12 @@
   border-radius: var(--radius);
   padding: 6px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
-  max-width: 320px;
+  max-width: min(340px, 92vw);
+  max-height: 70vh;
+  overflow: auto;
+  /* ⚠️ CSS Anchor Positioning is Chromium-only (Baseline limited) — the default
+   * placement is the plain centred top-layer box, anchoring is only an upgrade. */
+  margin: auto;
 }
 .cw-menu-item {
   display: block;
@@ -192,18 +322,85 @@
   border: none;
   background: transparent;
   color: var(--text);
-  padding: 5px 8px;
+  padding: 7px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 12px;
 }
 .cw-menu-item:hover { background: var(--bg-elev); }
+.cw-menu-row { display: flex; align-items: center; gap: 4px; }
+.cw-menu-row .cw-menu-item { flex: 1 1 auto; }
 .cw-emoji__group { font-size: 10px; color: var(--text-dim); margin: 6px 2px 2px; }
 .cw-emoji__grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
-.cw-emoji__btn { appearance: none; border: none; background: transparent; font-size: 16px; padding: 3px; cursor: pointer; border-radius: var(--radius-sm); }
+.cw-emoji__btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  min-height: 32px;
+}
 .cw-emoji__btn:hover { background: var(--bg-elev); }
-.cw-emoji__mode { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; margin-top: 6px; font-size: 11px; display: grid; gap: 3px; }
+.cw-emoji__results { max-height: 180px; overflow: auto; }
+.cw-emoji__mode {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  display: grid;
+  gap: 4px;
+}
+
+/* ── Dialogs (<dialog>, top layer) ──────────────────────────────────────── */
+.cw-dialog {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  max-width: min(560px, 94vw);
+  width: 100%;
+  box-sizing: border-box;
+}
+.cw-dialog--wide { max-width: min(900px, 96vw); }
+.cw-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.cw-dialog h2 { font-size: 15px; margin: 0 0 8px; }
+.cw-dialog h3 { font-size: 12px; margin: 0 0 6px; color: var(--text-dim); }
+.cw-dialog__head { display: flex; align-items: center; justify-content: space-between; }
+.cw-deg-list { font-size: 12px; padding-left: 18px; }
+.cw-deg-list li { margin: 4px 0; }
+.cw-env-preview {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  font-size: 11px;
+  overflow: auto;
+  max-height: 220px;
+  white-space: pre;
+}
+.cw-manual-text { min-height: 140px; resize: vertical; }
+.cw-check { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; margin: 8px 0; }
+
+.cw-hist { display: flex; gap: 16px; flex-wrap: wrap; }
+.cw-hist__col { flex: 1 1 280px; min-width: 0; }
+.cw-hist__list { list-style: none; padding: 0; margin: 0 0 8px; max-height: 300px; overflow: auto; }
+.cw-hist__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cw-hist__item--active { font-weight: 600; }
+.cw-hist__confirm { display: flex; gap: 6px; font-size: 11px; }
+
+.mono { font-family: var(--mono); }
 
 @media (prefers-reduced-motion: reduce) {
-  .cw-drawer, .cw-popover { transition: none !important; }
+  .cw-drawer, .cw-popover, .cw-dialog, .cw-toast { transition: none !important; animation: none !important; }
 }

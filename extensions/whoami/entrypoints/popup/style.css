@@ -3,9 +3,71 @@
    only adds whoami-specific layout. Everything keys off the shared CSS variables,
    so the theme (data-theme / prefers-color-scheme) applies for free. */
 
+/* ⚠️ MOBILE IS A REAL TARGET: Firefox for Android (Chrome for Android has no
+   extension support). There the popup is a full-width sheet, not a 380px box — so
+   the width is a MAXIMUM, never a fixed size, and the layout survives 360px. */
 .popup {
   width: 380px;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 12px;
+}
+
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
+
+  /* At 360px a 40%-wide label column starves the value. Stack instead. */
+  .frow {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'label copy' 'value value';
+    row-gap: 2px;
+    padding: 6px 0;
+  }
+
+  .frow__label {
+    grid-area: label;
+  }
+
+  .frow__value {
+    grid-area: value;
+  }
+
+  .frow__copy {
+    grid-area: copy;
+  }
+}
+
+/* Touch targets ≥ 44px on any coarse pointer, and NO hover-only affordance
+   anywhere: every control is a real button that is always visible. */
+@media (pointer: coarse) {
+  .tile__head,
+  .conn__cta,
+  .copybtn,
+  .chip,
+  .linkbtn,
+  .foot .ui-btn {
+    min-height: 44px;
+  }
+
+  .copybtn,
+  .chip {
+    min-width: 44px;
+  }
+}
+
+/* Announcements for screen readers only (design §11). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .loading {
@@ -203,6 +265,35 @@
   margin: 4px 0;
 }
 
+/* The single button that can start a network request. Full-width and unmistakable:
+   it sits directly under the disclosure, so it cannot be pressed unread. */
+.conn__cta {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.conn__note {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.conn__causes {
+  margin: 4px 0 8px;
+  padding-inline-start: 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.conn__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+
 .conn__isp {
   margin-top: 6px;
 }
@@ -243,7 +334,9 @@
 /* ---- Consent dialog (design §2.4) ---------------------------------------- */
 
 .consent {
-  max-width: 380px;
+  /* Fits a 360px Android sheet without horizontal scroll. */
+  max-width: min(380px, calc(100vw - 24px));
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);

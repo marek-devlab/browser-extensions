@@ -21,6 +21,7 @@ export type CardVariant =
   | 'mse'
   | 'progressive-video'
   | 'iframe-cross-origin'
+  | 'iframe-same-origin'
   | 'no-resource'
   | 'blob'
   | 'data'
@@ -49,13 +50,29 @@ export interface SrcsetVerdict {
   reason: string;
 }
 
+/** One `<source>` inside a `<picture>` — stage 1 of the selection (§6.1). */
+export interface PictureSource {
+  media: string | null;
+  type: string | null;
+  srcset: string;
+  /** matchMedia() result — computed, and exact. */
+  mediaMatches: boolean;
+  /** FACT: currentSrc is one of this source's candidates → this source won. */
+  won: boolean;
+}
+
 export interface SrcsetAnalysis {
   /** Resolved slot width in CSS px (from `sizes`), or null if not computable. */
   slotWidthCss: number | null;
   dpr: number;
   sizesAttr: string | null;
+  /** No `sizes` with w-descriptors → the browser assumes 100vw. The single most
+   *  common cause of overweight, and it ties the two headline features together. */
+  sizesMissing: boolean;
   currentSrc: string;
   candidates: SrcsetVerdict[];
+  /** `<picture>` stage — empty when the img is not inside a <picture>. */
+  sources: PictureSource[];
   /** Our model chose a different winner than the browser did (§6.2). Show LOUDLY. */
   modelDisagrees: boolean;
 }
@@ -87,10 +104,11 @@ export interface RedirectStep {
   note?: string;
 }
 
-/** Three genuinely different "I don't know"s about redirects (design §5.7). */
+/** Four genuinely different facts about redirects (design §5.7, §7 №3). */
 export type RedirectState =
   | { kind: 'chain'; steps: RedirectStep[] } // DevTools panel only
   | { kind: 'occurred' } // same-origin/TAO, panel closed: a redirect happened
+  | { kind: 'none' } // TAO-exposed and no redirect timings: genuinely none
   | { kind: 'unknown' }; // cross-origin without TAO: can't even tell
 
 export interface OverweightVerdict {
@@ -109,32 +127,62 @@ export interface MimeInfo {
   certainty: 'exact' | 'guessed-extension' | 'unknown';
 }
 
+/** Resource Timing buffer accounting (design §5.11, §10.5). */
+export interface BufferState {
+  recorded: number;
+  limit: number;
+  /** `resourcetimingbufferfull` fired: the browser is now DROPPING NEW entries. */
+  overflowed: boolean;
+  nearFull: boolean;
+}
+
+/** Why an element failed to load, as far as the DOM will honestly say (§5.10). */
+export interface LoadFailure {
+  /** e.g. `MEDIA_ERR_SRC_NOT_SUPPORTED`, or null when the browser won't say. */
+  code: string | null;
+  message: string;
+}
+
 export interface ResourceCardModel {
   kind: ResourceKind;
   variant: CardVariant;
   /** e.g. `<img class="hero">`. */
   elementLabel: string;
+  /** The adblock-style CSS selector for the picked node. */
+  selector: string;
   /** The FACT: what the browser actually loaded (currentSrc), verbatim (design §2.2). */
   currentSrc: string;
+  /** What the markup ASKED for — shown when it differs from currentSrc. */
+  markupSrc?: string;
   /** Whether "Open in new tab" is enabled (http/https only; off for blob/data/MSE). */
   urlOpenable: boolean;
   openDisabledReason?: string;
 
   mime: MimeInfo;
+  /** Container/codec ONLY when the author declared it (`<source type=…>`); we never
+   *  invent "H.264" (design §7 №5). */
+  declaredType?: string;
   naturalSize?: { w: number; h: number };
   displayedSize?: { w: number; h: number; dpr: number };
   overweight?: OverweightVerdict | null;
   srcset?: SrcsetAnalysis | null;
   attributes?: Record<string, string>;
   alt?: string;
+  /** The element is inside a CLOSED shadow root's host — we cannot look in (§4.7). */
+  closedShadow?: boolean;
+  /** The element did not load. Cause is often unknowable cross-origin (§5.10). */
+  failure?: LoadFailure;
 
   weight: WeightState;
   /** scriptKnown is ALWAYS false outside the DevTools panel (design §1.2, §7 №2). */
   initiator: { type: string; scriptKnown: boolean };
+  /** null = cross-origin without TAO. 🔴 Never 200 by default (§7 №15). */
+  status: number | null;
   requests: RequestGroup[];
   /** Requests matched by type+host, not by fact — say so (design §7 №7). */
   requestsHeuristic: boolean;
   redirects: RedirectState;
+  buffer: BufferState;
 
   // ---- variant-specific payloads ----
   mse?: {
@@ -145,19 +193,32 @@ export interface ResourceCardModel {
     /** EME active — NOT the DRM system name, which we cannot know (design §2.3). */
     drmActive: boolean;
   };
-  iframe?: { src: string; size: { w: number; h: number }; attributes: Record<string, string> };
+  video?: {
+    resolution?: { w: number; h: number };
+    duration: number | null;
+    frames?: { rendered: number; dropped: number };
+  };
+  iframe?: { src: string; size: { w: number; h: number }; attributes: Record<string, string>; sameOrigin: boolean };
   dataUri?: { prefix: string; length: number; head: string };
   /** For no-resource: the CSS rule painting the element (§5.2). */
   cssRule?: string;
-
-  /** True while the model is fabricated scaffold data (renders a MockBadge). */
-  mock: boolean;
+  /** A nested element that DOES have a resource — "the resource is on the <img> inside". */
+  nestedHint?: string;
 }
 
-/** Message from the injected inspector back to the extension (kept minimal — the
+/** Message from the background to the injected inspector (kept minimal — the
  *  overlay does NOT leak page data; only the picked URL travels, on user action). */
 export interface InspectorStartMessage {
   type: 'assets:start';
   /** From a context-menu invocation: the src the user right-clicked (design §4.9). */
   srcUrl?: string;
+}
+
+/** Counts for the popup. COUNTS, never a byte budget — a budget would be `perf`. */
+export interface PageCounters {
+  requestsRecorded: number;
+  images: number;
+  media: number;
+  bufferLimit: number;
+  overflowed: boolean;
 }

@@ -1,6 +1,6 @@
-// Small, REAL formatting + safety helpers (no mock, no todoLogic). Filename
-// sanitisation in particular is a genuine security surface (design §9.4), so it
-// is implemented for real even in the scaffold.
+// Formatting + safety helpers. Filename sanitisation (§9.4) is a genuine security
+// surface — the template is user-controlled and the result is handed to
+// downloads.download — so it is implemented properly, not defensively hand-waved.
 
 /** Human byte size. Uses base-1024 with a single decimal, localise-friendly. */
 export function formatBytes(bytes: number): string {

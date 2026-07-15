@@ -126,3 +126,56 @@ export const schemaItem = storage.defineItem<string | null>('local:schema', {
 
 /** Hard cap: documents larger than this are not persisted (design §3, §8). */
 export const MAX_PERSIST_BYTES = 1_000_000;
+
+/** Hard cap for the cached schema text (design §3). */
+export const MAX_SCHEMA_BYTES = 256_000;
+
+export type SaveOutcome =
+  | { status: 'saved' }
+  | { status: 'skipped-off' }
+  | { status: 'skipped-too-big'; bytes: number }
+  | { status: 'failed'; message: string };
+
+/**
+ * Persist the current document — or explain, out loud, why it was not persisted.
+ *
+ * Three ways this goes wrong, and all three are USER-VISIBLE rather than silent
+ * (design §8; the `blur` bug in PLAN.md §18a was precisely a storage write that
+ * failed in silence):
+ *   - the user turned "restore" off        → skipped-off
+ *   - the document is over 1 MB            → skipped-too-big (we SAY so)
+ *   - storage.local is full (QUOTA_BYTES)  → failed, with the browser's message
+ */
+export async function saveDocument(
+  doc: CachedDocument,
+  restore: boolean,
+): Promise<SaveOutcome> {
+  if (!restore) return { status: 'skipped-off' };
+  if (doc.bytes > MAX_PERSIST_BYTES) {
+    return { status: 'skipped-too-big', bytes: doc.bytes };
+  }
+  try {
+    await documentItem.setValue(doc);
+    return { status: 'saved' };
+  } catch (err) {
+    return {
+      status: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function saveSchema(text: string, restore: boolean): Promise<SaveOutcome> {
+  if (!restore) return { status: 'skipped-off' };
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes > MAX_SCHEMA_BYTES) return { status: 'skipped-too-big', bytes };
+  try {
+    await schemaItem.setValue(text);
+    return { status: 'saved' };
+  } catch (err) {
+    return {
+      status: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

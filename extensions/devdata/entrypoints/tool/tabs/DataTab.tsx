@@ -1,278 +1,801 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Badge, Button, Callout, MockBadge, Spinner } from '@blur/ui';
-import { convert, inspectValue, parseDocument } from '../../../utils/format';
-import { MOCK_CONVERSION, MOCK_PARSE_ERROR, MOCK_PARSED_DOC } from '../../../utils/mock-data';
-import { FORMAT_LABELS, type ConversionResult, type Format, type ParsedDoc, type TreeRow } from '../../../utils/types';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
+import { Badge, Button, Callout, Spinner } from '@blur/ui';
+import {
+  childrenOf,
+  expandToDepth,
+  pathOf,
+  visibleRows,
+  type FlatNode,
+} from '../../../utils/core/tree';
+import {
+  convert,
+  convertSubtree,
+  HARD_MAX_BYTES,
+  inspectValue,
+  MAX_SEARCH_BYTES,
+  reformat,
+  searchPath,
+  searchText,
+  SOFT_MAX_BYTES,
+} from '../../../utils/format';
+import { isCancelled, type RunningJob } from '../../../utils/worker/client';
+import {
+  applyHighlights,
+  clearHighlights,
+  highlightSupported,
+} from '../../../utils/highlight';
+import { formatBytes, type DocApi } from '../../../utils/document';
+import {
+  EXAMPLE_CSV,
+  EXAMPLE_JSON,
+  EXAMPLE_XML,
+  EXAMPLE_YAML,
+} from '../../../utils/examples';
+import {
+  FORMAT_LABELS,
+  type ConversionResult,
+  type DocFormat,
+  type ParsedDoc,
+  type ParseFailure,
+} from '../../../utils/types';
 import type { DevdataPrefs, FormatPref } from '../../../utils/storage';
 
-// The Data tab — the core workspace (design §2.3, §2.4). Format is a PROPERTY of
-// the document (a chip with autodetect + manual override), not a tab, so the six
-// formats don't explode into 24 tab-states (design §1.3). Conversion is an
-// ACTION over the document, shown as a split view (§2.5), not a separate screen.
+// The Data tab — the core workspace (design §2.3–§2.5).
 //
-// The parse/convert/inspect logic is STUBBED (utils/format.ts → mock data +
-// todoLogic). To keep every designed STATE reachable and visible in the scaffold,
-// a clearly-labelled state preview switches between empty/loading/ok/error/
-// degraded — the states are real UI; only the data is mock.
+// Format is a PROPERTY of the document (a chip with autodetect + a one-click
+// override), not a tab: six formats × four states would be twenty-four tabs and
+// a lost user (§1.3). Conversion is an ACTION over the document, shown as a
+// split view with a MANDATORY warnings panel (§2.5) — silently losing data in a
+// conversion is the same class of lie as a fake statistic.
+//
+// Rendering strategy (§10.1): the tree and the text pane are virtualised to a
+// ~200-row window; the text pane is ONE flat <pre> coloured through the CSS
+// Custom Highlight API. No generated <span>s, hence no HTML-injection surface
+// and no 40 000-node DOM.
 
-type ViewState = 'empty' | 'loading' | 'ok' | 'error' | 'degraded';
+const ROW_H = 22;
+const LINE_H = 19;
+const OVERSCAN = 20;
+/** Above this we stop rendering the whole text at once and virtualise (no wrap). */
+const WRAP_LIMIT = 200_000;
 
-const STATE_LABELS: { id: ViewState; label: string }[] = [
-  { id: 'empty', label: 'Пусто' },
-  { id: 'loading', label: 'Загрузка' },
-  { id: 'ok', label: 'Документ' },
-  { id: 'error', label: 'Ошибка' },
-  { id: 'degraded', label: 'Большой (50 МБ)' },
+const FORMAT_OPTIONS: FormatPref[] = [
+  'auto',
+  'json',
+  'json5',
+  'jsonc',
+  'yaml',
+  'xml',
+  'csv',
 ];
 
-const FORMAT_OPTIONS: FormatPref[] = ['auto', 'json', 'json5', 'jsonc', 'yaml', 'xml', 'csv'];
+const CONVERT_TARGETS: DocFormat[] = ['json', 'yaml', 'xml', 'csv', 'json5'];
+
+type ViewMode = 'tree' | 'text' | 'both';
 
 export function DataTab({
   prefs,
-  update,
+  doc,
+  onOpenJwt,
+  revealPath,
 }: {
   prefs: DevdataPrefs | null;
-  update: (patch: Partial<DevdataPrefs>) => void;
+  doc: DocApi;
+  onOpenJwt: (token: string) => void;
+  /** A JSONPath the Schema tab asked us to reveal ("Показать в данных"). */
+  revealPath?: string | null;
 }) {
-  const [state, setState] = useState<ViewState>('ok');
-  const [doc] = useState<ParsedDoc>(MOCK_PARSED_DOC);
-  const [selected, setSelected] = useState<string>('$.users[1].id');
-  const [conversion, setConversion] = useState<ConversionResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [fileNote, setFileNote] = useState<string | null>(null);
 
-  const loadExample = useCallback(async (_fmt: Format) => {
-    setState('loading');
-    setBusy(true);
-    // Exercises the >150ms loading state against mock data (design §5.1).
-    await parseDocument('{ /* example */ }', 'auto');
-    setBusy(false);
-    setState('ok');
-  }, []);
-
-  const runConvert = useCallback(async (to: Format) => {
-    setBusy(true);
-    const result = await convert(doc, to);
-    setConversion(result);
-    setBusy(false);
-  }, [doc]);
-
-  const inspected = useMemo(() => inspectValue(selected), [selected]);
+  const onDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setDragging(false);
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+      void openFile(files, doc, setFileNote);
+    },
+    [doc],
+  );
 
   return (
-    <div className="data">
-      <MockBadge />
+    <div
+      className={dragging ? 'data data--drag' : 'data'}
+      // The drop zone is the WHOLE tab, not a small rectangle: hitting a small
+      // target with a file in hand is misery (design §4.2).
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDragging(false);
+      }}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="dropoverlay" aria-hidden="true">
+          Отпустите файл — разберём его здесь
+        </div>
+      )}
 
-      {/* Scaffold-only: preview each designed state. Not a shipped control. */}
-      <div className="statepick" role="group" aria-label="Предпросмотр состояний (каркас)">
-        <span className="statepick__label">Состояние (демо):</span>
-        {STATE_LABELS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={state === s.id ? 'chip chip--active' : 'chip'}
-            aria-pressed={state === s.id}
-            onClick={() => {
-              setConversion(null);
-              setState(s.id);
-            }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      {doc.jwtOffer !== null && (
+        <Callout tone="warn" title="Похоже на JWT, а не на документ">
+          Это три сегмента base64url с заголовком, где есть <span className="mono">alg</span>.
+          JWT — это учётные данные, и у него отдельный таб с отдельной рамкой безопасности.
+          <div className="row row--gap">
+            <Button
+              variant="primary"
+              onClick={() => {
+                const token = doc.jwtOffer;
+                doc.dismissJwtOffer();
+                if (token) onOpenJwt(token);
+              }}
+            >
+              Открыть в табе JWT
+            </Button>
+            <Button onClick={doc.dismissJwtOffer}>Не открывать</Button>
+          </div>
+        </Callout>
+      )}
 
-      {state === 'empty' && <EmptyState onExample={loadExample} />}
-      {state === 'loading' && <LoadingState />}
-      {state === 'error' && <ErrorState />}
-      {(state === 'ok' || state === 'degraded') && (
-        <>
-          <Toolbar
-            doc={doc}
-            prefs={prefs}
-            update={update}
-            busy={busy}
-            onConvert={runConvert}
-            degraded={state === 'degraded'}
-          />
-          {state === 'degraded' && <DegradedNotice />}
-          {conversion ? (
-            <ConversionView result={conversion} onBack={() => setConversion(null)} />
-          ) : (
-            <Workspace
-              doc={doc}
-              selected={selected}
-              onSelect={setSelected}
-              inspected={inspected}
-              wrap={prefs?.wrap ?? true}
-              lineNumbers={prefs?.lineNumbers ?? true}
-            />
-          )}
-        </>
+      {doc.oversize !== null && (
+        <Callout tone="warn" title={`Файл ${formatBytes(doc.oversize.bytes)}`}>
+          Инструмент рассчитан на {formatBytes(SOFT_MAX_BYTES)}. Может подвиснуть на десятки
+          секунд или упасть по памяти. Открыть всё равно?
+          <div className="row row--gap">
+            <Button variant="primary" onClick={doc.confirmOversize}>
+              Открыть
+            </Button>
+            <Button onClick={doc.cancelOversize}>Отмена</Button>
+          </div>
+        </Callout>
+      )}
+
+      {fileNote !== null && <Callout tone="info">{fileNote}</Callout>}
+      {doc.saveNote !== null && <Callout tone="warn">{doc.saveNote}</Callout>}
+
+      {doc.state.phase === 'empty' && <EmptyView doc={doc} onFileNote={setFileNote} />}
+      {doc.state.phase === 'loading' && (
+        <LoadingView label={doc.state.label} onCancel={doc.state.cancel} />
+      )}
+      {doc.state.phase === 'failed' && (
+        <FailureView failure={doc.state.failure} doc={doc} />
+      )}
+      {doc.state.phase === 'fatal' && (
+        <FatalView
+          message={doc.state.message}
+          text={doc.state.text}
+          onText={(t) => doc.load(t, { format: 'json' })}
+          onReset={doc.reset}
+        />
+      )}
+      {doc.state.phase === 'ready' && prefs !== null && (
+        <Ready
+          doc={doc}
+          parsed={doc.state.doc}
+          prefs={prefs}
+          revealPath={revealPath ?? null}
+        />
       )}
     </div>
   );
 }
 
-/* ---------------- States ---------------- */
+/* ------------------------------- file input ------------------------------- */
 
-function EmptyState({ onExample }: { onExample: (f: Format) => void }) {
+async function openFile(
+  files: File[],
+  doc: DocApi,
+  setNote: (n: string | null) => void,
+): Promise<void> {
+  const file = files[0];
+  if (!file) return;
+  if (files.length > 1) {
+    // Silently taking the first of ten is also a lie (design §4.2).
+    setNote(
+      `Открыт «${file.name}». Инструмент работает с одним документом за раз — остальные ${files.length - 1} файл(ов) пропущены.`,
+    );
+  } else {
+    setNote(null);
+  }
+  if (file.size > HARD_MAX_BYTES) {
+    setNote(
+      `Файл ${formatBytes(file.size)}. Это больше, чем расширение может разобрать в браузере (предел — ${formatBytes(HARD_MAX_BYTES)}).`,
+    );
+    return;
+  }
+  try {
+    const text = await file.text();
+    // The extension is a HINT for the detector, never a verdict — a .txt full of
+    // JSON parses as JSON (design §4.2).
+    doc.load(text, { name: file.name, format: formatFromName(file.name) });
+  } catch (err) {
+    setNote(
+      `Файл не прочитан: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+function formatFromName(name: string): FormatPref | undefined {
+  const ext = name.toLowerCase().split('.').pop() ?? '';
+  switch (ext) {
+    case 'json':
+    case 'geojson':
+      return 'json';
+    case 'jsonc':
+      return 'jsonc';
+    case 'json5':
+      return 'json5';
+    case 'yaml':
+    case 'yml':
+      return 'yaml';
+    case 'xml':
+    case 'svg':
+    case 'rss':
+      return 'xml';
+    case 'csv':
+    case 'tsv':
+      return 'csv';
+    default:
+      return undefined; // let autodetect decide
+  }
+}
+
+/* --------------------------------- states -------------------------------- */
+
+function EmptyView({
+  doc,
+  onFileNote,
+}: {
+  doc: DocApi;
+  onFileNote: (n: string | null) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
   return (
     <div className="empty">
       <div className="dropzone">
-        <p className="dropzone__title">Перетащите файл сюда или вставьте текст (⌘V)</p>
-        <Button variant="primary">Выбрать файл…</Button>
+        <p className="dropzone__title">Перетащите файл сюда или вставьте текст (⌘/Ctrl+V)</p>
+        <Button variant="primary" onClick={() => input.current?.click()}>
+          Выбрать файл…
+        </Button>
+        <input
+          ref={input}
+          type="file"
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            void openFile(files, doc, onFileNote);
+            e.target.value = '';
+          }}
+        />
         <p className="dropzone__formats mono">JSON · JSON5 · JSONC · YAML · XML · CSV · JWT</p>
       </div>
       <p className="empty__note">
-        Формат определяется сам. До 50 МБ. Всё считается локально: ни один байт не покидает браузер.
+        Формат определяется сам. До {formatBytes(SOFT_MAX_BYTES)}. Всё считается локально:
+        ни один байт не покидает браузер.
       </p>
       <div className="row row--gap">
         <span className="empty__examplelabel">Примеры:</span>
-        <button className="chip" type="button" onClick={() => onExample('json')}>JSON</button>
-        <button className="chip" type="button" onClick={() => onExample('yaml')}>YAML</button>
-        <button className="chip" type="button" onClick={() => onExample('jwt')}>JWT</button>
+        <button className="chip" type="button" onClick={() => doc.load(EXAMPLE_JSON, { format: 'json' })}>
+          JSON
+        </button>
+        <button className="chip" type="button" onClick={() => doc.load(EXAMPLE_YAML, { format: 'yaml' })}>
+          YAML
+        </button>
+        <button className="chip" type="button" onClick={() => doc.load(EXAMPLE_XML, { format: 'xml' })}>
+          XML
+        </button>
+        <button className="chip" type="button" onClick={() => doc.load(EXAMPLE_CSV, { format: 'csv' })}>
+          CSV
+        </button>
       </div>
     </div>
   );
 }
 
-function LoadingState() {
-  // Progress is by BYTES READ, never a fabricated parse percentage (design §5.1).
+function LoadingView({ label, onCancel }: { label: string; onCancel: () => void }) {
   return (
     <div className="loading" role="status" aria-live="polite">
-      <Spinner label="Разбираем 47 МБ…" />
-      <div className="progress" aria-hidden="true">
-        <div className="progress__bar" style={{ width: '48%' }} />
-      </div>
-      <p className="fine">прочитано 22 МБ из 47 МБ</p>
-      <Button>Отменить</Button>
+      <Spinner label={label} />
+      {/* No fabricated percentage. We do not know how far a parser has got, and
+          inventing "87%" is exactly the fake-number bug the house rules exist to
+          prevent (design §5.1). */}
+      <p className="fine">
+        Разбор идёт в фоновом потоке — вкладка не заморожена. Отмена действительно останавливает
+        поток.
+      </p>
+      <Button onClick={onCancel}>Отменить</Button>
     </div>
   );
 }
 
-function ErrorState() {
-  // The malformed-JSON error with a source POSITION and fix buttons (design §5.4).
-  const e = MOCK_PARSE_ERROR;
+function FailureView({ failure, doc }: { failure: ParseFailure; doc: DocApi }) {
+  const from = Math.max(0, failure.line - 3);
+  const window = useMemo(() => {
+    // Bounded slice: NEVER split the whole document (it can be 40 MB) just to
+    // show ~5 lines. Walk forward to the start of the first context line, then
+    // read at most `to - from` lines — we touch only a small window of the
+    // string, never the whole thing.
+    const to = failure.line + 2; // exclusive; ~5 lines around the error
+    const { text } = failure;
+    let offset = 0;
+    for (let ln = 0; ln < from; ln += 1) {
+      const nl = text.indexOf('\n', offset);
+      if (nl === -1) {
+        offset = text.length;
+        break;
+      }
+      offset = nl + 1;
+    }
+    const out: string[] = [];
+    for (let ln = from; ln < to && offset <= text.length; ln += 1) {
+      const nl = text.indexOf('\n', offset);
+      if (nl === -1) {
+        out.push(text.slice(offset));
+        break;
+      }
+      out.push(text.slice(offset, nl));
+      offset = nl + 1;
+    }
+    return out;
+  }, [failure, from]);
+
   return (
     <div className="parse-error">
       <p className="parse-error__status" role="alert">
-        <Badge severity="poor">Ошибка разбора</Badge> строка {e.line}, столбец {e.column}
+        <Badge severity="poor">✗ Ошибка разбора</Badge> строка {failure.line}, столбец{' '}
+        {failure.column}
       </p>
-      <pre className="mono errbox">{`  13   "meta": {
-  14     "version": "1.0",,
-                          ^
-                          └─ строка ${e.line}, столбец ${e.column}
-  15   }`}</pre>
-      <p className="parse-error__msg">✗ {e.message}</p>
-      <p className="fine">Похоже на лишнюю запятую. Варианты:</p>
+
+      <pre className="mono errbox">
+        {window
+          .map((line, i) => {
+            const n = from + i + 1;
+            const marker =
+              n === failure.line
+                ? `\n${' '.repeat(String(n).length + 2 + failure.column - 1)}^ строка ${failure.line}, столбец ${failure.column}`
+                : '';
+            return `${String(n).padStart(4, ' ')}  ${line}${marker}`;
+          })
+          .join('\n')}
+      </pre>
+
+      <p className="parse-error__msg">✗ {failure.message}</p>
+
+      {failure.suggestions.length > 0 && (
+        <>
+          <p className="fine">Варианты:</p>
+          <div className="row row--gap">
+            {failure.suggestions.map((s) => (
+              <Button key={s.id} onClick={() => doc.reparseAs(s.id)}>
+                {s.label}
+              </Button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {failure.partial && failure.partial.length > 0 && (
+        <section className="partial">
+          <h2 className="ui-section-heading">Разобрано до ошибки</h2>
+          <p className="fine">
+            Показана часть документа, которую удалось разобрать. Пустой экран из-за одной запятой
+            в 40 МБ — это жестоко.
+          </p>
+          <ul className="partial__list mono">
+            {failure.partial.slice(0, 40).map((node, i) => (
+              <li key={i} style={{ paddingLeft: `${node.depth * 14}px` }}>
+                {node.key ?? (node.index !== null ? `[${node.index}]` : '$')} {node.preview}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="row row--gap">
-        {e.suggestions.map((s) => (
-          <Button key={s}>{s}</Button>
-        ))}
+        <Button onClick={doc.reset}>Начать заново</Button>
+      </div>
+    </div>
+  );
+}
+
+function FatalView({
+  message,
+  text,
+  onText,
+  onReset,
+}: {
+  message: string;
+  text: string;
+  onText: (text: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="parse-error">
+      <p className="parse-error__status" role="alert">
+        <Badge severity="poor">✗ Разбор не завершён</Badge>
+      </p>
+      <p className="parse-error__msg">{message}</p>
+      <p className="fine">Что можно сделать:</p>
+      <div className="row row--gap">
+        {text !== '' && (
+          <Button onClick={() => onText(text)}>Повторить</Button>
+        )}
+        <Button onClick={onReset}>Открыть другой документ</Button>
       </div>
       <Callout tone="info">
-        Позиция берётся из <span className="mono">jsonc-parser</span> (стабильные оффсеты),
-        а не из текста SyntaxError движка. Часть до ошибки показана деревом ниже.
+        Это ограничение вкладки (памяти или времени), а не ошибка документа. Закрытие других
+        вкладок иногда действительно помогает — браузер выделяет память на вкладку.
       </Callout>
     </div>
   );
 }
 
-function DegradedNotice() {
+/* ---------------------------------- ready --------------------------------- */
+
+function Ready({
+  doc,
+  parsed,
+  prefs,
+  revealPath,
+}: {
+  doc: DocApi;
+  parsed: ParsedDoc;
+  prefs: DevdataPrefs;
+  revealPath: string | null;
+}) {
+  const [selected, setSelected] = useState(0);
+  const [expanded, setExpanded] = useState<Set<number>>(() =>
+    expandToDepth(parsed.tree, prefs.expandDepth),
+  );
+  const [mode, setMode] = useState<ViewMode>('both');
+  const [conversion, setConversion] = useState<ConversionResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copyState, setCopyState] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [hitIndex, setHitIndex] = useState(0);
+  const [gotoLine, setGotoLine] = useState<number | null>(null);
+  const [convertError, setConvertError] = useState<string | null>(null);
+  const jobRef = useRef<RunningJob<ConversionResult> | null>(null);
+
+  // A new document ⇒ a fresh tree state.
+  useEffect(() => {
+    setSelected(0);
+    setExpanded(expandToDepth(parsed.tree, prefs.expandDepth));
+    setConversion(null);
+    setQuery('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed]);
+
+  useEffect(() => () => jobRef.current?.cancel(), []);
+
+  const rows = useMemo(() => visibleRows(parsed.tree, expanded), [parsed.tree, expanded]);
+  const inspected = useMemo(
+    () => inspectValue(parsed, selected),
+    [parsed, selected],
+  );
+
+  const hits = useMemo(() => {
+    if (query === '' || query.startsWith('$')) return [];
+    return searchText(parsed, query);
+  }, [parsed, query]);
+
+  const searchDisabled = parsed.text.length > MAX_SEARCH_BYTES;
+
+  const runConvert = useCallback(
+    (to: DocFormat, subtreePath?: string) => {
+      setBusy(true);
+      setConvertError(null);
+      jobRef.current?.cancel();
+      const job = subtreePath
+        ? convertSubtree(parsed, subtreePath, to, prefs)
+        : convert(parsed, to, prefs);
+      jobRef.current = job;
+      job.promise.then(
+        (result) => {
+          jobRef.current = null;
+          setBusy(false);
+          setConversion(result);
+        },
+        (err: unknown) => {
+          jobRef.current = null;
+          setBusy(false);
+          if (isCancelled(err)) return;
+          setConvertError(err instanceof Error ? err.message : String(err));
+        },
+      );
+    },
+    [parsed, prefs],
+  );
+
+  const copy = useCallback(async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState(`${label} скопирован${label === 'Путь' ? '' : 'о'}`);
+    } catch {
+      // NEVER show "Copied" without checking the promise (design §8).
+      setCopyState('Буфер обмена недоступен — выделите текст и нажмите ⌘/Ctrl+C.');
+    }
+    setTimeout(() => setCopyState(null), 1800);
+  }, []);
+
+  const beautify = useCallback(
+    (minify: boolean) => {
+      setBusy(true);
+      setConvertError(null);
+      // Re-serialising 50 MB is Worker work: doing it here would freeze the tab.
+      const job = reformat(parsed, prefs, {
+        indent: minify ? 'min' : prefs.indent === 'min' ? '2' : prefs.indent,
+      });
+      job.promise.then(
+        (text) => {
+          setBusy(false);
+          doc.replaceText(text, 'json');
+        },
+        (err: unknown) => {
+          setBusy(false);
+          if (isCancelled(err)) return;
+          setConvertError(err instanceof Error ? err.message : String(err));
+        },
+      );
+    },
+    [parsed, prefs, doc],
+  );
+
+  const reveal = useCallback(
+    (path: string) => {
+      const found = searchPath(parsed.tree, path);
+      if (!found) return;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const a of found.reveal) next.add(a);
+        return next;
+      });
+      setSelected(found.index);
+      const line = parsed.tree[found.index]?.line;
+      if (line) setGotoLine(line);
+    },
+    [parsed.tree],
+  );
+
+  // "Показать в данных" from the Schema tab (design §4.5 step 3).
+  useEffect(() => {
+    if (revealPath) reveal(revealPath);
+  }, [revealPath, reveal]);
+
   return (
-    <Callout tone="warn" title="⚠ Большой документ: 47 МБ, 1 240 118 строк">
-      Дерево и подсветка работают только по видимой части. Отключено: поиск по всему документу (v1),
-      сортировка ключей. Beautify создаст ещё одну копию в памяти — может не хватить.
-    </Callout>
+    <>
+      <Toolbar
+        parsed={parsed}
+        prefs={prefs}
+        doc={doc}
+        busy={busy}
+        mode={mode}
+        setMode={setMode}
+        onConvert={runConvert}
+        onBeautify={beautify}
+        onCopy={() => void copy(parsed.text, 'Документ')}
+        onDownload={() => download(parsed.text, parsed.name ?? `document.${parsed.format}`)}
+      />
+
+      <div className="statusline" aria-live="polite">
+        {copyState !== null && <span className="fine">{copyState}</span>}
+      </div>
+
+      {parsed.truncated && (
+        <Callout tone="warn" title="⚠ Дерево построено частично">
+          Документ содержит больше узлов, чем можно удержать в дереве. Текст показан целиком,
+          дерево — до предела. Поиск по пути ниже предела работает.
+        </Callout>
+      )}
+      {parsed.notes.map((note) => (
+        <Callout key={note} tone="info">
+          {note}
+        </Callout>
+      ))}
+      {convertError !== null && (
+        <Callout tone="poor" title="Преобразование не выполнено">
+          {convertError}
+        </Callout>
+      )}
+
+      {conversion !== null ? (
+        <ConversionView
+          parsed={parsed}
+          result={conversion}
+          onBack={() => setConversion(null)}
+          onAdopt={(text, format) => {
+            setConversion(null);
+            doc.replaceText(text, format);
+          }}
+          onConvertSubtree={(path, to) => runConvert(to, path)}
+          onCopy={(text) => void copy(text, 'Результат')}
+        />
+      ) : (
+        <div className={`workspace workspace--${mode}`}>
+          {mode !== 'text' && (
+            <TreePane
+              tree={parsed.tree}
+              rows={rows}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              selected={selected}
+              setSelected={setSelected}
+              onGotoLine={setGotoLine}
+              onCopyValue={(v) => void copy(v, 'Значение')}
+              onCopyPath={(p) => void copy(p, 'Путь')}
+            />
+          )}
+          {mode !== 'tree' && (
+            <TextPane
+              parsed={parsed}
+              wrap={prefs.wrap}
+              lineNumbers={prefs.lineNumbers}
+              query={query}
+              setQuery={setQuery}
+              hits={hits}
+              hitIndex={hitIndex}
+              setHitIndex={setHitIndex}
+              searchDisabled={searchDisabled}
+              gotoLine={gotoLine}
+              onPath={reveal}
+            />
+          )}
+          {inspected !== null && (
+            <section className="inspector" aria-label="Значение">
+              <div className="inspector__head">
+                <h2 className="ui-section-heading">Значение</h2>
+                <code className="mono">{inspected.path}</code>
+                <span className="grow" />
+                <Button onClick={() => void copy(inspected.raw, 'Значение')}>Копировать</Button>
+                <Button onClick={() => void copy(inspected.path, 'Путь')}>Копировать путь</Button>
+              </div>
+              <p className="inspector__value mono">{inspected.raw}</p>
+              {inspected.precisionNote !== null && (
+                <p className="inspector__note">
+                  <Badge severity="warn">⚠</Badge> {inspected.precisionNote}
+                </p>
+              )}
+              {inspected.exactnessNote !== null && (
+                <p className="fine">{inspected.exactnessNote}</p>
+              )}
+              {inspected.lengthNote !== null && <p className="fine">{inspected.lengthNote}</p>}
+            </section>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
-/* ---------------- Toolbar ---------------- */
+/* --------------------------------- toolbar -------------------------------- */
 
 function Toolbar({
-  doc,
+  parsed,
   prefs,
-  update,
+  doc,
   busy,
+  mode,
+  setMode,
   onConvert,
-  degraded,
+  onBeautify,
+  onCopy,
+  onDownload,
 }: {
-  doc: ParsedDoc;
-  prefs: DevdataPrefs | null;
-  update: (patch: Partial<DevdataPrefs>) => void;
+  parsed: ParsedDoc;
+  prefs: DevdataPrefs;
+  doc: DocApi;
   busy: boolean;
-  onConvert: (f: Format) => void;
-  degraded: boolean;
+  mode: ViewMode;
+  setMode: (m: ViewMode) => void;
+  onConvert: (to: DocFormat) => void;
+  onBeautify: (minify: boolean) => void;
+  onCopy: () => void;
+  onDownload: () => void;
 }) {
-  const [convertOpen, setConvertOpen] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const jsonFamily =
+    parsed.format === 'json' || parsed.format === 'jsonc' || parsed.format === 'json5';
+
+  // Badge honesty (design §5.1): "Валиден" asserts the WHOLE document parsed
+  // cleanly. When the tree was cut short (truncated) or CSV rows disagreed with
+  // the header (a field-count mismatch note), that assertion is false — the
+  // document was merely *parsed*, not validated. Soften the label in that case.
+  const csvMismatch = parsed.notes.some((n) => n.includes('число полей не совпадает'));
+  const clean = !parsed.truncated && !csvMismatch;
+
   return (
     <div className="toolbar">
       <div className="toolbar__row">
         <label className="field">
           Формат:
           <select
-            value={prefs?.defaultFormat === 'auto' ? doc.format : (prefs?.defaultFormat ?? doc.format)}
-            onChange={(e) => update({ defaultFormat: e.target.value as FormatPref })}
+            value={parsed.format}
+            onChange={(e) => {
+              const value = e.target.value as FormatPref;
+              if (value === 'auto') doc.load(parsed.text);
+              else doc.reparseAs(value);
+            }}
           >
             {FORMAT_OPTIONS.map((f) => (
               <option key={f} value={f}>
-                {f === 'auto' ? 'Авто' : FORMAT_LABELS[f as Format]}
+                {f === 'auto' ? 'Авто (перепроверить)' : FORMAT_LABELS[f]}
               </option>
             ))}
           </select>
         </label>
-        {doc.autodetected && <span className="fine">авто</span>}
+        {parsed.autodetected && (
+          <span className="fine" title="Автодетект может ошибиться — смените формат слева">
+            авто
+          </span>
+        )}
         <span className="stats mono">
-          {fmtBytes(doc.bytes)} · {doc.lines.toLocaleString('ru')} строк · {doc.nodes.toLocaleString('ru')} узлов
+          {formatBytes(parsed.bytes)} · {parsed.lines.toLocaleString('ru')} строк ·{' '}
+          {parsed.tree.length.toLocaleString('ru')} узлов
         </span>
         <span className="grow" />
-        {doc.valid ? (
+        {clean ? (
           <Badge severity="ok">✓ Валиден</Badge>
         ) : (
-          <Badge severity="poor">✗ Невалиден</Badge>
+          <Badge severity="warn">✓ Разобран</Badge>
         )}
       </div>
 
       <div className="toolbar__row">
         <div className="segmented" role="group" aria-label="Вид">
-          <button type="button" className="seg seg--active">Дерево</button>
-          <button type="button" className="seg">Текст</button>
-          <button type="button" className="seg" disabled={degraded} title={degraded ? 'Недоступно на большом документе' : undefined}>Оба</button>
+          {(['tree', 'text', 'both'] as ViewMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={mode === m ? 'seg seg--active' : 'seg'}
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+            >
+              {m === 'tree' ? 'Дерево' : m === 'text' ? 'Текст' : 'Оба'}
+            </button>
+          ))}
         </div>
-        <Button disabled={busy}>Beautify</Button>
-        <Button disabled={busy}>Minify</Button>
-        <label className="field">
-          отступ:
-          <select value={prefs?.indent ?? '2'} onChange={(e) => update({ indent: e.target.value as DevdataPrefs['indent'] })}>
-            <option value="2">2</option>
-            <option value="4">4</option>
-            <option value="tab">Tab</option>
-            <option value="min">Minified</option>
-          </select>
-        </label>
-        <label className="check check--inline" title="Влияет только на вывод — дерево всегда в исходном порядке (design §3)">
-          <input
-            type="checkbox"
-            checked={prefs?.sortKeys ?? false}
-            disabled={degraded}
-            onChange={(e) => update({ sortKeys: e.target.checked })}
-          />
-          Сорт. ключей
-        </label>
+
+        <Button
+          disabled={busy}
+          onClick={() => onBeautify(false)}
+        >
+          Beautify
+        </Button>
+        <Button disabled={busy} onClick={() => onBeautify(true)}>
+          Minify
+        </Button>
+        {!jsonFamily && (
+          <span className="fine">
+            Beautify заменит документ его JSON-представлением
+          </span>
+        )}
+
         <span className="grow" />
+
         <div className="convert">
-          <Button onClick={() => setConvertOpen((v) => !v)} disabled={busy}>
+          <Button onClick={() => setMenu((v) => !v)} disabled={busy}>
             Конвертировать в ▾
           </Button>
-          {convertOpen && (
+          {menu && (
             <ul className="menu" role="menu">
-              {(['yaml', 'xml', 'csv', 'json5'] as Format[]).map((f) => (
+              {CONVERT_TARGETS.filter((f) => f !== parsed.format).map((f) => (
                 <li key={f} role="none">
                   <button
                     role="menuitem"
                     type="button"
                     onClick={() => {
-                      setConvertOpen(false);
+                      setMenu(false);
                       onConvert(f);
                     }}
                   >
@@ -284,84 +807,219 @@ function Toolbar({
             </ul>
           )}
         </div>
-        <Button disabled={busy}>Копировать</Button>
-        <Button disabled={busy}>Скачать</Button>
+        <Button disabled={busy} onClick={onCopy}>
+          Копировать
+        </Button>
+        <Button disabled={busy} onClick={onDownload}>
+          Скачать
+        </Button>
+        <Button onClick={doc.reset}>Закрыть документ</Button>
       </div>
     </div>
   );
 }
 
-/* ---------------- Workspace (tree + text + inspector) ---------------- */
+/* -------------------------------- tree pane ------------------------------- */
 
-function Workspace({
-  doc,
+function TreePane({
+  tree,
+  rows,
+  expanded,
+  setExpanded,
   selected,
-  onSelect,
-  inspected,
-  wrap,
-  lineNumbers,
+  setSelected,
+  onGotoLine,
+  onCopyValue,
+  onCopyPath,
 }: {
-  doc: ParsedDoc;
-  selected: string;
-  onSelect: (path: string) => void;
-  inspected: ReturnType<typeof inspectValue>;
-  wrap: boolean;
-  lineNumbers: boolean;
+  tree: FlatNode[];
+  rows: number[];
+  expanded: Set<number>;
+  setExpanded: (fn: (prev: Set<number>) => Set<number>) => void;
+  selected: number;
+  setSelected: (i: number) => void;
+  onGotoLine: (line: number) => void;
+  onCopyValue: (value: string) => void;
+  onCopyPath: (path: string) => void;
 }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [height, setHeight] = useState(420);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeight(el.clientHeight));
+    ro.observe(el);
+    setHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const count = Math.ceil(height / ROW_H) + OVERSCAN * 2;
+  const windowRows = rows.slice(start, start + count);
+
+  // `aria-setsize`/`aria-posinset` need the sibling list. Computing it per
+  // rendered row would be O(children) × 200 rows — on an array with 100 000
+  // elements that is a 20-million-step scroll handler. Cache it per parent
+  // instead: the ~200 visible rows share a handful of parents.
+  const siblingCache = useRef(new Map<number, number[]>());
+  useEffect(() => {
+    siblingCache.current = new Map();
+  }, [tree]);
+  const siblingsOf = useCallback(
+    (parent: number): number[] => {
+      const cached = siblingCache.current.get(parent);
+      if (cached) return cached;
+      const list = childrenOf(tree, parent);
+      siblingCache.current.set(parent, list);
+      return list;
+    },
+    [tree],
+  );
+
+  const cursor = rows.indexOf(selected);
+
+  const move = (delta: number) => {
+    const next = rows[Math.min(rows.length - 1, Math.max(0, cursor + delta))];
+    if (next === undefined) return;
+    setSelected(next);
+    const at = rows.indexOf(next) * ROW_H;
+    const el = scroller.current;
+    if (!el) return;
+    if (at < el.scrollTop) el.scrollTop = at;
+    else if (at + ROW_H > el.scrollTop + el.clientHeight) {
+      el.scrollTop = at + ROW_H - el.clientHeight;
+    }
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const node = tree[selected];
+    if (!node) return;
+    const mod = event.ctrlKey || event.metaKey;
+
+    if (mod && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      if (event.shiftKey) onCopyPath(pathOf(tree, selected));
+      else onCopyValue(node.raw ?? node.preview);
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        move(1);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        move(-1);
+        return;
+      case 'Home':
+        event.preventDefault();
+        setSelected(rows[0] ?? 0);
+        if (scroller.current) scroller.current.scrollTop = 0;
+        return;
+      case 'End': {
+        event.preventDefault();
+        const last = rows[rows.length - 1];
+        if (last !== undefined) setSelected(last);
+        if (scroller.current) scroller.current.scrollTop = rows.length * ROW_H;
+        return;
+      }
+      case 'ArrowRight':
+        event.preventDefault();
+        if (node.subtree > 0 && !expanded.has(selected)) {
+          setExpanded((prev) => new Set(prev).add(selected));
+        } else {
+          move(1);
+        }
+        return;
+      case 'ArrowLeft':
+        event.preventDefault();
+        // WAI-ARIA tree semantics: collapse, or step out to the parent.
+        if (node.subtree > 0 && expanded.has(selected)) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.delete(selected);
+            return next;
+          });
+        } else if (node.parent >= 0) {
+          setSelected(node.parent);
+        }
+        return;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        if (node.line) onGotoLine(node.line);
+        if (node.subtree > 0) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            if (next.has(selected)) next.delete(selected);
+            else next.add(selected);
+            return next;
+          });
+        }
+        return;
+      default:
+    }
+  };
+
   return (
-    <div className="workspace">
-      <section className="pane pane--tree" aria-label="Дерево">
+    <section className="pane pane--tree" aria-label="Дерево">
+      <div className="pane__head">
         <h2 className="ui-section-heading">Дерево</h2>
-        {/* One tab stop for the whole tree (roving tabindex, design §9.3). */}
-        <div className="tree" role="tree" aria-label="Структура документа" tabIndex={0}>
-          {doc.rows.map((row) => (
-            <TreeRowView
-              key={row.id}
-              row={row}
-              selected={row.path === selected}
-              onSelect={() => onSelect(row.path)}
-            />
-          ))}
+        <span className="fine">{rows.length.toLocaleString('ru')} видимых узлов</span>
+      </div>
+      {/* ONE tab stop for the whole tree (roving tabindex) — not 40 000. */}
+      <div
+        ref={scroller}
+        className="tree"
+        role="tree"
+        aria-label="Структура документа"
+        tabIndex={0}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        onKeyDown={onKeyDown}
+      >
+        <div style={{ height: `${rows.length * ROW_H}px`, position: 'relative' }}>
+          <div style={{ transform: `translateY(${start * ROW_H}px)` }}>
+            {windowRows.map((i) => {
+              const node = tree[i];
+              if (!node) return null;
+              return (
+                <TreeRow
+                  key={i}
+                  node={node}
+                  index={i}
+                  siblings={node.parent >= 0 ? siblingsOf(node.parent) : ROOT_SIBLINGS}
+                  selected={i === selected}
+                  expanded={expanded.has(i)}
+                  onSelect={() => {
+                    setSelected(i);
+                    if (node.line) onGotoLine(node.line);
+                  }}
+                  onToggle={() =>
+                    setExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(i)) next.delete(i);
+                      else next.add(i);
+                      return next;
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
         </div>
-        <p className="fine">↑↓ навигация · → раскрыть · виртуализировано (окно ~100 строк)</p>
-      </section>
-
-      <section className="pane pane--text" aria-label="Текст">
-        <div className="pane__head">
-          <h2 className="ui-section-heading">Текст</h2>
-          <input className="search" type="search" placeholder="🔍 Поиск в документе" aria-label="Поиск" />
-        </div>
-        {/* Flat <pre> — syntax colouring will come from the Highlight API over
-            Ranges, NEVER generated <span> HTML (design §7.3). */}
-        <pre className={wrap ? 'code code--wrap mono' : 'code mono'}>
-          {doc.textLines.map((line, i) => (
-            <span className="code__line" key={i}>
-              {lineNumbers && <span className="code__gutter" aria-hidden="true">{i + 1}</span>}
-              <span className="code__text">{line}</span>
-            </span>
-          ))}
-        </pre>
-      </section>
-
-      <section className="inspector" aria-label="Значение">
-        <div className="inspector__head">
-          <h2 className="ui-section-heading">Значение</h2>
-          <code className="mono">{inspected.path}</code>
-          <span className="grow" />
-          <Button>Копировать</Button>
-        </div>
-        <p className="inspector__value mono">{inspected.raw}</p>
-        {inspected.precisionNote && (
-          <p className="inspector__note">
-            <Badge severity="warn">⚠</Badge> {inspected.precisionNote}
-          </p>
-        )}
-      </section>
-    </div>
+      </div>
+      <p className="fine">
+        ↑↓ навигация · →/← раскрыть/свернуть · Enter — показать в тексте · ⌘/Ctrl+C — значение ·
+        ⌘/Ctrl+⇧+C — путь
+      </p>
+    </section>
   );
 }
 
-const KIND_MARK: Record<TreeRow['kind'], string> = {
+const KIND_MARK: Record<FlatNode['kind'], string> = {
   object: '{}',
   array: '[]',
   string: '"',
@@ -370,61 +1028,341 @@ const KIND_MARK: Record<TreeRow['kind'], string> = {
   null: '∅',
 };
 
-function TreeRowView({
-  row,
+const ROOT_SIBLINGS = [0];
+
+function TreeRow({
+  node,
+  index,
+  siblings,
   selected,
+  expanded,
   onSelect,
+  onToggle,
 }: {
-  row: TreeRow;
+  node: FlatNode;
+  index: number;
+  /** Pre-computed and cached by TreePane — never derived per row (O(n²) trap). */
+  siblings: number[];
   selected: boolean;
+  expanded: boolean;
   onSelect: () => void;
+  onToggle: () => void;
 }) {
   return (
     <div
       role="treeitem"
-      aria-level={row.depth + 1}
-      aria-expanded={row.expandable ? true : undefined}
+      aria-level={node.depth + 1}
+      aria-expanded={node.subtree > 0 ? expanded : undefined}
       aria-selected={selected}
+      aria-setsize={siblings.length}
+      aria-posinset={Math.max(1, siblings.indexOf(index) + 1)}
       className={selected ? 'trow trow--sel' : 'trow'}
-      style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
+      style={{ paddingLeft: `${node.depth * 14 + 4}px`, height: `${ROW_H}px` }}
       onClick={onSelect}
     >
-      <span className="trow__caret" aria-hidden="true">{row.expandable ? '▾' : '·'}</span>
-      <span className="trow__mark mono" aria-hidden="true">{KIND_MARK[row.kind]}</span>
-      {row.key !== null && <span className="trow__key">{row.key}</span>}
-      <span className="trow__preview mono">{row.preview}</span>
-      {row.count !== null && <span className="trow__count mono">{row.count}</span>}
+      <span
+        className="trow__caret"
+        aria-hidden="true"
+        onClick={(e) => {
+          if (node.subtree === 0) return;
+          e.stopPropagation();
+          onToggle();
+        }}
+      >
+        {node.subtree > 0 ? (expanded ? '▾' : '▸') : '·'}
+      </span>
+      {/* Type is a TYPOGRAPHIC marker, not a colour (WCAG 1.4.1, design §9.2). */}
+      <span className="trow__mark mono" aria-hidden="true">
+        {KIND_MARK[node.kind]}
+      </span>
+      {node.key !== null && <span className="trow__key">{node.key}</span>}
+      {node.index !== null && <span className="trow__key mono">[{node.index}]</span>}
+      <span className="trow__preview mono">{node.preview}</span>
     </div>
   );
 }
 
-/* ---------------- Conversion split view ---------------- */
+/* -------------------------------- text pane ------------------------------- */
 
-function ConversionView({ result, onBack }: { result: ConversionResult; onBack: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const warns = result.warnings.length > 0 ? result.warnings : MOCK_CONVERSION.warnings;
+function TextPane({
+  parsed,
+  wrap,
+  lineNumbers,
+  query,
+  setQuery,
+  hits,
+  hitIndex,
+  setHitIndex,
+  searchDisabled,
+  gotoLine,
+  onPath,
+}: {
+  parsed: ParsedDoc;
+  wrap: boolean;
+  lineNumbers: boolean;
+  query: string;
+  setQuery: (q: string) => void;
+  hits: { offset: number; line: number }[];
+  hitIndex: number;
+  setHitIndex: (i: number) => void;
+  searchDisabled: boolean;
+  gotoLine: number | null;
+  onPath: (path: string) => void;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const pre = useRef<HTMLPreElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [height, setHeight] = useState(480);
+  const supported = useMemo(() => highlightSupported(), []);
+
+  // Wrapping breaks fixed-height virtualisation (a wrapped line is not one row
+  // tall), so wrap only applies to documents small enough to render whole.
+  const whole = wrap && parsed.text.length <= WRAP_LIMIT;
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeight(el.clientHeight));
+    ro.observe(el);
+    setHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (gotoLine === null || !scroller.current) return;
+    scroller.current.scrollTop = Math.max(0, (gotoLine - 3) * LINE_H);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gotoLine]);
+
+  useEffect(() => {
+    const hit = hits[hitIndex];
+    if (!hit || !scroller.current) return;
+    scroller.current.scrollTop = Math.max(0, (hit.line - 3) * LINE_H);
+  }, [hits, hitIndex]);
+
+  const totalLines = parsed.lines;
+  const start = whole ? 0 : Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
+  const count = whole
+    ? totalLines
+    : Math.min(totalLines - start, Math.ceil(height / LINE_H) + OVERSCAN * 2);
+
+  const windowStart = parsed.lineStarts[start] ?? 0;
+  const endLine = start + count;
+  const windowEnd =
+    endLine >= totalLines ? parsed.text.length : (parsed.lineStarts[endLine] ?? parsed.text.length);
+  const windowText = parsed.text.slice(windowStart, windowEnd);
+
+  const gutter = useMemo(() => {
+    if (!lineNumbers) return '';
+    const out: string[] = [];
+    for (let i = start; i < endLine; i += 1) out.push(String(i + 1));
+    return out.join('\n');
+  }, [lineNumbers, start, endLine]);
+
+  // Colouring: Highlight API over the ONE text node of the <pre>. No <span>s.
+  useEffect(() => {
+    if (!supported) return;
+    const node = pre.current?.firstChild;
+    if (!(node instanceof Text)) return;
+    const windowHits = hits
+      .map((h) => ({ start: h.offset - windowStart, end: h.offset - windowStart + query.length }))
+      .filter((h) => h.start >= 0 && h.end <= windowText.length);
+    const cur = hits[hitIndex];
+    applyHighlights({
+      node,
+      text: windowText,
+      format: parsed.format,
+      hits: windowHits,
+      current:
+        cur && cur.offset >= windowStart && cur.offset + query.length <= windowEnd
+          ? { start: cur.offset - windowStart, end: cur.offset - windowStart + query.length }
+          : null,
+    });
+    return () => clearHighlights();
+  }, [supported, windowText, windowStart, windowEnd, parsed.format, hits, hitIndex, query]);
+
+  const isPath = query.startsWith('$');
+
+  return (
+    <section className="pane pane--text" aria-label="Текст">
+      <div className="pane__head">
+        <h2 className="ui-section-heading">Текст</h2>
+        <div className="searchbox">
+          <input
+            className="search"
+            type="search"
+            value={query}
+            disabled={searchDisabled}
+            placeholder={searchDisabled ? 'Поиск отключён на большом документе' : 'Поиск или $.path'}
+            aria-label="Поиск в документе или переход по JSONPath"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setHitIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              if (isPath) onPath(query);
+              else if (hits.length > 0) setHitIndex((hitIndex + 1) % hits.length);
+            }}
+          />
+          <span className="fine" role="status" aria-live="polite">
+            {searchDisabled
+              ? `> ${formatBytes(MAX_SEARCH_BYTES)}`
+              : isPath
+                ? 'Enter — перейти по пути'
+                : query === ''
+                  ? ''
+                  : hits.length === 0
+                    ? 'нет совпадений'
+                    : `${hitIndex + 1} из ${hits.length}`}
+          </span>
+        </div>
+      </div>
+
+      <div
+        ref={scroller}
+        className="textpane"
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      >
+        <div
+          style={{
+            height: whole ? undefined : `${totalLines * LINE_H}px`,
+            position: 'relative',
+          }}
+        >
+          <div
+            className="textpane__win"
+            style={{
+              transform: whole ? undefined : `translateY(${start * LINE_H}px)`,
+            }}
+          >
+            {lineNumbers && (
+              <pre className="code__gutter mono" aria-hidden="true">
+                {gutter}
+              </pre>
+            )}
+            {/* ONE text node. Colour comes from ::highlight() ranges. */}
+            <pre
+              ref={pre}
+              className={whole ? 'code__body code__body--wrap mono' : 'code__body mono'}
+            >
+              {windowText}
+            </pre>
+          </div>
+        </div>
+      </div>
+
+      <p className="fine">
+        {!supported &&
+          'Подсветка синтаксиса недоступна в этом браузере (нет CSS Custom Highlight API) — текст показан без цвета. '}
+        {!whole &&
+          'Отрисовывается только видимое окно строк, поэтому встроенный поиск браузера (⌘/Ctrl+F) увидит не весь документ — пользуйтесь поиском выше. '}
+        {wrap && !whole && 'Перенос строк отключён на больших документах: он ломает виртуализацию.'}
+      </p>
+    </section>
+  );
+}
+
+/* ------------------------------ conversion view --------------------------- */
+
+function ConversionView({
+  parsed,
+  result,
+  onBack,
+  onAdopt,
+  onConvertSubtree,
+  onCopy,
+}: {
+  parsed: ParsedDoc;
+  result: ConversionResult;
+  onBack: () => void;
+  onAdopt: (text: string, format: DocFormat) => void;
+  onConvertSubtree: (path: string, to: DocFormat) => void;
+  onCopy: (text: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (result.refusal !== null) {
+    return (
+      <div className="conversion">
+        <div className="conversion__head">
+          <strong>
+            {FORMAT_LABELS[result.from]} → {FORMAT_LABELS[result.to]}
+          </strong>
+          <span className="grow" />
+          <Button onClick={onBack}>← Назад к {FORMAT_LABELS[result.from]}</Button>
+        </div>
+        <Callout tone="poor" title="Преобразование невозможно — и мы не сделаем вид, что оно прошло">
+          {result.refusal}
+          {result.candidates.length > 0 && (
+            <>
+              <p className="fine">Массивы объектов, найденные в этом документе:</p>
+              <div className="row row--gap">
+                {result.candidates.map((path) => (
+                  <Button key={path} onClick={() => onConvertSubtree(path, result.to)}>
+                    {path}
+                  </Button>
+                ))}
+              </div>
+            </>
+          )}
+          {result.candidates.length === 0 && (
+            <p className="fine">
+              Массивов объектов в документе не нашлось — CSV для него не подходит вовсе.
+            </p>
+          )}
+        </Callout>
+      </div>
+    );
+  }
+
   return (
     <div className="conversion">
       <div className="conversion__head">
-        <strong>{FORMAT_LABELS[result.from]} → {FORMAT_LABELS[result.to]}</strong>
+        <strong>
+          {FORMAT_LABELS[result.from]} → {FORMAT_LABELS[result.to]}
+        </strong>
         <span className="grow" />
         <Button onClick={onBack}>← Назад к {FORMAT_LABELS[result.from]}</Button>
-        <Button variant="primary">Сделать {FORMAT_LABELS[result.to]} документом</Button>
+        <Button onClick={() => onCopy(result.text)}>Копировать</Button>
+        <Button
+          onClick={() => download(result.text, `document.${result.to}`)}
+        >
+          Скачать
+        </Button>
+        <Button variant="primary" onClick={() => onAdopt(result.text, result.to)}>
+          Сделать {FORMAT_LABELS[result.to]} документом
+        </Button>
       </div>
+
       <div className="conversion__panes">
-        <pre className="code mono">{MOCK_PARSED_DOC.textLines.join('\n')}</pre>
-        <pre className="code mono">{result.text}</pre>
+        <pre className="code mono">{parsed.text.slice(0, 100_000)}</pre>
+        <pre className="code mono">{result.text.slice(0, 100_000)}</pre>
       </div>
-      {/* The lossy-conversion warning panel is MANDATORY (design §2.5). */}
+
+      {/* The lossy-conversion panel is MANDATORY (design §2.5). */}
       <div className="warns">
-        <button type="button" className="warns__head" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
-          <Badge severity="warn">⚠ {warns.length} предупреждения преобразования</Badge>
+        <button
+          type="button"
+          className="warns__head"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {result.warnings.length === 0 ? (
+            <Badge severity="ok">Потерь не обнаружено</Badge>
+          ) : (
+            <Badge severity="warn">
+              ⚠ {result.warnings.length} предупреждени(й) преобразования
+            </Badge>
+          )}
           <span className="fine">{expanded ? 'Свернуть' : 'Развернуть'}</span>
         </button>
-        {expanded && (
+        {expanded && result.warnings.length > 0 && (
           <ul className="warns__list">
-            {warns.map((w, i) => (
-              <li key={i} className={`warns__item warns__item--${w.severity}`}>{w.message}</li>
+            {result.warnings.map((w, i) => (
+              <li key={i} className={`warns__item warns__item--${w.severity}`}>
+                {w.message}
+              </li>
             ))}
           </ul>
         )}
@@ -433,8 +1371,17 @@ function ConversionView({ result, onBack }: { result: ConversionResult; onBack: 
   );
 }
 
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} Б`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
-  return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+/* --------------------------------- download ------------------------------- */
+
+function download(text: string, name: string): void {
+  // `<a download>` + object URL. No `downloads` permission is taken — it is not
+  // needed, and taking a permission we do not need is a store rejection waiting
+  // to happen (design §8, §11).
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

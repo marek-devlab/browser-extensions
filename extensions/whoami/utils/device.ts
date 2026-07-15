@@ -128,13 +128,18 @@ export function collectPrivacy(): FieldGroup {
     title: 'Приватность',
     fields: [
       { label: 'GPU (WebGL)', field: webglRenderer() },
-      // ⚠️ navigator.gpu is async — see augmentGpu. Chromium/limited.
+      // ⚠️ navigator.gpu is async — resolved in collectAsync. Chromium/limited.
       { label: 'GPU (WebGPU)', field: na('not-implemented') },
+      { label: 'Global Privacy Control', field: gpc() },
       { label: 'Автоматизация (webdriver)', field: val(navigator.webdriver ? 'да' : 'нет') },
       { label: 'Тип указателя', field: mq('(pointer: fine)', 'мышь/трекпад', 'сенсор/грубый') },
       { label: 'Наведение (hover)', field: mq('(hover: hover)', 'есть', 'нет') },
       { label: 'Контраст ОС', field: forcedColors() },
-      // Локальный IP (WebRTC) и энтропия — заполняются асинхронно/в отчёте.
+      { label: 'Повышенный контраст', field: mq('(prefers-contrast: more)', 'да', 'нет') },
+      // 🔴 NO WebRTC local-IP probe and NO entropy/fingerprint score here. The local
+      // address is unobtainable (mDNS obfuscation, PLAN-2 §5.2) — we do not attempt
+      // it and we do not promise it. An entropy estimate would need a licensed
+      // frequency table; inventing numbers is forbidden (design §8.3, §14.4).
     ],
   };
 }
@@ -159,6 +164,16 @@ function deviceMemory(): Field {
     approx: true,
     note: '≥ значения. Браузер округляет до 0.25/0.5/1/2/4/8 ГБ и не различает 8, 16 и 64 ГБ.',
   });
+}
+
+/** Global Privacy Control — a real signal (Firefox, Brave; Chrome only via
+ *  extensions). Absent ≠ "off": we say the browser does not expose it. */
+function gpc(): Field {
+  const g = has(navigator, 'globalPrivacyControl')
+    ? (navigator as unknown as { globalPrivacyControl?: boolean }).globalPrivacyControl
+    : undefined;
+  if (typeof g !== 'boolean') return na('not-implemented');
+  return val(g ? 'включён (сайтам сообщается «не продавать мои данные»)' : 'выключен');
 }
 
 function doNotTrack(): Field {

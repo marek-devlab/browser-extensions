@@ -2,42 +2,73 @@ import { useCallback, useEffect, useState } from 'react';
 import { applyTheme, cacheTheme } from '@blur/ui';
 import { DEFAULT_PREFS, prefsItem, type DevdataPrefs } from './storage';
 
-// The localStorage seed key for the anti-FOUC theme stamp. Must be unique per
-// extension; `seedTheme(THEME_CACHE_KEY)` is called in every main.tsx BEFORE
-// createRoot. On a full-page tool a light flash is a whole-screen flash, so this
-// matters more here than in a popup.
+// The localStorage seed key for the anti-FOUC theme stamp. Unique per extension;
+// `seedTheme(THEME_CACHE_KEY)` runs in every main.tsx BEFORE createRoot. On a
+// full-page tool a light flash is a whole-screen flash.
 export const THEME_CACHE_KEY = 'blur-devdata:theme';
 
-// One hook, one writer for `sync:prefs`.
+// ONE hook, ONE writer for `sync:prefs`.
 //
-// Design note (§3, §8): the house convention names @blur/ui's `useThemeController`
-// for theme. We instead fold theme INTO this single prefs hook — using
-// @blur/ui's `applyTheme` + `cacheTheme` (the exact primitives
-// `useThemeController` is built from) — so there is only ONE writer to the
-// `sync:prefs` object. Two independent writers (a theme controller + a settings
-// hook) racing read-modify-write on the same item is precisely the RMW hazard
-// the design flags; keeping a single writer here is the honest fix. Serialising
-// writes with `navigator.locks` is still TODO (see below).
+// Theme is folded into this hook (rather than @blur/ui's `useThemeController`)
+// on purpose: `sync:prefs` is a single storage item, and two independent writers
+// racing read-modify-write on it is the exact hazard the design flags (§8). A
+// single writer is the honest fix; `useThemeController` remains right for any
+// surface whose theme lives in its own item.
 //
-// `prefs` is `null` until the first async read resolves. Consumers MUST treat
-// null as "not loaded yet" and disable controls — rendering DEFAULT_PREFS as if
-// it were the current value means the first click overwrites the real setting
+// `prefs` is null until the first read resolves. Consumers MUST treat null as
+// "not loaded" and disable controls — rendering DEFAULT_PREFS as if it were the
+// current value means the first click silently overwrites the real setting
 // (design §5.7, §8).
-export function usePrefs(): {
+
+/** Serialise writes so a burst of toggles cannot clobber each other. */
+async function withPrefsLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+  if (!locks) return fn(); // Older engines: the in-flight queue below still applies.
+  return locks.request('blur-devdata:prefs', fn);
+}
+
+// A tail-chained promise: even without `navigator.locks` (and within one
+// document, where locks are cheap but not free), writes leave in order.
+let queue: Promise<unknown> = Promise.resolve();
+
+export interface PrefsApi {
   prefs: DevdataPrefs | null;
   update: (patch: Partial<DevdataPrefs>) => void;
   /** True once storage has been read at least once. */
   ready: boolean;
-} {
+  /** A read/write failure, surfaced rather than swallowed (design §8). */
+  error: string | null;
+  retry: () => void;
+}
+
+export function usePrefs(): PrefsApi {
   const [prefs, setPrefs] = useState<DevdataPrefs | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    void prefsItem.getValue().then((value) => {
-      setPrefs(value);
-      applyTheme(value.theme);
-      cacheTheme(THEME_CACHE_KEY, value.theme);
-    });
-  }, []);
+    let alive = true;
+    void prefsItem
+      .getValue()
+      .then((value) => {
+        if (!alive) return;
+        setPrefs(value);
+        setError(null);
+        applyTheme(value.theme);
+        cacheTheme(THEME_CACHE_KEY, value.theme);
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        // Never render defaults as if they were the user's settings — the first
+        // click would then persist them over the real ones.
+        setError(
+          `Не удалось прочитать настройки: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
 
   const update = useCallback((patch: Partial<DevdataPrefs>) => {
     setPrefs((prev) => {
@@ -47,12 +78,41 @@ export function usePrefs(): {
         applyTheme(next.theme);
         cacheTheme(THEME_CACHE_KEY, next.theme);
       }
-      // TODO_LOGIC: devdata — serialise this write behind `navigator.locks`
-      // (design §8 "RMW race") so a burst of toggles cannot clobber each other.
-      void prefsItem.setValue(next);
+
+      queue = queue
+        .then(() =>
+          withPrefsLock(async () => {
+            // Re-read inside the lock: another surface (popup vs tool page) may
+            // have written since we rendered.
+            const current = await prefsItem.getValue();
+            const merged = { ...current, ...patch };
+            // `sync` fails HARD at 8 192 bytes per item. Prefs are ~300 bytes;
+            // if this ever trips, it is a bug, and we would rather know than
+            // shred the item (PLAN.md §18a).
+            if (JSON.stringify(merged).length > 4096) {
+              throw new Error(
+                'Объект настроек неожиданно велик — запись отменена, чтобы не упереться в лимит storage.sync (8 КБ на элемент).',
+              );
+            }
+            await prefsItem.setValue(merged);
+          }),
+        )
+        .then(
+          () => setError(null),
+          (err: unknown) =>
+            setError(
+              `Не удалось сохранить настройку: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        );
+
       return next;
     });
   }, []);
 
-  return { prefs, update, ready: prefs !== null };
+  const retry = useCallback(() => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  return { prefs, update, ready: prefs !== null, error, retry };
 }

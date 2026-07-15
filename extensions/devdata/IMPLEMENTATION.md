@@ -1,99 +1,120 @@
-# Data Format Toolkit — implementation notes (scaffold phase)
+# Data Format Toolkit — implementation notes
 
-This extension ships first as a **UI-complete scaffold** (PLAN.md §15 "Фаза 0"):
-all surfaces, navigation, routing, settings persistence, theme and every designed
-state are **real**; the domain logic is **stubbed on mock data**. This document is
-the real-vs-mocked map and the wiring backlog. Design references are to
-`docs/design/devdata.md`.
+The domain logic is **real**. There is no mock data, no `MOCK` import, no
+`<MockBadge>` and no `TODO_LOGIC` left in this extension
+(`grep -rn "TODO_LOGIC\|MockBadge\|from '@blur/ui'.*MOCK" extensions/devdata` → nothing).
 
-## Surface map — real vs mocked
+Design reference: [`docs/design/devdata.md`](../../docs/design/devdata.md).
 
-| Surface / area | Real now | Mocked / stubbed |
-|---|---|---|
-| **Popup** (`entrypoints/popup`) | theme persistence, activeTab host read, "looks like JSON" URL heuristic, `scripting` permission fact + request, open tool page | in-page formatting result (`formatActiveTab`), clipboard paste (opens tool instead) |
-| **Tool shell** (`tool/App.tsx`) | tablist (`role=tablist`, `aria-controls` on active only), hash router, `1/2/3/4` tab keys, default-tab pref, theme | — |
-| **Data tab** (`tool/tabs/DataTab.tsx`) | all five states (empty/loading/ok/error/degraded) via a labelled scaffold state-picker, format chip + override, toolbar controls bound to prefs, tree (roving one-tabstop `role=tree`), text pane, inspector, conversion split view + mandatory warnings panel | parse (`parseDocument`), convert (`convert`), inspect (`inspectValue`), beautify (`reformat`) — all return mock data + carry `TODO_LOGIC` |
-| **JWT tab** (`tool/tabs/JwtTab.tsx`) | credential/HS256 framing (final copy), token/secret/key held **only in state**, password-field hardening, RS256↔HS256 frame preview, claims table, verify loading/result states | decode (`decodeJwt`), verify (`verifyJwt`) — mock + `TODO_LOGIC` |
-| **Schema tab** (`tool/tabs/SchemaTab.tsx`) | draft select (from prefs), schema input, empty/loading/valid/errors states, support-limits callout | validate (`validateSchema`) — mock + `TODO_LOGIC` |
-| **Settings tab** (`tool/tabs/SettingsTab.tsx`) | **real persistence** of every pref to `sync:prefs`; controls disabled until storage read (`ready`); source-access feature-detect disables "exact big numbers"; permission **facts** for both page-formatting rows; consent `<dialog>` → real `permissions.request(<all_urls>)` with honest off-fallback; 2-step "erase document" (real `documentItem.removeValue()`) | auto-format content-script registration (`registerAutoFormat`), licenses list |
-| **Background** (`entrypoints/background.ts`) | context-menu create (install + startup), top-level `onClicked`, open-tool | handing `selectionText` to the tool (`TODO_LOGIC`) |
-| **Permissions** (`utils/permissions.ts`) | **fully real** — `contains`/`request`/`remove` + live `onAdded/onRemoved` re-read | — |
-| **Storage** (`utils/storage.ts`) | **fully real** — `sync:prefs`, `local:document`, `local:schema`, versioned | — |
-| **Theme** | **fully real** — `@blur/ui` `seedTheme`/`applyTheme`/`cacheTheme` + `<ThemeToggle>` | — |
+## What is real
 
-## TODO_LOGIC inventory (`grep -r TODO_LOGIC extensions/devdata`)
+| Area | Implementation |
+|---|---|
+| **Format autodetect** | `utils/core/detect.ts` — a **cheap main-thread sniff** (audit B1): BOM → JWT (only the tiny header segment is decoded; located with `indexOf`, never `split`) → `<` → braces (JSONC by a **bounded** comment scan, else strict JSON — **no full `JSON.parse`**) → `---`/`key:` → delimiter sniff. The JSON-vs-JSON5 decision is deferred to the Worker: an autodetected `json` that fails strict parse retries JSONC then JSON5 **off-thread** (`parseText(..., {autodetected})`), and the resolved format flows back in `ParseSuccess.format`. Result: detecting a 55 MB document is ~30 ms with zero full parses (was ~333 ms + a ~1 GB throwaway graph). Valid JSON stays `json`, so exact numbers are preserved. The UI shows "авто" + a one-click override |
+| **Parse** | `utils/core/parse.ts`, **in a Worker**. JSON/JSONC via `jsonc-parser` `parseTree` (error-tolerant, token offsets); JSON5 via `json5`; YAML via `yaml` (`maxAliasCount: 100` — billion-laughs guard); CSV via `papaparse` (delimiter autodetect + field-mismatch rows reported) |
+| **Exact big numbers** | `12345678901234567890` is shown **as written**. For JSON/JSONC every scalar's `raw` is sliced straight out of the source using `jsonc-parser` offsets, so beautify/minify/inspect all preserve it. For YAML/CSV/JSON5 the parsers return values and the source spelling is *gone* — the inspector says exactly that instead of showing the rounded number as if it were the document (`ParsedDoc.exact`) |
+| **`JSON.parse` source access (ES2026)** | Feature-detected in `SettingsTab.hasSourceAccess()` and reported honestly. It is a *second* route to the same truth, not the only one — see "Deviation" below |
+| **Tree** | `utils/core/tree.ts` — flat, pre-order, `subtree`-sized array. Every walker is an **explicit-stack loop**; nothing recurses (a 50 MB document nests deeply and a recursive walker is a `RangeError`). Caps: `MAX_NODES` 400 000, `MAX_DEPTH` 512, both surfaced as "дерево построено частично". Cycle guard on the ancestor chain (recursive YAML anchors) |
+| **Virtualisation** | Tree and text pane render a ~200-row window (`ROW_H`/`LINE_H` + overscan) over `Int32Array` line offsets, plus `content-visibility: auto`. The document text is never split into a per-line array |
+| **Syntax highlighting** | `utils/highlight.ts` + `utils/core/tokenize.ts` — **CSS Custom Highlight API** over ONE flat `<pre>` text node. Only the visible window is tokenised. Zero `<span>`s, zero generated markup, no highlight.js/Prism. Feature-detected; the fallback is *plain text* + a UI note, never a `<span>` fallback. `::highlight()` styles colour only (`font-weight` is not permitted there) |
+| **Beautify / minify / sort keys** | `emitJson` in the Worker, emitted **from the tree** so exact numbers survive. Sort-keys affects output only — the tree always shows source order |
+| **Convert** | Worker. JSON/JSON5/YAML/XML/CSV, each with a **mandatory** loss report (`ConversionWarning[]`): renamed XML tags (`2fa` → `_2fa`), `null` → empty element, types lost, array-of-one ambiguity, YAML 1.1 `yes`/`no` strings, dropped JSONC comments, nested cells stringified into CSV |
+| **CSV refusal** | JSON→CSV on a non-tabular document does **not** emit an empty CSV. It refuses, explains, and offers real JSONPaths of arrays-of-objects found in *this* document, each convertible with one click (`convertSubtree`) |
+| **XML** | Native `DOMParser`/`XMLSerializer`, zero KB. Parsed as `application/xml` (never `text/html`), on the **main thread** (Workers have no DOM), capped at 20 MB. A DTD declaring `<!ENTITY>` is **refused** outright (billion-laughs) |
+| **JWT** | `utils/jwt.ts` — hand-rolled base64url + `JSON.parse`, synchronous. Partial success is shown partially (valid header + non-JSON payload). `alg: none` → red block. Claims decoded with expiry/nbf/iat status and the "your clock" caveat. Verification: lazy `jose` + WebCrypto, `compactVerify` (signature only, so an expired token still verifies). Private-key paste is detected and rejected with an explanation |
+| **JSON Schema** | `@cfworker/json-schema` in the Worker, 5 s budget → `terminate()`. Drafts 2020-12/2019-09/7/4. External `$ref` → **explicit error** ("no network"), never a silent skip. `format:` off ⇒ the keyword is *stripped from the schema* before validating (filtering the errors would still let `format` steer an `anyOf` branch) |
+| **Search** | Literal text search over the whole document (`indexOf`, no user regex ever reaches an engine) + JSONPath navigation (`$.users[1].id`). Disabled above 20 MB, and the UI says so, along with "browser Ctrl+F only sees the rendered window" |
+| **Page formatting** | `entrypoints/formatter.content.ts` (`registration: 'runtime'` — **not in the manifest**). One-shot via `scripting.executeScript` (Chrome) / `tabs.executeScript` (Firefox MV2) on the activeTab-granted tab; opt-in auto via `registerContentScripts` / `contentScripts.register` at `document_start`. Viewer is built with `createElement` + `textContent`, announces itself, and ✕ restores the *original* text held in a variable |
+| **Permissions** | Facts only (`permissions.contains`), re-read on `onAdded`/`onRemoved`. The background keeps the content-script registration in step with permission **and** intent; an external revoke unregisters immediately |
+| **Storage** | `sync:prefs` (single writer, serialised behind `navigator.locks` + a tail-chained queue, 4 KB guard); `local:document` ≤1 MB (over that we say so, we don't silently drop); `local:schema` ≤256 KB; quota failures surface as a banner. `session:handoff` for context-menu/clipboard text (memory-only, cleared on read) |
+| **Failure handling** | Every parse/convert/validate is a cancellable Worker job. Timeout → `terminate()` + the likely cause. Worker death (OOM) → its own state with a retry. Parse failure → line/column (code points, not UTF-16 units), the failing lines, fix suggestions, and the **partial tree** parsed up to the error |
 
-| Location | What must be implemented | Library / API | Design |
-|---|---|---|---|
-| `utils/format.ts` `detectFormat` | Format autodetect (BOM→braces→`---`/`:`→`<`→delimiters→3 base64url segments) | — | §4.1 |
-| `utils/format.ts` `parseDocument` | Parse in a **Worker**; token offsets for error positions; preserve source number text | `jsonc-parser`, `json5`, `yaml`, `papaparse` | §2.4, §5.4, §5.6 |
-| `utils/format.ts` `inspectValue` | Resolve node by JSONPath; return **raw** source text + precision note | JSON.parse source access | §2.4 |
-| `utils/format.ts` `reformat` | Re-serialise with indent; sort-keys affects **output only** | — | §3 |
-| `utils/format.ts` `convert` | Convert in a Worker with **mandatory** lossy-conversion warnings | `yaml`, `papaparse`, native `DOMParser`/`XMLSerializer` | §2.5, §4.6 |
-| `utils/jwt.ts` `decodeJwt` | `atob` + JSON.parse; partial success; `alg:none` red block | own (0 KB) | §4.4 |
-| `utils/jwt.ts` `verifyJwt` | Local WebCrypto verify; "invalid ≠ forged"; alg/key mismatch | `jose` (lazy) | §2.7, §4.4 |
-| `utils/schema.ts` `validateSchema` | Validate in a Worker, 5s timeout → `terminate()`; explicit external-`$ref` error | `@cfworker/json-schema` (**not ajv**) | §2.8, §4.5 |
-| `utils/format-page.ts` `formatActiveTab` | `scripting.executeScript` (Chrome) / `tabs.executeScript` (FF MV2); overlay viewer; keep original text for "✕" restore | `scripting` | §2.12, §4.3 |
-| `utils/format-page.ts` `registerAutoFormat` | `registerContentScripts` on `<all_urls>` document_start; unregister on revoke | `scripting` | §8 |
-| `utils/prefs.ts` `update` | Serialise writes behind `navigator.locks` (RMW race) | `navigator.locks` | §8 |
-| `entrypoints/background.ts` `onClicked` | Hand `selectionText` to the tool (session handoff) | `storage.session` | §1.2 |
-| `entrypoints/popup/App.tsx` `pasteAndOpen` | `clipboard.readText()` with focused-empty-editor fallback | Clipboard API | §4.1 |
+## Security decisions
 
-## Libraries to wire (declared in package.json, all LAZY — design §10.3)
+- **Zero network.** No `fetch`/XHR/WebSocket/`sendBeacon` anywhere
+  (`grep -rn "fetch(\|XMLHttpRequest\|WebSocket\|sendBeacon" entrypoints utils` → nothing).
+  No JWKS-by-URL, no external `$ref`, no analytics, no error reporting.
+- **Zero `innerHTML`.** No `innerHTML`/`outerHTML`/`insertAdjacentHTML`/
+  `document.write`/`eval`/`new Function`/`setTimeout(string)` in our source. Untrusted
+  documents render as React children or via `textContent`. Colouring uses `Range`
+  objects, so user text is *never* turned into markup — the injection surface does
+  not exist by construction, rather than being escaped away.
+- **JWT credentials never persist.** The token, the HS256 secret and the public key
+  live only in `JwtTab` component state. There is no storage item that could hold
+  them; `JwtTab` is unmounted when you leave the tab; a JWT-looking paste on the
+  Data tab is *offered* to the JWT tab and never written to `local:document`.
+  The secret field is `type=password`, `autocomplete=off`, `spellcheck=false`,
+  `data-1p-ignore`, and the reveal button is held, not toggled.
+- **XXE / billion-laughs.** XML is parsed as `application/xml` (browsers do not
+  resolve external entities), and any DTD that **declares** entities is refused.
+  The refusal (`declaresEntities`, audit V1) is a proper DOCTYPE scan that honours
+  quoted literals — the previous `<!DOCTYPE[^>]*` regex was bypassable with a `>`
+  inside a `SYSTEM "a>b"` literal; the scan now catches that (verified). YAML uses
+  `maxAliasCount`. The tree builder guards cycles on the ancestor chain.
+- **JWTs never touch storage (audit V2).** The context-menu / clipboard handoff
+  runs through `storage.session`, which is extension storage, not tab RAM — so
+  `putHandoff` detects a JWT and **refuses to store it**, returning `jwt-skipped`;
+  the caller opens the JWT tab and the user pastes it there, where it lives only
+  in component state. Only non-credential document text ever transits the handoff.
+- **ReDoS / pathological input.** A schema `pattern` is attacker-controlled. It runs
+  in a Worker with a 5 s budget and is killed with `terminate()` — the only way to
+  stop a spinning regex. Nothing user-supplied is compiled into a regex on the main
+  thread.
+- **Permissions actually used.** `storage`, `contextMenus`, `activeTab` — all three are
+  exercised. `scripting` is optional and only requested when the user clicks "format
+  this tab" (permission-only, no host ⇒ no broad-access warning). `<all_urls>` is
+  optional-host and only requested behind the consent dialog.
+  ⚠️ **`wxt.config.ts` carries a `build:manifestGenerated` hook that strips the
+  `host_permissions` WXT hoists out of the content script's `matches`.** Without it
+  the built manifest silently asks for `<all_urls>` at install. Review the *built*
+  manifest, not the source.
 
-`json5` 2.2.3 · `jsonc-parser` 3.3.1 (offsets, error-tolerant) · `yaml` 2.9.0 (ISC)
-· `papaparse` 5.5.4 · `jose` 6.2.3 (WebCrypto, verify only) · `@cfworker/json-schema`
-(zero-eval, **not ajv** — MV3 CSP). XML uses native `DOMParser`/`XMLSerializer`
-(0 KB); the tree virtualiser and the unsigned JWT decoder are hand-rolled (0 KB).
-The initial tool bundle must carry only the JSON path; everything else comes in on
-first use via `await import()`.
+## Deviation from the design, and why
 
-> These deps are listed but **not imported** anywhere in the scaffold (only
-> referenced in `TODO_LOGIC` comments), so the scaffold builds without them
-> resolving. Wire each with a lazy `await import()` inside the corresponding stub
-> when its logic lands.
+**§5.6 "Точные большие числа" is specified as a toggle that goes disabled when the
+browser lacks `JSON.parse` source access.** We feature-detect it and report the
+result — but we do not disable anything, because for JSON/JSONC we do not need it:
+`jsonc-parser` gives us the token offsets, so the exact source spelling of every
+scalar is available in *every* browser. Disabling the feature on a browser where it
+demonstrably works would be pessimism dressed up as honesty. What we *do* say, in
+the inspector, is the truth we cannot escape: YAML/CSV/JSON5 parsers return values,
+so for those formats the original spelling is unrecoverable and the number shown is
+the rounded one.
 
-## Storage layout (real)
+**§12.6 CSV as a table.** CSV is rendered as an array-of-objects tree, not a
+dedicated virtualised table. The delimiter, column count and row-length mismatches
+are all reported. A real table view is deferred.
 
-- `sync:prefs` — flat `DevdataPrefs` (~15 boolean/enum fields, ~300 B). Fits the
-  8 KB per-item sync cap with huge margin. **One writer** (`utils/prefs.ts`).
-- `local:document` — cached parsed document, **≤1 MB** (`MAX_PERSIST_BYTES`);
-  larger documents are intentionally not saved and the UI says so.
-- `local:schema` — last schema text (≤256 KB), only when "restore" is on.
-- **No storage item** for the JWT token / secret / public key — RAM only, by
-  design (§7.2). This is an architectural invariant, enforced by the absence of a
-  storage item, not a runtime guard.
+## Deferred (not v1)
 
-## Theme wiring — one deviation from the house convention
+- Diff tab (design §1.3 — a v2 tab, deliberately absent rather than disabled).
+- Side panel (`side_panel` vs `sidebar_action` unresolved, PLAN-2 §11).
+- Dedicated CSV table view.
+- Progress-by-bytes during parse: the Worker parses from a string, so there is no
+  honest byte-progress to report and we show none rather than inventing a
+  percentage (design §5.1 forbids fabricated progress). Streaming a `File` through
+  the Worker to get real byte counts is the v2 way in.
+- In-page viewer is a `<details>` tree + raw text; it does not carry the Highlight
+  API colouring of the full tool.
 
-The convention names `@blur/ui`'s `useThemeController`. We instead fold theme into
-the single `usePrefs` hook using `applyTheme` + `cacheTheme` (the exact primitives
-`useThemeController` is built from) plus `seedTheme` in each `main.tsx` and the
-shared `<ThemeToggle>`. **Why:** `sync:prefs` is one storage item and must have one
-writer; a separate theme controller + a settings hook would be two writers racing
-read-modify-write on the same item (the RMW hazard the design flags in §8). A
-single writer is the honest fix. `useThemeController` remains the right choice for
-any surface whose theme lives in its *own* item.
+## Bundle shape
 
-## Icons (deliberately not generated here)
+The tool page's initial chunk carries only React + the UI. The parsers
+(`jsonc-parser`/`json5`/`yaml`/`papaparse`/`@cfworker`) live in the **Worker**
+bundle, fetched on first parse; `jose` is its own lazy chunk fetched only when
+"Проверить подпись" is clicked. Rolldown does not code-split inside a worker, so
+the worker is one ~220 KB file rather than five lazy chunks — it is still loaded
+only when a document is actually parsed.
 
-`public/icon/` contains only a `.gitkeep`. Icon PNGs (16/32/48/128) are produced by
-`scripts/gen-icons.mjs`, which iterates `Object.keys(BRAND)` in
-`scripts/lib/draw.mjs`. **Before the first build, add a `devdata` entry to that
-`BRAND` map** and run `npm run icons`; otherwise `action.default_icon` (and the
-auto-discovered top-level icons map) will 404. This file cannot cleanly generate
-PNGs, and `scripts/` is outside this extension's scope for the scaffold.
+## Verified
 
-## Known scaffold limitations (design decisions a scaffold can't fully honor)
-
-- **Worker parsing / virtualisation / Highlight API** (§2.4, §5.1, §10.1): the
-  scaffold renders a fixed mock tree and a flat `<pre>`. The real Worker pipeline,
-  50 MB windowed virtualisation and CSS Custom Highlight API colouring are
-  `TODO_LOGIC` in `utils/format.ts`. No `<span>`-generated highlighting is used, so
-  the "zero innerHTML" invariant is already satisfied.
-- **Scaffold state pickers**: the Data tab (state) and JWT tab (algorithm) carry a
-  clearly-labelled dashed "демо" switcher so a reviewer can see every designed
-  state without real logic. These are scaffold affordances and are removed once
-  the real state machine drives them.
-- **Popup keyboard command `⌘⇧V`** is shown as a hint only; registering the actual
-  `commands` shortcut is deferred with the clipboard wiring.
+- `npm run compile -w @blur/devdata` — clean.
+- `npx wxt build` and `npx wxt build -b firefox` — both build.
+- Built manifests (checked, not assumed):
+  - Chrome MV3: `permissions: [storage, contextMenus, activeTab]`,
+    `optional_permissions: [scripting]`, `optional_host_permissions: [<all_urls>]`,
+    **no** `host_permissions`, **no** `content_scripts`.
+  - Firefox MV2: `permissions: [storage, contextMenus, activeTab]`,
+    `optional_permissions: [<all_urls>]` (MV2 has no `optional_host_permissions`
+    key and no `scripting` permission — `tabs.executeScript` runs from `activeTab`,
+    and `utils/permissions.ts` reports `scripting` as held there).

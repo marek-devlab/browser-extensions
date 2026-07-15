@@ -1,143 +1,152 @@
 # Capture Studio — implementation notes
 
-Extension #5. Single purpose: **"Record a tab and export media."** Built as a
-UI-complete SCAFFOLD (all surfaces, navigation and settings persistence real;
-media domain logic stubbed on mocks). Authoritative spec: `docs/design/capture.md`
-(referenced as "§n" below). Reuses PLAN-2 §1/§10.4 and PLAN.md §6.
+Extension #5. Single purpose: **"Record a tab and export media."**
+Authoritative spec: `docs/design/capture.md` (referenced as "§n" below), plus
+PLAN-2 §1 and PLAN.md §6.
+
+**Status: the domain logic is REAL.** The mocks (`utils/mock-data.ts`,
+`<MockBadge>`, `mockAsync`, every `todoLogic()`) are gone. What remains
+unverified is listed at the bottom, honestly.
 
 ## Surface map
 
-| Surface | Entrypoint | Output | Role |
-|---|---|---|---|
-| Popup remote | `entrypoints/popup/` | `popup.html` | 320px. Pre-record setup + Record/Screenshot; fallback recording panel (§2.1, §2.2, §2.5). The single gesture that yields `activeTab`/`tabCapture` (§1.1). |
-| Recorder window | `entrypoints/recorder/` | `recorder.html` | Separate OS window (`windows.create({type:'popup',focused:false})`). Real ticking timer + `document.title` clock, pause/stop/two-step cancel. On **Firefox** it also OWNS the stream (§1.1, §2.3, §2.4). |
-| Offscreen | `entrypoints/offscreen/` | `offscreen.html` | **Chrome only, invisible.** Hosts `MediaRecorder` (no DOM in a SW — §9.5). Streams chunks to IndexedDB. |
-| Studio | `entrypoints/editor/` | `editor.html` | Full tab. Tabs: Library · Editor · Export · Settings, plus the Screenshot editor (§2.6–§2.13). |
-| Options | `entrypoints/options/` | `options.html` | Renders the shared `<Settings/>` (real persistence). See "Options shape" below. |
-| Background | `entrypoints/background.ts` | SW / event page | Badge, `commands`, session registry, offscreen orchestration. **Owns nothing** about the recording (§1.2, §10.1). |
-
-## Where the recording controls live — the central decision (§1.3, §1.4)
-
-There is **no on-page overlay**, ever: `tabCapture` records the tab COMPOSITE, so
-an injected Stop button would bake into the video (§1.4). Controls live in three
-independent channels, none touching the page:
-
-1. **Badge** — state only (`REC`/`❚❚`/`…`/`!`), NEVER a per-second timer (writing
-   the clock would wake the SW every second — §1.3). `background.ts setBadge()` is
-   real (MV3 `action` / MV2 `browserAction`).
-2. **Global `commands` shortcut** — the PRIMARY Stop (`Alt+Shift+S`), plus
-   Record/Pause/Screenshot. Declared in `wxt.config.ts` (a manifest KEY, no
-   warning), listener wired in `background.ts` (§1.3 ②). Works from any window /
-   tab / fullscreen / other app.
-3. **Recorder window** — the only surface with a real timer; on Firefox it is the
-   recorder itself. `document.title` mirrors the clock into the OS taskbar (§1.3).
-
-Popup is a fourth, fallback remote (§2.5) — clicking the icon mid-record shows the
-recording panel, never the setup form.
-
-## Chrome-offscreen vs Firefox-page divergence (§1.2, §12, encoded in the manifest)
-
-| | Chrome (MV3) | Firefox (MV2) |
+| Surface | Entrypoint | Role |
 |---|---|---|
-| Capture call | `tabCapture.getMediaStreamId` (background) | `getDisplayMedia()` from **recorder.html** |
-| Owns MediaStream/Recorder | **offscreen doc** | **recorder window** |
-| Permissions | + `tabCapture`, `offscreen` | neither exists — omitted |
-| Tab audio | yes | **impossible** (`getDisplayMedia` audio:false) — §1.1, §8 |
-| Record format | MP4 or WebM | WebM only; MP4 = export-time re-encode (§4.4) |
-| Extra click | no | yes — transient activation + browser picker (§1.5) |
-| Close recorder window | recording continues | **stops** recording (window = recorder) — guarded by `beforeunload` |
+| Popup | `entrypoints/popup/` | 320px remote. Setup form + Record/Screenshot; the recording panel when a capture is live (§2.5). The toolbar click is the ONE gesture that yields `activeTab` (§1.1). Owns nothing — it dies on focus loss. |
+| Recorder window | `entrypoints/recorder/` | A real OS window (`windows.create({type:'popup'})`). Live timer + `document.title` clock (→ taskbar), pause/stop/two-step cancel, mic meter. On **Firefox it OWNS the stream** (§1.2, §2.4). |
+| Offscreen | `entrypoints/offscreen/` | **Chrome only, invisible.** Hosts `MediaRecorder` (no DOM in a SW — §9.5). Excluded from the Firefox bundle via `<meta name="wxt.exclude" content="['firefox']">`. |
+| Studio | `entrypoints/editor/` → `editor.html` | Library · Editor · Export · Settings + the screenshot editor. Hash routes: `#/library`, `#/settings`, `#/clip/<id>`, `#/shot/<id>`. |
+| Options | `entrypoints/options/` | Renders the shared `<Settings/>`. `open_in_tab: true` (else Firefox renders it in the narrow `about:addons` frame — §1.1). |
+| Background | `entrypoints/background.ts` | Badge, `commands`, the Chrome start sequence, screenshots, window/tab bookkeeping, rehydration. **Owns nothing about the recording** (§1.2, §10.1). |
 
-`wxt.config.ts` branches `permissions`/`optional_permissions`/`content_security_policy`
-on `browser`, with the reasoning in comments. Firefox `gecko` id `capture@blockaly.com`,
-`data_collection_permissions.required:['none']`. **`gecko_android` deliberately
-OMITTED** — capture is physically non-functional on mobile (no getDisplayMedia/
-tabCapture/WebCodecs there — §8, §12.1); claiming Android-compat would be a
-manifest lie.
+## Where state lives — the table everything else follows from
 
-## Service-worker death → state in offscreen + IndexedDB (§5.12, §10.1)
+| | Chrome | Firefox |
+|---|---|---|
+| `MediaStream` / `MediaRecorder` | offscreen document | recorder window |
+| Chunk writes | offscreen document | recorder window |
+| Live state (`storage.session['live']`) | written by the offscreen doc | written by the recorder window |
+| Session manifest + chunks (IndexedDB) | on disk, updated every flush | same |
+| Service worker | **owns nothing**; derives the badge | event page; same |
 
-The SW is evicted at ~30 s idle. It **owns nothing**: the stream/recorder/chunks
-live in the offscreen doc (Chrome) or recorder window (Firefox); the authoritative
-session manifest is in **IndexedDB**, updated on every 3 s chunk flush; a
-`{id,status}` mirror sits in `storage.session` for fast rehydration. On wake the SW
-does `getContexts()` + reads the manifest and restores only the badge. This is
-scaffolded in `utils/recording-state.ts` (stubbed) and `background.ts rehydrate()`.
-**Recording chunks NEVER go to storage.local as a Blob array, and NEVER
-`chunks.push()` in RAM** (§10.3) — each `ondataavailable` writes straight to IDB.
+🔴 **Nothing about a recording is ever held in a service-worker variable.** The SW
+is evicted at ~30 s idle; anything it "remembers" evaporates, and the classic bug
+of the genre — a badge still saying REC over a recording that no longer exists —
+follows immediately. Instead:
 
-## What is REAL vs MOCKED
+- **`utils/live-state.ts`** — the live record in `storage.session`, written ONLY by
+  whoever holds the `MediaRecorder`, heartbeat every 2 s. The badge *subscribes* to
+  it. The badge is therefore a pure function of the recorder's own state and cannot
+  form an independent (wrong) opinion.
+- **`utils/db.ts`** — IndexedDB: `chunks` (`[sessionId, seq]`), `sessions`
+  (manifests), `clips`, `blobs`. The manifest is written **before the first media
+  byte** and updated in the **same transaction** as each chunk, so a crash can
+  never leave a manifest claiming more chunks than exist on disk.
 
-**Real now**
-- All surfaces + layouts (popup setup + both browser variants, recorder window,
-  Studio Library/Editor/Export/Screenshot/Settings).
-- **Recording timer** — genuine `setInterval` 1 Hz in the surface's own document
-  (`utils/use-ticker.ts`), driving the recorder clock + `document.title`.
-- **Pre-encode budget math** — `utils/budget.ts`, implemented in full:
-  `videoBps = (target·8·0.97 − audio_bps·dur)/dur`, `bpp = videoBps/(w·h·fps)`, the
-  quality scale, the export-blocked-on-"mush" rule, and re-computed suggestions.
-  The Export dialog's budget panel, achievable/unreachable copy and audio-weight
-  label all read these real numbers (§2.7–§2.10, §6.3).
-- **Filename sanitisation** — `utils/format.ts` (path traversal, illegal chars,
-  Windows reserved names, 255-byte clamp) (§9.4).
-- Settings persistence — `usePrefs` → `sync:capturePrefs` (`utils/storage.ts`).
-- Theme — `@blur/ui` tokens + `seedTheme('blur-capture:theme')` in every main.tsx.
-- Badge state wiring + global `commands` registration (§1.3).
-- Firefox-degraded variants: tab audio and MP4-record shown by REMOVING the
-  control + explaining, never a disabled checkbox (§2.2, §8).
-- Redaction tool UI: solid-fill default alone under "Скрыть данные"; blur/pixelate
-  in a separate "Косметика — НЕ защита" group with the non-collapsible
-  Unredacter/Depix warning (§7).
-- States surfaced in UI: recording, paused, interrupted-recovery card,
-  target-unreachable, budget-mush block, DPR line.
+## What is REAL
 
-**Mocked / stubbed** (loud `todoLogic('capture: …')`, `<MockBadge/>` on fabricated
-surfaces, `mockAsync` for the fake 2-pass progress)
-- All actual capture/encode/mux (`utils/media.ts`), chunk persistence
-  (`utils/recording-state.ts`), and the background orchestration that calls them.
-- The 2-pass encode progress is faked with `mockAsync`; the math it starts from is
-  real.
-- Library/recorder figures come from `utils/mock-data.ts`.
-- Redaction PIXEL operations (fill/blur/pixelate) and watermark compositing.
+- **Both capture pipelines.** Chrome: `tabCapture.getMediaStreamId()` → `getContexts()` →
+  `offscreen.createDocument({reasons:['USER_MEDIA']})` → `getUserMedia({mandatory:{chromeMediaSource:'tab',…}})`
+  → `MediaRecorder`, in that exact order (the streamId expires in seconds — §1.5).
+  Firefox: `getDisplayMedia()` from the recorder window, behind the unavoidable
+  second click (transient activation).
+- **Chunked recording** — `MediaRecorder.start(3000)`; each chunk straight to IDB.
+- **Pause/resume/stop/cancel/mute**, badge, global `commands`, recovery.
+- **Screenshots** — `tabs.captureVisibleTab`, 2/sec limit enforced *by us* with a
+  greyed button (a swallowed click reads as "broken"), PNG/JPEG/WebP output.
+- **Redaction** — fill/blur/pixelate baked into pixels via `OffscreenCanvas`;
+  fractional coordinates (DPR-correct by construction — PLAN.md §6.2).
+- **Watermark** — `fillText` + optional local-file logo, sized as a % of frame height.
+- **Trim**, **export**, **format/resolution/fps conversion** — mediabunny `Conversion`.
+- **Target file size** — real budget math + the iterative manual 2-pass with early
+  pass abort, bitrate clamping and the bpp floor.
+- **H.264 probe** — `VideoEncoder.isConfigSupported({codec:'avc1.42001f'})` before
+  MP4 is offered.
+- **Save** — File System Access when available (streams the blob, no second copy),
+  otherwise `downloads.download` + **`revokeObjectURL`** (on `downloads.onChanged`,
+  plus an unconditional timeout backstop — a listener that never fires is how leaks
+  ship).
+- **Import your own file** — drag-drop / file input into the same pipeline. No URL
+  field, ever (§4.3).
+- **Settings** — `local:capturePrefs` (🔴 not `sync:`: the 8 KB-per-item quota is a
+  hard failure, and the size-preset list is user-growable — §9.6).
+- **Prominent in-UI disclosure**, one-time, persisted.
+- **Platform probe** — `utils/platform.ts`. A platform that cannot record gets an
+  explicit "not supported" panel and keeps screenshots working.
 
-## Every TODO_LOGIC (grep `TODO_LOGIC`)
+## Deliberately NOT built (and why)
 
-`utils/media.ts`: getTabStreamId · openTabStream · openDisplayStream (Firefox) ·
-addMicrophone (§5.9) · startRecorder (timeslice 3000) · captureScreenshot (2/sec,
-DPR) · canEncodeH264 (isConfigSupported, §12.1) · composeAndMux (fill to pixels,
-§7.4) · runTargetEncode (2-pass, §6.4) · encodeImageToTarget (§6.6).
-`utils/recording-state.ts`: openRecordingDb · appendChunk · writeManifest ·
-findInterruptedSessions · readChunks.
-`entrypoints/background.ts`: Chrome start sequence · stop · pause/resume ·
-screenshot · ensureOffscreen (getContexts→createDocument) · rehydrate.
-`entrypoints/offscreen/main.ts`: offscreen begin (heartbeat + manifest).
+- **Live watermark overlay during recording.** `MediaStreamTrackProcessor` does not
+  exist in Firefox; the cross-browser path (`canvas.captureStream()`) burns CPU
+  *during* the recording, drops fps and damages the material itself. Post-export
+  overlay gives an identical result and can be changed without re-recording (§4.5).
+- **ffmpeg.wasm.** Not bundled. See README.
+- **Region tracking** in video redaction. Bad tracking is *worse* than none: it
+  creates false confidence (§7.5).
+- **Notifications.** Would need a permission we do not otherwise need; the finished
+  clip opens in the Studio instead.
+- **GIF, PiP camera, countdown, full-page screenshot** — v2 (§13).
 
-## Privacy policy (MANDATORY even though 100% local — §9.1, PLAN-2 §1.4)
+## Failure modes, and where each is handled
 
-A privacy policy is required **even when data is processed/stored only locally**.
-The repo's `PRIVACY.md` must gain a `capture` section: what is recorded (tab
-video/audio; microphone only on explicit opt-in), where it lives (IndexedDB in the
-browser profile), how long (until the user deletes it), where it goes (nowhere —
-CSP `connect-src 'none'`). In-UI **prominent disclosure** (CWS 2026-08-01) is
-scaffolded as the one-time "what we record and where it lives" callout in the
-Studio, persisted via `prefs.disclosureAccepted` (§9.1). `THIRD-PARTY-NOTICES.md`
-must note mediabunny (MPL-2.0): edits INSIDE its files must be published; linking
-need not (§12.2).
+| Failure | Handling |
+|---|---|
+| SW evicted mid-recording | Nothing happens. `rehydrate()` on next wake (`background.ts`). |
+| Offscreen/window OOM-killed | Heartbeat stops → `isStale()` → badge `!`, session flipped to `interrupted`, recovery card. Handled on SW wake **and** by a one-shot timer armed after each live update (for the case where the SW is awake and nothing would otherwise wake it). 🔴 `findInterruptedSessions()` returns `recording`/`paused` **and `interrupted`**, so a *detected* interruption is still visible — the flip closes the "still recording" claim, it never hides the recording (audit B1). |
+| Browser/machine dies | Manifest on disk still says `recording` (nothing ran to flip it) → `findInterruptedSessions()` → recovery card. ≤3 s lost. |
+| Disk full | `QuotaExceededError` → `stop('quota')` → finalise (`utils/session.ts`). |
+| Recorded tab closed / share ended from the browser's UI | `track.onended` → normal stop, reported as *stopped*, not an error (§5.3, §5.4). |
+| Recorder window closed (Firefox) | `beforeunload` warning + `pagehide` clean stop + a `windows.onRemoved` backstop in the background. |
+| streamId expired | `getUserMedia` rejects → an honest, specific message, never "Unknown error" (§10.2). |
+| Second recording started while one is live | `{ok:false, code:'busy'}` — one offscreen document, one session (§5.15). |
+| Encode wedges | 45 s no-progress watchdog → abort → "исходник цел" (§10.4). |
+| Export fails for any reason | The source is never touched before a successful export (§5.7). |
 
-## Options shape (design nuance)
+Two bugs found and fixed during self-review, both in this codebase, both silent
+data loss:
 
-The design prefers a SINGLE surface: options → `editor.html#/settings`, to avoid a
-second entry point (§1.1, §2). This scaffold keeps a thin `entrypoints/options/`
-(house convention, cf. `extensions/blur`) mounting the same `<Settings/>` — real
-persistence, one source of truth. The Studio also deep-links `#/settings`.
-Consolidating to the design's exact shape is a one-line `options_ui.page` change.
-`open_in_tab: true` is required so Firefox doesn't render it in the narrow
-`about:addons` frame (§1.1) — confirm WXT emits it, else set it in the manifest.
+1. `seq` was allocated **after** an `await` in the chunk writer. The final chunk
+   landing while the previous write was in flight would have taken the same
+   sequence number and **overwritten it** — 3 s of video gone, no error anywhere.
+   Now allocated synchronously, and writes are serialised through a chain that
+   `stop()` drains before reporting "saved".
+2. The `QuotaExceededError` handler `await`ed `stop()` **from inside** the write
+   chain that `stop()` drains — a deadlock at precisely the moment the recording
+   was trying to save itself. Now kicked off unawaited.
 
-## Not done / to verify on first build
+## Not verified (needs a live browser)
 
-- Icons: `public/icon/.gitkeep` only — generate `{16,32,48,128}.png` (TODO).
-- No `npm install` / `wxt prepare` / build / typecheck run (per task). `#imports`
-  and `.wxt/` types resolve only after `wxt prepare`.
-- Open questions from §14.2 (offscreen mic grant, Chrome tabCapture indicator,
-  occlusion throttling, Firefox H.264 encode, pause timestamps, `focused:false`
-  respect on Firefox, live platform limits) must be checked on real browsers.
+None of the following can be established from a build; they need real Chrome and
+real Firefox, and several are the open questions from §14.2:
+
+1. **Firefox H.264 encode** (§14.2 #4). The probe is wired and the UI reacts to it,
+   but the answer *on a real Firefox* is unknown. If it returns false, Firefox
+   users get WebM only — which the UI already states.
+2. **Can the offscreen document get the microphone after the grant was given from a
+   visible page?** (§14.2 #1). The design assumes yes (the grant is per extension
+   origin) and the code degrades honestly if not: the video keeps recording without
+   sound rather than the capture failing.
+3. Whether Chrome shows its own capture indicator for `tabCapture`-via-offscreen (§14.2 #2).
+4. Whether Chrome throttles the recorded tab when it is occluded (§14.2 #3).
+5. `MediaRecorder` timestamp behaviour across `pause()`/`resume()` (§14.2 #5) — the
+   duration is tracked independently (pause-aware accumulation), but whether the
+   container's own timestamps develop a hole is untested.
+6. Real `VideoEncoder` bitrate accuracy on screen content (§14.2 #6) — this decides
+   whether 3 passes is the right default.
+7. Whether Firefox honours `windows.create({focused:false})` (§14.2 #7). We pass
+   `focused: true` on Firefox anyway, because the user must click inside the window
+   to give `getDisplayMedia` its activation.
+8. Actual platform size limits (Discord/Slack/GitHub) at release time — they are
+   baked in locally, marked as possibly stale, and are user-editable.
+
+## Repo-level follow-ups (outside `extensions/capture/`, not done here)
+
+- **`PRIVACY.md`** needs a `capture` section: what is recorded (tab video/audio;
+  microphone only on explicit opt-in), where it lives (IndexedDB in the browser
+  profile), how long (until the user deletes it), where it goes (nowhere —
+  `connect-src 'none'`). A privacy policy is required *even though* everything is
+  local (PLAN-2 §1.4).
+- **`THIRD-PARTY-NOTICES.md`** must list **mediabunny 1.50.x (MPL-2.0)**: weak
+  copyleft — modifications *inside its files* must be published; linking need not.
+  We do not modify it.
+- `TODO.md` §I can be ticked, with the caveats in "Not verified" above.

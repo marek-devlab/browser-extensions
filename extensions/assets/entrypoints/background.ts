@@ -21,7 +21,20 @@ const INSPECTOR_FILE = '/content-scripts/inspector.js';
 // window flag — design §10.6), so we never plant two overlays.
 async function injectInspector(tabId: number, srcUrl?: string): Promise<void> {
   try {
-    await browser.scripting.executeScript({ target: { tabId }, files: [INSPECTOR_FILE] });
+    // ⚠️ Firefox <109 (MV2) has no `browser.scripting`, so an extension whose only
+    // injection path is `scripting.executeScript` silently does nothing there. Fall
+    // back to the historical `tabs.executeScript` — the sibling `export` extension
+    // uses the same guard (utils/inject.ts).
+    const scripting = (browser as { scripting?: typeof browser.scripting }).scripting;
+    if (scripting?.executeScript) {
+      await scripting.executeScript({ target: { tabId }, files: [INSPECTOR_FILE] });
+    } else {
+      const legacy = browser.tabs as unknown as {
+        executeScript?: (id: number, details: { file: string }) => Promise<unknown>;
+      };
+      if (!legacy.executeScript) throw new Error('no injection API available');
+      await legacy.executeScript(tabId, { file: INSPECTOR_FILE });
+    }
     // Hand the (optional) right-clicked src to the overlay so the context-menu
     // path can pre-match the element (design §4.9). This is the ONLY thing that
     // travels to the page, and only on an explicit user action.

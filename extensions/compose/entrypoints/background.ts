@@ -1,34 +1,51 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
-import { activeDraftIdItem, draftsItem, withDraftsLock } from '../utils/storage';
-import { MOCK_DRAFTS } from '../utils/mock';
+import { activeDraftIdItem, draftsItem, settingsItem, withDraftsLock } from '../utils/storage';
+import { MSG_ACTIVE_TAB, openEditor, sidePanelApi, type ActiveTabInfo } from '../utils/surface';
 import type { Draft } from '../utils/types';
 
-// Background service worker (design §S4, §S5, §8.4). Deliberately almost empty:
-//   - opens the SIDE PANEL when the toolbar action is clicked (S5, NOT a popup);
-//   - registers ONE context-menu item "Add selection to draft" (+ "…as quote"),
-//     which is the only page-facing entry point (design §1.1, §S4).
+// Background (design §S4, §S5, §8.4). Deliberately almost empty:
+//   - opens the editor when the toolbar action is clicked (S5 — a panel, NOT a
+//     popup, and a TAB where no panel API exists — see below);
+//   - registers ONE context-menu item, "Add selection to draft" (+ "…as quote"),
+//     the only page-facing entry point (design §1.1, §S4);
+//   - answers one message: the active tab's URL for "Insert environment".
 //
-// 🔴 NO in-memory state (design §8.4): the draft is read/written straight from
-// storage under the shared Web Lock, so SW death loses nothing. Context menus are
-// (re)created only in onInstalled/onStartup to avoid duplicate-id errors.
+// 🔴 NO IN-MEMORY STATE (design §8.4): drafts are read and written straight from
+// storage under the shared Web Lock, so a service-worker death loses nothing.
+// Context menus are (re)created only in onInstalled/onStartup — recreating them
+// on every SW wake produces duplicate-id errors.
+//
+// 🔴 activeTab IS READ-ONLY HERE. We read the selection the user made and the
+// tab's URL. We never inject into, modify, or script the page — that would be a
+// different product (design §1.1). And we do NOT take the `scripting` permission:
+// `info.selectionText` already carries the selection for a selection-context menu
+// click, so the richer read in design §4.2 is not worth a permanent extra
+// permission (see IMPLEMENTATION.md).
 
 const MENU_ADD = 'cw-add-selection';
 const MENU_ADD_QUOTE = 'cw-add-selection-quote';
 
 export default defineBackground({
   main() {
-    // S5 — clicking the toolbar action opens the side panel (Chrome). This is
-    // the whole reason `sidePanel` permission + side_panel manifest key exist.
-    // Firefox opens the sidebar from the toolbar automatically via
-    // `sidebar_action`, so no equivalent call is needed there.
-    const sidePanel = (browser as unknown as { sidePanel?: {
-      setPanelBehavior?: (o: { openPanelOnActionClick: boolean }) => Promise<void>;
-      open?: (o: { windowId?: number; tabId?: number }) => Promise<void>;
-    } }).sidePanel;
-    void sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
+    /* ── S5: clicking the action opens the editor ────────────────────────*/
+    // Chrome: the side panel opens itself on the action click.
+    void sidePanelApi()
+      ?.setPanelBehavior?.({ openPanelOnActionClick: true })
+      .catch(() => {});
 
-    /* ── Context menu (design §S4, §4.2) ─────────────────────────────────── */
+    // Firefox desktop: the action click fires onClicked → open the sidebar.
+    // ⚠️ Firefox for ANDROID has no sidebar at all — `openEditor` feature-detects
+    // and falls back to the full-page Workbench in a tab, which is the only
+    // editor surface that exists on mobile. No user-agent sniffing.
+    // `browser.action` is MV3; Firefox MV2 exposes `browserAction` (house
+    // convention: blur/adblock/capture do the same).
+    const action = browser.action ?? browser.browserAction;
+    action?.onClicked?.addListener((tab) => {
+      void openEditor(tab?.windowId);
+    });
+
+    /* ── S4: the ONE context menu (design §1.1, §4.2) ────────────────────*/
     function createMenus(): void {
       browser.contextMenus?.removeAll(() => {
         browser.contextMenus?.create({
@@ -49,66 +66,81 @@ export default defineBackground({
     browser.contextMenus?.onClicked.addListener((info, tab) => {
       void (async () => {
         if (info.menuItemId !== MENU_ADD && info.menuItemId !== MENU_ADD_QUOTE) return;
-        const asQuote = info.menuItemId === MENU_ADD_QUOTE;
 
-        // ⚠️ activeTab is READ-only here (design §1.1): we read the selection, we
-        // never write to the page. The context-menu click is the user gesture
-        // that grants activeTab.
-        //
-        // Chrome/Firefox both put the selected text on `info.selectionText`, so
-        // the scaffold uses that directly. The richer read described in design
-        // §4.2 (scripting.executeScript → window.getSelection() to preserve
-        // formatting, plus the "— [Title](URL)" source line) is TODO_LOGIC.
+        const settings = await settingsItem.getValue();
+        const asQuote = info.menuItemId === MENU_ADD_QUOTE || settings.contextMenuMode === 'quote';
+
         const selection = info.selectionText ?? '';
+        if (selection.trim() === '') return;
+
         const source = tab?.title && tab.url ? `\n\n— [${tab.title}](${tab.url})` : '';
         const addition = (asQuote ? quote(selection) : selection) + source;
 
-        // 🔴 Write FIRST, then open the panel (design §8.4) — otherwise the panel
-        // renders the pre-append text. RMW under the shared lock so a panel that
-        // is already open can't clobber this write.
+        // 🔴 WRITE FIRST, THEN OPEN (design §8.4) — a panel opened first would
+        // render the pre-append text. The RMW runs under the shared lock so an
+        // already-open panel cannot clobber this write.
         await withDraftsLock(async () => {
           const [stored, activeId] = await Promise.all([
             draftsItem.getValue(),
             activeDraftIdItem.getValue(),
           ]);
-          const list = stored.length > 0 ? stored : MOCK_DRAFTS;
-          const targetId = activeId ?? list[0]?.id ?? null;
+          const targetId = activeId ?? stored[0]?.id ?? null;
 
-          let next: Draft[];
-          if (targetId && list.some((d) => d.id === targetId)) {
-            next = list.map((d) =>
-              d.id === targetId
-                ? { ...d, body: joinBody(d.body, addition), updatedAt: Date.now() }
-                : d,
+          if (targetId && stored.some((d) => d.id === targetId)) {
+            await draftsItem.setValue(
+              stored.map((d) =>
+                d.id === targetId
+                  ? { ...d, body: joinBody(d.body, addition), updatedAt: Date.now() }
+                  : d,
+              ),
             );
-          } else {
-            // No draft yet → create "Из выделения — <host>" (design §4.2).
-            const host = safeHost(tab?.url);
-            const created: Draft = {
-              id: `d-${Date.now()}`,
-              title: `Из выделения — ${host}`,
-              body: addition.trimStart(),
-              target: 'github',
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-            next = [created, ...list];
-            await activeDraftIdItem.setValue(created.id);
+            return;
           }
-          await draftsItem.setValue(next);
+
+          // No draft yet → create "Из выделения — <host>" (design §4.2).
+          const created: Draft = {
+            id: `d-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            title: `Из выделения — ${safeHost(tab?.url)}`,
+            body: addition.trimStart(),
+            target: settings.defaultTarget,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          await draftsItem.setValue([created, ...stored]);
+          await activeDraftIdItem.setValue(created.id);
+        }).catch(() => {
+          // Storage full: do not silently swallow — but there is no UI here, and
+          // the panel shows the quota banner as soon as it opens.
         });
 
-        // Then open the panel (the click is a valid user gesture).
-        if (sidePanel?.open) {
-          await sidePanel.open({ windowId: tab?.windowId }).catch(() => {});
-        } else {
-          const sidebar = (browser as unknown as {
-            sidebarAction?: { open?: () => Promise<void> };
-          }).sidebarAction;
-          await sidebar?.open?.().catch(() => {});
-        }
+        // The context-menu click IS the gesture, so the panel may open.
+        await openEditor(tab?.windowId);
       })();
     });
+
+    /* ── "Insert environment" asks for the active tab's URL (design §2.9) ─*/
+    // ⚠️ sendResponse + `return true`, NOT a returned Promise: Chrome's
+    // `onMessage` ignores a promise return value (Firefox honours both). House
+    // convention — see blur/seo backgrounds.
+    browser.runtime.onMessage.addListener(
+      (message: unknown, _sender, sendResponse: (r: ActiveTabInfo) => void) => {
+        if (
+          typeof message !== 'object' ||
+          message === null ||
+          (message as { type?: string }).type !== MSG_ACTIVE_TAB
+        ) {
+          return false;
+        }
+        // `tab.url` is only populated when activeTab has been granted for that
+        // tab (the action click / the context menu). Otherwise it is undefined
+        // and the UI says so rather than inventing a URL.
+        void browser.tabs
+          .query({ active: true, currentWindow: true })
+          .then(([tab]) => sendResponse({ url: tab?.url, title: tab?.title }))
+          .catch(() => sendResponse({}));
+        return true; // keep the message channel open for the async reply
+      },
+    );
   },
 });
 

@@ -1,6 +1,6 @@
 # Store submission guide
 
-Submission checklist and per-extension listing copy for the four extensions in
+Submission checklist and per-extension listing copy for the ten extensions in
 this monorepo. Ground truth for names, descriptions, and permissions is each
 extension's **generated manifest**
 (`extensions/<name>/.output/{chrome-mv3,firefox-mv2}/manifest.json`), with the
@@ -8,9 +8,10 @@ rationale in `extensions/<name>/wxt.config.ts`; this file must match them. The
 shared privacy policy is [`PRIVACY.md`](./PRIVACY.md) — host it and link it from
 every listing.
 
-All four ship as **four separate add-ons** at version **1.0.0**, `author:
+All ten ship as **ten separate add-ons** at version **1.0.0**, `author:
 "Blockaly"`, `homepage_url: "https://blockaly.com"`, with permanent AMO ids
-`<name>@blockaly.com`:
+`<name>@blockaly.com`. The first four are the original wave; the last six were
+added later:
 
 | Package | Store name | Single purpose | Gecko id |
 |---|---|---|---|
@@ -18,20 +19,36 @@ All four ship as **four separate add-ons** at version **1.0.0**, `author:
 | `extensions/adblock` | Ad & Tracker Blocker | Block ads and trackers | `adblock@blockaly.com` |
 | `extensions/perf` | Page Performance & Network | Measure page performance | `perf@blockaly.com` |
 | `extensions/seo` | SEO & Accessibility Auditor | Audit page markup and accessibility | `seo@blockaly.com` |
+| `extensions/devdata` | Data Format Toolkit | Parse and convert structured data locally | `devdata@blockaly.com` |
+| `extensions/export` | Page Content Exporter | Export page content to a file | `export@blockaly.com` |
+| `extensions/assets` | Asset Inspector | Inspect where page assets came from | `assets@blockaly.com` |
+| `extensions/whoami` | Connection & Device Info | Show your connection and device | `whoami@blockaly.com` |
+| `extensions/capture` | Capture Studio | Record the current tab and export media | `capture@blockaly.com` |
+| `extensions/compose` | Markdown Workbench | Write and format Markdown | `compose@blockaly.com` |
 
 ---
 
 ## Read this before filling in any Privacy-practices tab
 
-**All four extensions declare a static content script matching `<all_urls>`.**
-Consequently **all four** trigger the install-time *"Read and change all your
-data on all websites"* warning, on Chrome and on Firefox. There is no version of
-these listings in which that warning is absent, and any copy claiming host access
-is "optional / requested at runtime / not at install" for blur, adblock or perf
-is **false** and will be contradicted by the manifest the reviewer is looking at.
-Do not write it.
+**The original four extensions (blur, adblock, perf, seo) each declare a static
+content script matching `<all_urls>`.** Consequently **those four** trigger the
+install-time *"Read and change all your data on all websites"* warning, on Chrome
+and on Firefox. There is no version of those four listings in which that warning
+is absent, and any copy claiming host access is "optional / requested at runtime
+/ not at install" for blur, adblock or perf is **false** and will be contradicted
+by the manifest the reviewer is looking at. Do not write it.
 
-What each extension actually needs it for (say this, per listing):
+**The six newer extensions are different — most install with no broad-access
+warning.** `assets`, `whoami`, `capture`, and `compose` declare **no**
+`<all_urls>` (whoami declares `host_permissions: []` and asks for at most the
+single optional origin `https://ipinfo.io/*` when used). `devdata` has
+`<all_urls>` only as an **optional** host permission, requested by gesture for
+its opt-in "auto-format JSON pages" feature — never at install. `export` reads
+pages only through `activeTab`. Do **not** write the all-sites warning copy for
+the new wave; it does not apply.
+
+What each of the original four actually needs the broad access for (say this, per
+listing):
 
 | Extension | Content script | Why broad access is genuinely required |
 |---|---|---|
@@ -41,10 +58,14 @@ What each extension actually needs it for (say this, per listing):
 | seo | `<all_urls>`, `document_idle` | Reads page markup (meta, headings, structured data) and runs the audit; this is why it needs **neither** `activeTab` **nor** `scripting`. |
 
 The honest and defensible framing — use it verbatim in the Privacy-practices
-justification — is: **access is not collection.** All four have permission to
-read every page; none of them take anything off the device. The single exception
-in the suite is `perf`'s opt-in PageSpeed Insights call, which sends the audited
-URL to Google (and nothing else).
+justification — is: **access is not collection.** The original four have
+permission to read every page; none of them take anything off the device. Across
+all ten extensions there are exactly **two** off-device data flows, both opt-in
+and click-gated: (1) `perf`'s PageSpeed Insights call, which sends the audited
+URL to Google; and (2) `whoami`'s IP/ISP lookup, which shows you your own IP via
+Cloudflare and, if you opt in, sends only that IP to ipinfo.io. The other eight —
+including `devdata`, `export`, `assets`, `capture`, and `compose` — make **zero
+network calls** (several enforce this with `connect-src 'none'`).
 
 **Firefox data-collection consent (mandatory for new AMO submissions since
 2025-11-03).** Every Firefox build declares
@@ -54,6 +75,8 @@ URL to Google (and nothing else).
 |---|---|
 | blur, adblock, seo | `required: ["none"]` — Firefox renders "does not collect data". |
 | perf | `required: ["none"]`, `optional: ["websiteActivity"]` — nothing by default; the audited page URL is shared with Google only if the user opts into a PageSpeed Insights audit. |
+| devdata, export, assets, capture, compose | `required: ["none"]` — Firefox renders "does not collect data". |
+| whoami | `required: ["none"]`, `optional: ["locationInfo"]` — nothing by default; the user's IP is shared with ipinfo.io only if the user opts into the ISP/ASN lookup. |
 
 These must stay consistent with `PRIVACY.md` and with the Chrome data-usage
 disclosures. They currently are.
@@ -376,6 +399,64 @@ thing.
 
 ---
 
+## New-wave extensions — Privacy-practices & data-recipient checklist
+
+The six later extensions each need their own Privacy-practices tab filled in.
+Only `whoami` and `capture` have any store-review sensitivity; the other four are
+purely-local, zero-network tools. Ground truth is each generated manifest; the
+shared policy is [`PRIVACY.md`](./PRIVACY.md).
+
+### Data Format Toolkit (`extensions/devdata`)
+
+- **Category:** Developer Tools. **Single purpose:** parse/convert/inspect JSON, YAML, XML, CSV, and JWTs locally.
+- **Chrome permissions:** `storage`, `contextMenus`, `activeTab`; **optional** `scripting`; **optional host** `<all_urls>`. Firefox: same, with `<all_urls>` under `optional_permissions`.
+- **Broad access:** `<all_urls>` is **optional and gesture-only** (opt-in "auto-format JSON pages"). Do **not** write the all-sites install warning — it is absent at install.
+- **Data collection:** none. `required: ["none"]`. **Zero network.** JWT parsing/verification is fully local; the token never leaves the browser; the HS256 secret is never persisted. **Recipients: none.**
+
+### Page Content Exporter (`extensions/export`)
+
+- **Category:** Productivity. **Single purpose:** export a page selection/table to txt / md / csv / xlsx.
+- **Chrome permissions:** `contextMenus`, `activeTab`, `scripting`, `storage`, `clipboardWrite`; **optional** `downloads`. Firefox: same, `downloads` optional.
+- **Broad access:** none — reads the page via `activeTab`, no content script. `downloads` is optional, requested by gesture only for cross-origin saves.
+- **Data collection:** none. `required: ["none"]`. **Zero network** — files are built locally via `Blob`. **Recipients: none.**
+
+### Asset Inspector (`extensions/assets`)
+
+- **Category:** Developer Tools. **Single purpose:** inspect where a page's images/media/elements came from.
+- **Chrome & Firefox permissions:** `activeTab`, `scripting`, `storage`, `contextMenus`. No optional, no host.
+- **Honest framing:** it **inspects** where assets came from and previews them via `canvas.drawImage` on the element already on the page. It is **not a downloader** — no `downloads`, no `<all_urls>`, no `webRequest`, no `debugger`. Do not describe it as one.
+- **Data collection:** none. `required: ["none"]`. **Zero network.** **Recipients: none.**
+
+### Connection & Device Info (`extensions/whoami`) — REVIEW-SENSITIVE
+
+- **Category:** Developer Tools / Utilities. **Single purpose:** show your connection and device.
+- **Chrome permissions:** `storage` **only**; **optional host** `https://ipinfo.io/*`. Firefox: `storage`; `https://ipinfo.io/*` under `optional_permissions`. No `host_permissions`, no `activeTab`, no `scripting`.
+- **CSP:** `connect-src 'self' https://one.one.one.one https://ipinfo.io` — the only hosts the extension can reach at all.
+- **Data collection (Chrome disclosure + Firefox `data_collection_permissions`):** `required: ["none"]`, `optional: ["locationInfo"]`. Nothing by default; the device half is fully local with **zero permissions and zero network**.
+- **REQUIRED — name the data recipients (this is the store-review requirement):**
+  - **Cloudflare** — pressing "Show my IP" makes a keyless request to `https://one.one.one.one/cdn-cgi/trace`; Cloudflare receives your IP (your own request to them) and returns it, with country/PoP, back to you. Disclosed in-UI, above the button, before the first request.
+  - **ipinfo.io (operated in the USA)** — opting into the ISP/ASN lookup sends **only your public IP** to ipinfo.io, gated behind a modal disclosure **and** the browser's own `ipinfo.io` permission prompt.
+- **State plainly:** the IP lives in page memory only, is **never stored, never forwarded to Blockaly (no server exists), never logged**; **no fingerprint hash is ever computed**. No `ip-api.com`, no `ipapi.co` in the shipped build.
+- **Listing copy — do NOT use** "anonymous", "hide your IP", "protect", or "VPN": those pull the extension into the adjacent adware category and invite manual review.
+
+### Capture Studio (`extensions/capture`) — PRIVACY POLICY REQUIRED
+
+- **Category:** Productivity / Developer Tools. **Single purpose:** record the current tab (or a chosen screen/window) and export media.
+- **Chrome permissions:** `storage`, `unlimitedStorage`, `downloads`, `activeTab`, `tabCapture`, `offscreen`; **optional** `desktopCapture`. Firefox: `storage`, `unlimitedStorage`, `downloads`, `activeTab` (no `tabCapture`/`offscreen` — they do not exist there).
+- **CSP:** `connect-src 'none'` — the extension is architecturally incapable of any network request.
+- **Honest framing:** it records **your own** tab (Chrome, with tab audio) or a screen/window you pick via `getDisplayMedia` (Firefox, **no** tab audio), plus optional microphone. Do **NOT** frame it as "download videos from other sites" — it does not fetch or download third-party media.
+- **Data collection:** none. `required: ["none"]`. Recordings are stored **locally in IndexedDB** and encoded **locally** (WebCodecs + bundled `mediabunny`); **never transmitted**. **Recipients: none.**
+- **Why a privacy policy is still required:** the extension captures your **screen and (optionally) microphone**, so both stores require a policy even though everything stays on-device. This is the reason `capture` must link `PRIVACY.md`.
+
+### Markdown Workbench (`extensions/compose`)
+
+- **Category:** Productivity. **Single purpose:** write and format Markdown.
+- **Chrome permissions:** `storage`, `contextMenus`, `clipboardWrite`, `activeTab`, `sidePanel`. Firefox: same, with `sidebar_action` instead of `sidePanel`.
+- **CSP:** `connect-src 'none'`.
+- **Data collection:** none. `required: ["none"]`. **Zero network** — drafts live in `storage.local`; no cloud sync, no account, no AI. **Recipients: none.**
+
+---
+
 ## Reviewer notes (paste these when asked)
 
 We ran the official AMO validator (`addons-linter`) on all four Firefox zips:
@@ -423,7 +504,11 @@ paste into a reviewer note.
 - Root [`LICENSE`](./LICENSE) — MIT, covering **Blockaly's own code only**.
 - Root [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md) — full notices for
   everything redistributed (React MIT, `web-vitals` Apache-2.0, axe-core MPL-2.0,
-  filter-list data GPL-3.0 / CC-BY-SA 3.0), verified against `package-lock.json`.
+  filter-list data GPL-3.0 / CC-BY-SA 3.0; and for the new wave: `mediabunny`
+  MPL-2.0, `dompurify` MPL-2.0 OR Apache-2.0, `yaml` ISC, plus MIT libraries
+  `papaparse`, `json5`, `jose`, `@cfworker/json-schema`, `jsonc-parser`,
+  `markdown-it`, `write-excel-file`, `fflate`, `emojibase-data`), verified against
+  `package-lock.json`.
 - Each extension package also **ships** a copy at `public/THIRD-PARTY-NOTICES.md`,
   so the notices travel with the distributed artifact.
 - `adblock` additionally ships `public/rules/ATTRIBUTION.md` for the filter data.

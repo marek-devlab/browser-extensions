@@ -24,6 +24,36 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
 
+  // ⚠️ AUDIT-CRITICAL. `entrypoints/formatter.content.ts` declares
+  // `matches: ['<all_urls>']` so that it CAN be registered at runtime (and so
+  // `scripting.executeScript` can put it on the activeTab). WXT, seeing those
+  // matches, helpfully hoists `<all_urls>` into install-time `host_permissions`
+  // (MV3) / `permissions` (MV2) — which is exactly the "read and change all your
+  // data on all websites" warning this extension is built to avoid.
+  //
+  // The script is `registration: 'runtime'`, so it is NOT in `content_scripts`
+  // and the host access is NOT needed at install: it comes from `activeTab` (one
+  // shot) or from the `optional_host_permissions` grant the user gives behind
+  // the consent dialog. So we strip the hoisted grant back out here, and drop
+  // the empty `content_scripts: []` array WXT leaves behind.
+  //
+  // If this hook is ever removed, the install-time permission set silently grows
+  // to <all_urls> — check the built manifest, not the source, when reviewing.
+  hooks: {
+    'build:manifestGenerated': (_wxt, manifest) => {
+      const m = manifest as Record<string, unknown>;
+      delete m.host_permissions;
+      if (Array.isArray(m.permissions)) {
+        m.permissions = (m.permissions as string[]).filter(
+          (p) => !p.includes('://') && p !== '<all_urls>',
+        );
+      }
+      if (Array.isArray(m.content_scripts) && m.content_scripts.length === 0) {
+        delete m.content_scripts;
+      }
+    },
+  },
+
   // Store artifact naming. Without this, `{{name}}` is derived from the
   // package.json name (`@blur/devdata` -> `blurdevdata`). `zip.name` overrides
   // that one template variable, and BOTH `artifactTemplate` and
@@ -81,20 +111,28 @@ export default defineConfig({
       //                     permission.
       permissions: ['storage', 'contextMenus', 'activeTab'],
 
-      // Requested ONLY on a click, never at install:
-      //   - scripting     : lets us run the one-shot in-page formatter on the
-      //                     activeTab-granted tab. Permission-only (no host) so
-      //                     Chrome shows no broad-access warning (design §4.3).
-      //                     NOTE: on Firefox MV2 `scripting` is unnecessary
-      //                     (`tabs.executeScript` works from activeTab) — the
-      //                     popup button is active immediately there. Declaring
-      //                     it as optional is harmless on Firefox.
-      optional_permissions: ['scripting'],
-
-      // Requested ONLY behind the explicit consent <dialog> (§2.11), and only
-      // for the opt-in auto-formatter. This is the "read and change all your
-      // data on all websites" grant — surfaced honestly, never at install.
-      optional_host_permissions: ['<all_urls>'],
+      // Requested ONLY on a click, never at install. The two targets spell this
+      // differently and it matters:
+      //
+      //   Chrome MV3 — `optional_permissions: ['scripting']` is a PERMISSION-only
+      //     request: no host is asked for, so Chrome shows no "read your data on
+      //     all sites" prompt. The host for the current tab comes from
+      //     `activeTab`, granted by the toolbar click itself (design §4.3).
+      //     `<all_urls>` lives in `optional_host_permissions` and is requested
+      //     ONLY from behind the consent dialog, for the opt-in auto-formatter.
+      //
+      //   Firefox MV2 — there is no `optional_host_permissions` key, and
+      //     `scripting` is not an MV2 permission at all: `tabs.executeScript`
+      //     works straight from `activeTab`. So Firefox declares only the host
+      //     pattern, in `optional_permissions` (which is where MV2 puts optional
+      //     hosts), and utils/permissions.ts reports `scripting` as "held" there
+      //     rather than asking for a permission the browser does not have.
+      ...(isFirefox
+        ? { optional_permissions: ['<all_urls>'] }
+        : {
+            optional_permissions: ['scripting'],
+            optional_host_permissions: ['<all_urls>'],
+          }),
 
       ...(isFirefox
         ? {

@@ -3,10 +3,10 @@
 > Актуально на **2026-07-14**. Единственный документ, куда смотрят, когда спрашивают «что дальше».
 >
 > - [`PLAN.md`](./PLAN.md) — research + архитектура первых **четырёх** расширений (blur, adblock, perf, seo). Код готов, версия 1.0.0.
-> - [`PLAN-2.md`](./PLAN-2.md) — research + архитектура **шести новых** (capture, devdata, export, assets, whoami, compose). Не начаты.
+> - [`PLAN-2.md`](./PLAN-2.md) — research + архитектура **шести новых** (capture, devdata, export, assets, whoami, compose). **Реализованы из моков 2026-07-14**, аудированы.
 > - [`STORE.md`](./STORE.md) — чеклист публикации и тексты листингов.
 > - [`docs/design/`](./docs/design/) — полные UX/UI-макеты шести новых расширений (по файлу на каждое).
-> - [`docs/audit/`](./docs/audit/) — аудит существующих четырёх от 2026-07-14 (безопасность, отказоустойчивость, готовность к стору).
+> - [`docs/audit/`](./docs/audit/) — аудит **всех десяти** от 2026-07-14 (безопасность, отказоустойчивость, готовность к стору). У шести новых аудит-находки помечены ✅/🟡 по мере закрытия.
 >
 > Правило: пункт живёт здесь, детали и обоснования — в PLAN-документах, дизайне и аудитах. Не дублировать.
 
@@ -82,14 +82,18 @@
 
 ## E. Фаза 0 — фундамент + каркасы на моках
 
-**Статус 2026-07-14: каркасы всех шести собраны на моках.** `npm install` + `wxt prepare` ✅, **typecheck 11/11 воркспейсов ✅**, `wxt build` Chrome+Firefox для всех шести ✅. Проверено: compose эмитит `side_panel` (Chrome) / `sidebar_action` (Firefox) корректно; capture держит `tabCapture`+`offscreen` только в Chrome (в Firefox оба отсутствуют); whoami — `permissions:["storage"]` + CSP `connect-src` пришпилен к трём хостам. Каждое расширение: полный UI/навигация/персистентность настроек/тема real, доменная логика — стабы (`todoLogic`, `grep TODO_LOGIC`), на моках виден `<MockBadge>`.
+**Статус 2026-07-14 (обновлено): реальная логика реализована во всех шести, моки удалены.** По агенту-имплементатору на расширение (сначала чтение дизайна/плана/аудита, потом код) + по агенту-аудитору на каждое (см. `docs/audit/2026-07-14-<name>.md`). `typecheck 11/11 воркспейсов ✅`, `wxt build` Chrome+Firefox для всех шести ✅, `npm run guards` ✅ (ноль XSS-синков, ноль remote code, ноль `<all_urls>` в baseline на 20 собранных манифестах). compose эмитит `side_panel` (Chrome) / `sidebar_action` (Firefox) + `workbench.html` как page-фолбэк для Firefox Android; capture держит `tabCapture`+`offscreen` только в Chrome; whoami — `permissions:["storage"]`, без background SW, CSP `connect-src` = Cloudflare trace + ipinfo.io (ipapi.co выпилен: ToS не подтверждён). `<MockBadge>` и `mock-data` удалены везде.
 
 - [x] `packages/ui` — создан: канонические токены (`tokens.css`), тема (`useThemeController`/`seedTheme`/`ThemeToggle`), примитивы (`Spinner`/`EmptyState`/`Badge`/`Button`/`CopyButton`/`Callout`/`MockBadge`), mock-хелперы. ⚠️ Существующие четыре на него **ещё не мигрированы** (см. §B) — пока потребляют только шесть новых.
-- [x] Скрипты в корневом `package.json`: `dev:*` для шести новых (build/zip/typecheck идут через `--workspaces`).
-- [ ] `packages/formats` — чистые конвертеры JSON/YAML/XML/CSV/JWT, без браузерных API (как `@blur/core`). Пока каждое расширение стабит логику у себя; вынести общее при подключении реальной логики devdata.
-- [ ] **Иконки для шести новых** — расширить `scripts/lib/draw.mjs` (`BRAND`) + `gen-icons.mjs`. Сейчас `public/icon/.gitkeep`; `wxt build` их терпит (иконки в бандл не попадают), но для сабмита обязательны.
-- [ ] Обновить `README.md`: десять расширений, новая структура монорепо (`packages/ui`, шесть новых).
-- [ ] Подключать реальную логику по каждому — см. F–L. Детали «что real / что мок» — в `extensions/<name>/IMPLEMENTATION.md`.
+- [x] Скрипты в корневом `package.json`: `dev:*` для шести новых (build/zip/typecheck идут через `--workspaces`); добавлен `npm run guards`.
+- [ ] `packages/formats` — чистые конвертеры JSON/YAML/XML/CSV/JWT, без браузерных API (как `@blur/core`). Пока каждое расширение стабит логику у себя; вынести общее при подключении реальной логики devdata. ⚠️ **Аналогично напрашивается `@blur/picker`:** element-picker скопирован в `adblock`/`assets`/`export` — вынести в общий пакет.
+- [x] **Иконки для шести новых** — расширены `scripts/lib/draw.mjs` (`BRAND` + шесть новых `MARKS`) и прогнан `gen-icons.mjs`. 40 PNG (4 размера × 10) сгенерированы и просмотрены глазами; промо-тайлы 440×280 для всех десяти — тоже.
+- [x] Обновить `README.md`: десять расширений, новая структура монорепо (`packages/ui`, шесть новых), секция «Механические гарантии».
+- [x] Подключить реальную логику по каждому — см. F–L. Детали «что real / что мок» — в `extensions/<name>/IMPLEMENTATION.md`.
+- [x] **Независимый аудит всех шести + закрытие находок.** 2 блокера (capture B1 — осиротление прерванных записей + утечка байтов; devdata B1 — `JSON.parse` 50 МБ на главном потоке) **исправлены и перепроверены сборкой**. ⚠️/note закрыты: export CSV TAB/CR-лидеры, compose `img-src` CSP-утечка, whoami × три (честность гвард-комментария, ссылка на несуществующий тест, `reset()` теперь тотальный), devdata XXE-гвард + JWT-в-session, capture C1 (форс-ремукс) + C2 (RMW через writeChain). Отметки ✅/🟡 — в `docs/audit/2026-07-14-<name>.md`.
+- [x] **`npm run guards`** (`scripts/check-guards.mjs`) — механические проверки XSS-синков / remote-code / `<all_urls>` в собранном манифесте. Зелёный на 20 манифестах.
+- [ ] 🟡 **Тесты — сквозной пробел по всем шести (из аудитов, секция (f)).** В проекте нет тест-раннера для расширений (у первых четырёх только e2e через Playwright). Приоритетные регрессии зафиксировать: capture «offscreen убит → карточка восстановления есть» + «needsRemux нельзя stream-copy»; devdata «detect не делает полный парс» + «SYSTEM-литерал не обходит entity-guard» + «JWT не попадает в session:handoff»; whoami «hand-edited `autoFetchIp:true`+`cfConsent:unset` не звонит домой»; export «rung 3 не уводит страницу навигацией» + CSV-guard TAB/CR.
+- [ ] `@blur/picker` — вынести element-picker, скопированный в `adblock`/`assets`/`export`, в общий пакет (аналогично `packages/formats`).
 
 ## F. Расширение 6 — Data Format Toolkit (`extensions/devdata`) — **начинать с него**
 

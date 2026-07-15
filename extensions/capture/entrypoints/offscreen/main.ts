@@ -1,39 +1,92 @@
 import { browser } from '#imports';
-import { todoLogic } from '@blur/ui';
-import { openTabStream, addMicrophone, startRecorder } from '../../utils/media';
-import { appendChunk } from '../../utils/recording-state';
+import { openChromeStream } from '../../utils/media';
+import { isMessage, type Message, type Reply } from '../../utils/messages';
+import { RecordingSession } from '../../utils/session';
 
-// Offscreen document controller — CHROME ONLY (design capture.md §1.2, §9.5).
+// OFFSCREEN DOCUMENT — CHROME ONLY, invisible (design capture.md §1.2, §9.5).
 //
-// Responsibilities (all stubbed; the wiring shape is real):
-//   1. Receive {streamId, settings} from the background (design §1.5).
-//   2. openTabStream(streamId) → getUserMedia(chromeMediaSourceId).
-//   3. Optionally addMicrophone() — but the mic PROMPT cannot appear here (no UI
-//      — design §5.9), so the background must have surfaced it from a visible
-//      page first.
-//   4. startRecorder(stream, onChunk) with a 3000 ms timeslice; every chunk goes
-//      straight to IndexedDB via appendChunk (NEVER buffered — design §10.3).
-//   5. Emit a heartbeat to the background every 5 s so a dead offscreen is
-//      detected within 10 s and the session marked `interrupted` (design §5.11).
+// It exists for exactly one reason: **MediaRecorder needs a DOM, and a service
+// worker has none.** Reason `USER_MEDIA` — never `AUDIO_PLAYBACK`, which
+// auto-closes after 30 s and would truncate every recording.
 //
-// This file survives service-worker eviction; it is the recording's true home.
+// It is the TRUE HOME of a Chrome recording: it owns the MediaStream, the
+// MediaRecorder and the chunk writes, and it SURVIVES service-worker eviction
+// (design §5.12). The SW can die and be reborn a dozen times while this document
+// quietly keeps writing 3-second chunks to IndexedDB.
+//
+// ⚠️ It has NO UI, so it can never raise a permission prompt (design §5.9). The
+// microphone grant must already exist — the visible recorder window asks for it,
+// and the grant is per extension ORIGIN, so this document then gets the device
+// silently. Missing grant ⇒ utils/media.ts degrades honestly: the video keeps
+// recording without sound rather than the whole capture failing.
 
-browser.runtime.onMessage.addListener((message: { type?: string }) => {
-  if (message?.type !== 'offscreen:start') return;
-  void begin().catch((err) => {
-    // A real failure here (stream open failed, quota) is reported to the
-    // background so the badge goes to `error` and the user sees an honest notice
-    // (design §5.6, §5.7) — never a silent dead recording.
-    console.error(err);
-  });
+let session: RecordingSession | null = null;
+
+browser.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
+  if (!isMessage(raw)) return false;
+  const msg = raw as Message;
+  if (!msg.type.startsWith('offscreen:')) return false; // not ours — don't hijack the reply
+
+  void (async (): Promise<Reply> => {
+    try {
+      switch (msg.type) {
+        case 'offscreen:start': {
+          if (session) return { ok: false, code: 'busy', error: 'Запись уже идёт.' };
+          // 🔴 The streamId was minted seconds ago in the service worker and is
+          // spent RIGHT HERE, immediately (design §1.5, §10.2). No caching, no
+          // "let me set the UI up first" — that is exactly what expires it.
+          const stream = await openChromeStream(
+            msg.streamId,
+            msg.options.source === 'screen' ? 'desktop' : 'tab',
+            msg.options,
+          );
+          const s = new RecordingSession({
+            sessionId: msg.sessionId,
+            owner: 'offscreen',
+            stream,
+            options: msg.options,
+            source: msg.options.source,
+            host: msg.host,
+            tabId: msg.tabId,
+          });
+          await s.begin();
+          session = s;
+          return { ok: true };
+        }
+        case 'offscreen:stop':
+          await session?.stop('user');
+          session = null;
+          return { ok: true };
+        case 'offscreen:pause':
+          await session?.pause();
+          return { ok: true };
+        case 'offscreen:resume':
+          await session?.resume();
+          return { ok: true };
+        case 'offscreen:cancel':
+          await session?.cancel();
+          session = null;
+          return { ok: true };
+        case 'offscreen:mute':
+          session?.setMuted(msg.muted);
+          return { ok: true };
+        case 'offscreen:ping':
+          return { ok: true, recording: !!session };
+        default:
+          return { ok: false, error: 'unknown' };
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  })().then(sendResponse);
+  return true;
 });
 
-async function begin(): Promise<void> {
-  // The real sequence, reaching the stubs so the flow is greppable and loud:
-  const stream = await openTabStream('<streamId from background>');
-  await addMicrophone(stream, '<deviceId>');
-  startRecorder(stream, (blob) => {
-    void appendChunk('<sessionId>', blob);
-  });
-  throw todoLogic('capture: offscreen begin — heartbeat + manifest wiring (§9.5/§10.1)');
-}
+// Torn down while a recording is live (the SW closed us, the browser is shutting
+// down): stop cleanly so the final chunk is flushed and the manifest is closed.
+// An OOM kill grants no such courtesy — and that is exactly the case the on-disk
+// manifest covers: it still says `recording`, the chunks up to the last flush are
+// intact, and the library offers recovery (design §5.11, §10.5).
+globalThis.addEventListener('pagehide', () => {
+  void session?.stop('source-ended');
+});

@@ -69,8 +69,8 @@ export default defineConfig({
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // public/icon/{16,32,48,128}.png; action.default_icon is NOT derived from
-      // those files, so it is wired explicitly here. (Icons not generated yet —
-      // see public/icon/.gitkeep.) The action opens the popup REMOTE (WXT wires
+      // those files, so it is wired explicitly here. (The 16/32/48/128 png live in
+      // public/icon/.) The action opens the popup REMOTE (WXT wires
       // default_popup from entrypoints/popup) — the single gesture that yields
       // `activeTab` and permits `tabCapture` (design §1.1).
       action: {
@@ -116,7 +116,7 @@ export default defineConfig({
       // key above). The tabCapture/offscreen pair is Chrome-only by physics.
       //   storage          — UI prefs (sync:) + settings (local:). Recording
       //                       chunks do NOT go here; they stream to IndexedDB
-      //                       (design §0, §9.6, utils/recording-state.ts).
+      //                       (design §0, §9.6, utils/db.ts).
       //   unlimitedStorage — hours of video as IndexedDB chunks would blow the
       //                       default quota; this lifts it (design §0, §10.3).
       //   downloads        — save the exported file (design §4.1). On Firefox

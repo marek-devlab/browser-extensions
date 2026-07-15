@@ -21,17 +21,21 @@ export function usePrefs(): {
   const ref = useRef<Settings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
-    void settingsItem.getValue().then((value) => {
-      ref.current = value;
-      setSettings(value);
-    });
+    void settingsItem
+      .getValue()
+      .then((value) => {
+        ref.current = value;
+        setSettings(value);
+      })
+      // Prefs unreadable → run on defaults rather than hang on a spinner.
+      .catch(() => setSettings(DEFAULT_SETTINGS));
   }, []);
 
   const update = useCallback((patch: Partial<Settings>) => {
     const next: Settings = { ...ref.current, ...patch };
     ref.current = next;
     setSettings(next);
-    void settingsItem.setValue(next);
+    void settingsItem.setValue(next).catch(() => {});
   }, []);
 
   const { theme, setTheme } = useThemeController({

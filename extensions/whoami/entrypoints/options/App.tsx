@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ThemeToggle, Callout } from '@blur/ui';
 import { useSettings, useThemeSetter } from '../../utils/settings';
-import { revokeIspPermission } from '../../utils/network';
+import { hasIspPermission, revokeIspPermission } from '../../utils/network';
 import type { CopyFormat, IspProvider, Units } from '../../utils/storage';
 
 // OPTIONS (design §2.7): the things a user needs exactly once — appearance, the
@@ -13,6 +13,14 @@ export function App() {
   const { settings, update, reset } = useSettings();
   const { theme, setTheme } = useThemeSetter(settings, update);
   const [confirmReset, setConfirmReset] = useState(false);
+
+  // 🔴 The browser is the source of truth for host access (design §6.2). We show
+  // what it actually holds — not what our flag believes — and the revoke button is
+  // live whenever there is anything real to revoke.
+  const [permHeld, setPermHeld] = useState<boolean | null>(null);
+  useEffect(() => {
+    void hasIspPermission().then(setPermHeld);
+  }, []);
 
   if (!settings) {
     return (
@@ -30,9 +38,12 @@ export function App() {
   }
 
   async function revokeIsp() {
-    // 🔴 Revoke drops OUR flag AND the browser host permission (design §3 #12).
+    // 🔴 A REAL revoke (design §3 #12): it drops the browser's host permission via
+    // `permissions.remove` AND resets our flag to `unset`, so the full disclosure
+    // dialog is shown again from scratch next time. Not a write-once boolean.
     await revokeIspPermission();
     update({ ispConsent: 'unset' });
+    setPermHeld(await hasIspPermission());
   }
 
   return (
@@ -127,12 +138,13 @@ export function App() {
               </small>
             </label>
           )}
-          {settings.ispProvider === 'ipapi' && (
-            <Callout tone="warn">
-              ipapi.co — без токена, ~1000 запросов/сутки, добавляет город и регион. ⚠ Бесплатный
-              тариф — только некоммерческое использование (см. открытый вопрос в IMPLEMENTATION.md).
-            </Callout>
-          )}
+          <Callout tone="info">
+            ⓘ Раньше здесь планировался второй, беcтокенный сервис (ipapi.co). Он{' '}
+            <strong>не подключён</strong>: его бесплатный тариф, судя по условиям, не допускает
+            коммерческого использования — пока это не выяснено юридически, расширение к нему не
+            обращается, и его нет ни в манифесте, ни в CSP. 🔴 Ни при какой ошибке ipinfo.io мы не
+            переключаемся на другой сервис молча.
+          </Callout>
         </fieldset>
 
         <div className="opts__consents">
@@ -144,12 +156,29 @@ export function App() {
             </button>
           </div>
           <div className="opts__consentrow">
-            <span>ipinfo.io: {consentLabel(settings.ispConsent)}</span>
-            <button type="button" className="ui-btn ui-btn--sm" onClick={() => void revokeIsp()} disabled={settings.ispConsent === 'unset'}>
+            <span>
+              ipinfo.io: {consentLabel(settings.ispConsent)}
+              {permHeld === null
+                ? ''
+                : permHeld
+                  ? ' · доступ к хосту выдан браузером'
+                  : ' · доступа к хосту нет'}
+            </span>
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm"
+              onClick={() => void revokeIsp()}
+              disabled={settings.ispConsent === 'unset' && permHeld !== true}
+            >
               Отозвать
             </button>
           </div>
-          <small className="opts__hint">ⓘ «Отозвать» для ipinfo снимает и host-доступ (permissions.remove).</small>
+          <small className="opts__hint">
+            ⓘ «Отозвать» для ipinfo — настоящий отзыв: снимает host-доступ через
+            permissions.remove и сбрасывает флаг согласия, поэтому в следующий раз диалог
+            раскрытия покажется заново. Отозвать доступ можно и в настройках самого браузера —
+            расширение это заметит и откатит свой флаг.
+          </small>
         </div>
       </section>
 
@@ -190,7 +219,8 @@ export function App() {
               type="button"
               className="ui-btn ui-btn--sm ui-btn--primary"
               onClick={async () => {
-                await revokeIspPermission();
+                // `reset()` itself drops the ipinfo host permission (utils/settings.tsx),
+                // so it is not repeated here.
                 await reset();
                 setConfirmReset(false);
               }}
@@ -246,9 +276,8 @@ function Segmented<T extends string>({
 
 function IspRadio({ value, onChange }: { value: IspProvider; onChange: (v: IspProvider) => void }) {
   const options: [IspProvider, string][] = [
-    ['ipinfo', 'ipinfo.io — нужен ваш токен (бесплатный, Lite)'],
-    ['ipapi', 'ipapi.co — без токена, ~1000/сутки, +город'],
-    ['off', 'Выключено — кнопка ISP не показывается'],
+    ['ipinfo', 'ipinfo.io — нужен ваш токен (бесплатный)'],
+    ['off', 'Выключено — кнопка ISP не показывается вообще'],
   ];
   return (
     <div className="opts__radios">

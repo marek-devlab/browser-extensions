@@ -1,4 +1,6 @@
 import { defineBackground } from '#imports';
+import { browser } from 'wxt/browser';
+import { injectFile } from '../utils/inject';
 import {
   MENU_ROOT,
   MENU_SEL_MD,
@@ -11,180 +13,126 @@ import {
   MENU_TABLE,
   MENU_TABLE_ALL,
   MENU_SETTINGS,
+  SESSION_PREFIX,
+  type BgRequest,
+  type BgResponse,
   type EngineCommand,
+  type PendingSave,
 } from '../utils/messages';
 
-// Background = the only place context menus, routing, tabs.create and
-// scripting.executeScript can live (design §0). It holds NO export state: it
-// routes a menu click, injects `engine.js` on the granted `activeTab`, and dies.
-// 🔴 Nothing heavy here — the SW has no URL.createObjectURL and is killed after
-// ~30s (design §9.2). All bytes are born in the injected content script.
+// Background = the only place context menus, routing, tabs.create, downloads and
+// scripting.executeScript can live (design §0). It holds NO export state: it routes
+// a click, injects `engine.js` on the granted `activeTab`, and dies.
 //
-// SCAFFOLD STATUS: the menu TREE and routing are REAL; the injection payloads are
-// stubbed with a marked TODO. "Open image in new tab" and "Settings" are real
-// (they need no injection).
+// 🔴 Nothing heavy here — the SW has no `URL.createObjectURL` and is killed after
+// ~30 s (design §9.2). Every byte is born and revoked in the injected content
+// script. That is also why there are no alarms and no state mirroring.
+
+/** 🔴 The ONLY schemes we ever hand to `tabs.create` (design §8.4). A page controls
+ *  `img[src]`; `javascript:` and `file:` are not negotiable. */
+function isSafeTabUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return true;
+    return u.protocol === 'data:' && /^data:image\//i.test(raw);
+  } catch {
+    return false;
+  }
+}
 
 export default defineBackground({
   main() {
-    /* ---- Context-menu tree (REAL — exactly design §2.1) --------------- */
-    // One root with children so Chrome (auto-groups >1 item) and Firefox (does
-    // not) render an identical submenu. Each child declares its own `contexts`, so
-    // the browser shows only the relevant leaves per right-click target.
+    /* ================================================================ *
+     * Context menus — the PRIMARY surface on desktop (design §2.1)
+     * ================================================================ */
+
+    // ⚠️ MOBILE: on Firefox for Android `contextMenus`/`menus` is unavailable (and
+    // there is no right-click to begin with). We FEATURE-DETECT — never sniff the
+    // user agent — and every capability below is ALSO reachable from the popup, so
+    // an Android user is never left with a dead feature.
     function createMenus(): void {
       const menus = browser.contextMenus;
-      if (!menus) return;
+      if (!menus?.create) return;
+
       menus.removeAll(() => {
+        // One root with children: Chrome auto-groups >1 item under the extension
+        // name, Firefox does not. A single root makes the tree identical in both.
         menus.create({
           id: MENU_ROOT,
           title: '💾 Сохранить контент страницы',
-          // The root must appear for every target its children cover.
           contexts: ['selection', 'image', 'page', 'frame'],
         });
 
-        // -- Selection (contexts: ['selection']) ------------------------
-        menus.create({
-          id: MENU_SEL_MD,
-          parentId: MENU_ROOT,
-          title: 'Сохранить выделение как .md',
-          contexts: ['selection'],
-        });
-        menus.create({
-          id: MENU_SEL_TXT,
-          parentId: MENU_ROOT,
-          title: 'Сохранить выделение как .txt',
-          contexts: ['selection'],
-        });
-        menus.create({
-          id: 'ex-sep-sel-1',
-          parentId: MENU_ROOT,
-          type: 'separator',
-          contexts: ['selection'],
-        });
-        menus.create({
-          id: MENU_SEL_COPY_MD,
-          parentId: MENU_ROOT,
-          title: 'Копировать как Markdown',
-          contexts: ['selection'],
-        });
-        menus.create({
-          id: 'ex-sep-sel-2',
-          parentId: MENU_ROOT,
-          type: 'separator',
-          contexts: ['selection'],
-        });
-        // If the selection is INSIDE a table, the scanner accounts for it (§4.2).
-        menus.create({
-          id: MENU_SEL_TABLE,
-          parentId: MENU_ROOT,
-          title: 'Экспортировать таблицу…',
-          contexts: ['selection'],
-        });
+        // -- Selection -------------------------------------------------
+        menus.create({ id: MENU_SEL_MD, parentId: MENU_ROOT, title: 'Сохранить выделение как .md', contexts: ['selection'] });
+        menus.create({ id: MENU_SEL_TXT, parentId: MENU_ROOT, title: 'Сохранить выделение как .txt', contexts: ['selection'] });
+        menus.create({ id: 'ex-sep-sel-1', parentId: MENU_ROOT, type: 'separator', contexts: ['selection'] });
+        menus.create({ id: MENU_SEL_COPY_MD, parentId: MENU_ROOT, title: 'Копировать как Markdown', contexts: ['selection'] });
+        menus.create({ id: 'ex-sep-sel-2', parentId: MENU_ROOT, type: 'separator', contexts: ['selection'] });
+        menus.create({ id: MENU_SEL_TABLE, parentId: MENU_ROOT, title: 'Экспортировать таблицу…', contexts: ['selection'] });
 
-        // -- Image (contexts: ['image']) 🔴 never "download", never video ---
-        menus.create({
-          id: MENU_IMG_COPY_URL,
-          parentId: MENU_ROOT,
-          title: 'Копировать URL картинки', // no ellipsis: instant action
-          contexts: ['image'],
-        });
-        menus.create({
-          id: MENU_IMG_OPEN_TAB,
-          parentId: MENU_ROOT,
-          title: 'Открыть картинку в новой вкладке',
-          contexts: ['image'],
-        });
-        menus.create({
-          id: MENU_IMG_SAVE,
-          parentId: MENU_ROOT,
-          title: 'Сохранить картинку…', // honest refusal on cross-origin (§5.9)
-          contexts: ['image'],
-        });
+        // -- Image. 🔴 No "download" wording. 🔴 No `video` context — it does not
+        //    exist in this code at all, which is the cheapest possible insurance
+        //    against a reviewer reading this product as a media grabber (§12).
+        menus.create({ id: MENU_IMG_COPY_URL, parentId: MENU_ROOT, title: 'Копировать URL картинки', contexts: ['image'] });
+        menus.create({ id: MENU_IMG_OPEN_TAB, parentId: MENU_ROOT, title: 'Открыть картинку в новой вкладке', contexts: ['image'] });
+        menus.create({ id: MENU_IMG_SAVE, parentId: MENU_ROOT, title: 'Сохранить картинку…', contexts: ['image'] });
 
-        // -- Page / frame (contexts: ['page', 'frame']) -----------------
-        // ⚠️ "Экспортировать таблицу…" is ALWAYS visible even with no tables on the
-        // page — hiding it dynamically needs a persistent content script (§0). The
-        // honest answer to a click on a table-less page is a toast (§5.2).
-        menus.create({
-          id: MENU_TABLE,
-          parentId: MENU_ROOT,
-          title: 'Экспортировать таблицу…',
-          contexts: ['page', 'frame'],
-        });
-        menus.create({
-          id: MENU_TABLE_ALL,
-          parentId: MENU_ROOT,
-          title: 'Экспортировать все таблицы…',
-          contexts: ['page', 'frame'],
-        });
+        // -- Page / frame. ⚠️ "Экспортировать таблицу…" is ALWAYS visible even on a
+        //    page with no tables: hiding it dynamically would need a standing
+        //    content script (§0). The honest answer to a click is a toast (§5.2).
+        menus.create({ id: MENU_TABLE, parentId: MENU_ROOT, title: 'Экспортировать таблицу…', contexts: ['page', 'frame'] });
+        menus.create({ id: MENU_TABLE_ALL, parentId: MENU_ROOT, title: 'Экспортировать все таблицы…', contexts: ['page', 'frame'] });
 
-        // -- Settings (every context) -----------------------------------
-        menus.create({
-          id: 'ex-sep-settings',
-          parentId: MENU_ROOT,
-          type: 'separator',
-          contexts: ['selection', 'image', 'page', 'frame'],
-        });
-        menus.create({
-          id: MENU_SETTINGS,
-          parentId: MENU_ROOT,
-          title: 'Настройки экспорта…',
-          contexts: ['selection', 'image', 'page', 'frame'],
-        });
+        menus.create({ id: 'ex-sep-settings', parentId: MENU_ROOT, type: 'separator', contexts: ['selection', 'image', 'page', 'frame'] });
+        menus.create({ id: MENU_SETTINGS, parentId: MENU_ROOT, title: 'Настройки экспорта…', contexts: ['selection', 'image', 'page', 'frame'] });
       });
     }
 
-    // Onboarding once on install (design §1.2): a single "select text → right
-    // click" card. No "rate us". Opens the options page as the closest scaffold
-    // stand-in for a dedicated onboarding page (TODO: real onboarding surface).
     browser.runtime.onInstalled.addListener((details) => {
       createMenus();
       if (details.reason === 'install') {
-        // TODO(onboarding): dedicated one-screen page (design §1.2). For now the
-        // options page carries the "how it works" copy.
+        // One screen, once. No "rate us" (design §1.2). The options page carries the
+        // "how it works" copy under "О расширении".
         void browser.runtime.openOptionsPage?.();
       }
     });
     browser.runtime.onStartup?.addListener(createMenus);
     createMenus();
 
-    /* ---- Routing (REAL wiring; injection stubbed) -------------------- */
-    browser.contextMenus?.onClicked.addListener((info, tab) => {
-      void handleMenuClick(info, tab);
-    });
+    /* ================================================================ *
+     * Menu routing
+     * ================================================================ */
 
-    browser.commands?.onCommand.addListener((command) => {
-      if (command === 'pick-table') {
-        void (async () => {
-          const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-          if (typeof tab?.id === 'number') {
-            await injectEngine(tab.id, { type: 'pickTable', multi: false });
-          }
-        })();
-      }
-    });
-
-    // Structural types (a subset of the polyfill's OnClickData / Tab) so this
-    // file never depends on the exact `Browser.*` namespace path.
     type MenuClickInfo = {
       menuItemId: string | number;
       srcUrl?: string;
       frameId?: number;
     };
-    type ClickedTab = { id?: number } | undefined;
 
-    async function handleMenuClick(info: MenuClickInfo, tab: ClickedTab): Promise<void> {
-      const tabId = tab?.id;
+    browser.contextMenus?.onClicked.addListener((info, tab) => {
+      void handleMenuClick(info as MenuClickInfo, tab?.id);
+    });
 
-      // Settings — REAL, needs no page access.
+    browser.commands?.onCommand.addListener((command) => {
+      if (command !== 'pick-table') return;
+      void (async () => {
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (typeof tab?.id === 'number') await run(tab.id, undefined, { type: 'exportTable' });
+      })();
+    });
+
+    async function handleMenuClick(info: MenuClickInfo, tabId: number | undefined): Promise<void> {
+      // Settings — needs no page access at all.
       if (info.menuItemId === MENU_SETTINGS) {
         await browser.runtime.openOptionsPage?.();
         return;
       }
 
-      // Open image in a new tab — REAL, zero permissions (design §4.3). 🔴 Only
-      // http(s)/data: URLs; never javascript:/file: from page content (§8.4).
-      if (info.menuItemId === MENU_IMG_OPEN_TAB && info.srcUrl) {
-        if (/^(https?:|data:image\/)/.test(info.srcUrl)) {
+      // Open image in a new tab — zero permissions, zero injection (design §4.3).
+      // 🔴 Scheme-checked: never `javascript:`/`file:` from page content (§8.4).
+      if (info.menuItemId === MENU_IMG_OPEN_TAB) {
+        if (info.srcUrl && isSafeTabUrl(info.srcUrl)) {
           await browser.tabs.create({ url: info.srcUrl, active: false });
         }
         return;
@@ -192,64 +140,125 @@ export default defineBackground({
 
       if (typeof tabId !== 'number') return;
 
-      // Everything else needs `engine.js` injected on the activeTab grant.
+      // ⚠️ `frameId` matters: the selection may live in a SAME-ORIGIN iframe
+      // (design §4.1). Cross-origin frames are unreachable without host permissions
+      // and are NOT attempted (§5.7) — the injection just fails and we say so.
+      const frameId = info.frameId;
+
       switch (info.menuItemId) {
         case MENU_SEL_MD:
-          await injectEngine(tabId, {
-            type: 'exportSelection',
-            format: 'md',
-            frameId: info.frameId,
-          });
-          return;
+          return run(tabId, frameId, { type: 'exportSelection', format: 'md' });
         case MENU_SEL_TXT:
-          await injectEngine(tabId, {
-            type: 'exportSelection',
-            format: 'txt',
-            frameId: info.frameId,
-          });
-          return;
+          return run(tabId, frameId, { type: 'exportSelection', format: 'txt' });
         case MENU_SEL_COPY_MD:
-          await injectEngine(tabId, { type: 'copySelectionMarkdown', frameId: info.frameId });
-          return;
+          return run(tabId, frameId, { type: 'copySelectionMarkdown' });
         case MENU_SEL_TABLE:
         case MENU_TABLE:
-          await injectEngine(tabId, { type: 'pickTable', multi: false });
-          return;
+          return run(tabId, frameId, { type: 'exportTable' });
         case MENU_TABLE_ALL:
-          await injectEngine(tabId, { type: 'exportAllTables' });
-          return;
+          return run(tabId, frameId, { type: 'exportAllTables' });
         case MENU_IMG_COPY_URL:
+          return run(tabId, frameId, { type: 'copyImageUrl', srcUrl: info.srcUrl ?? '' });
         case MENU_IMG_SAVE:
-          await injectEngine(tabId, {
-            type: 'copyImageUrl',
-            srcUrl: info.srcUrl ?? '',
-          });
-          return;
+          return run(tabId, frameId, { type: 'saveImage', srcUrl: info.srcUrl ?? '' });
       }
     }
 
-    /**
-     * Inject `engine.js` on demand under the activeTab grant, then hand it the
-     * command. SCAFFOLD: the executeScript call is wired but the engine's payload
-     * handling is stubbed (see entrypoints/engine.ts). ⚠️ `frameIds:[info.frameId]`
-     * matters for a selection inside a same-origin iframe (design §4.1); cross-
-     * origin frames are unreachable without host permissions and are NOT attempted
-     * (design §5.7).
-     */
-    async function injectEngine(tabId: number, command: EngineCommand): Promise<void> {
-      // TODO_LOGIC(wiring): pass `command` to engine.js (e.g. via a follow-up
-      // tabs.sendMessage, or scripting.executeScript `args`) and handle results.
+    /** Inject `engine.js` under the activeTab grant, then hand it the command. */
+    async function run(
+      tabId: number,
+      frameId: number | undefined,
+      command: EngineCommand,
+    ): Promise<void> {
       try {
-        await browser.scripting.executeScript({
-          target: { tabId },
-          files: ['/engine.js'],
-        });
-        // TODO_LOGIC: deliver `command` to the freshly injected engine and route
-        // its outcome (toast / preview / picker). Stubbed for the scaffold.
-        void command;
+        await injectFile(tabId, frameId, '/engine.js');
+        await browser.tabs.sendMessage(tabId, command, frameId ? { frameId } : undefined);
       } catch {
-        // Injection can fail on restricted pages (chrome://, the store). The real
-        // build shows a toast; the scaffold swallows it.
+        // Restricted page (chrome://, the store, a PDF viewer, a cross-origin frame)
+        // — there is nowhere to inject. Failing silently here is acceptable ONLY
+        // because there is no surface to draw on: we cannot toast on a page we
+        // cannot touch. The popup, which CAN render, reports this properly.
+      }
+    }
+
+    /* ================================================================ *
+     * Privileged services for the engine (it has none of these APIs)
+     * ================================================================ */
+
+    browser.runtime.onMessage.addListener(
+      (msg: unknown, sender, sendResponse: (r: BgResponse) => void) => {
+        const req = msg as BgRequest;
+        if (!req || typeof req.type !== 'string') return false;
+        // Only our own extension's contexts can reach here (runtime.onMessage is not
+        // exposed to pages without externally_connectable, which we never declare).
+        serve(req, sender.tab?.id, sender.frameId)
+          .then(sendResponse)
+          .catch((e: unknown) =>
+            sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+          );
+        return true;
+      },
+    );
+
+    async function serve(
+      req: BgRequest,
+      tabId: number | undefined,
+      frameId: number | undefined,
+    ): Promise<BgResponse> {
+      switch (req.type) {
+        case 'hasDownloads': {
+          const granted = await browser.permissions.contains({ permissions: ['downloads'] });
+          return { ok: true, granted };
+        }
+
+        case 'downloadUrl': {
+          // Only reachable when the user has OPTED IN to `downloads` (design §7.3).
+          const granted = await browser.permissions.contains({ permissions: ['downloads'] });
+          if (!granted) return { ok: false, error: 'Разрешение «Управление загрузками» не выдано' };
+          if (!isSafeTabUrl(req.url)) return { ok: false, error: 'Небезопасный адрес' };
+          const downloads = (browser as unknown as { downloads?: typeof browser.downloads }).downloads;
+          if (!downloads) return { ok: false, error: 'API загрузок недоступно' };
+          await downloads.download({ url: req.url, filename: req.filename, saveAs: false });
+          return { ok: true };
+        }
+
+        case 'openTab': {
+          if (!isSafeTabUrl(req.url)) return { ok: false, error: 'Небезопасный адрес' };
+          await browser.tabs.create({ url: req.url, active: true });
+          return { ok: true };
+        }
+
+        case 'openOptions': {
+          await browser.runtime.openOptionsPage?.();
+          return { ok: true };
+        }
+
+        case 'injectXlsx': {
+          // The SECOND injection, only now, and only into the frame that asked
+          // (design §0). A dynamic import() in the content script would resolve
+          // against the page's CSP and die on strict-CSP sites.
+          if (typeof tabId !== 'number') return { ok: false, error: 'Нет вкладки' };
+          await injectFile(tabId, frameId, '/xlsx.js');
+          return { ok: true };
+        }
+
+        case 'stashAndSave': {
+          // §5.5 escape hatch: rebuild the Blob on OUR OWN page, where OUR CSP
+          // applies instead of the site's `sandbox` policy.
+          const MAX = 8 * 1024 * 1024;
+          if (req.text.length > MAX) {
+            return { ok: false, error: 'Файл слишком большой для этого способа (>8 МБ)' };
+          }
+          const key = `${SESSION_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+          const payload: PendingSave = { filename: req.filename, text: req.text, mime: req.mime };
+          const area = browser.storage.session ?? browser.storage.local;
+          await area.set({ [key]: payload });
+          await browser.tabs.create({
+            url: browser.runtime.getURL(`/save.html?key=${encodeURIComponent(key)}`),
+            active: true,
+          });
+          return { ok: true };
+        }
       }
     }
   },

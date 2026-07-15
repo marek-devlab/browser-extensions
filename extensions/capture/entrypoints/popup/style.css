@@ -205,3 +205,16 @@ select {
   color: var(--text-dim);
   margin: 2px 0;
 }
+
+.callout--info {
+  border-left: 3px solid var(--accent, #2563eb);
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: var(--card, #f6f7f9);
+  border-radius: var(--radius, 6px);
+  font-size: 12px;
+}
+
+.callout--info .ui-btn {
+  margin-top: 6px;
+}

@@ -13,7 +13,9 @@ import {
 } from '../../utils/device';
 import { FieldRow } from '../../utils/field';
 import { ConnectionSection } from '../../utils/connection';
+import { serializeReport } from '../../utils/export';
 import { useSettings, useThemeSetter } from '../../utils/settings';
+import type { CopyFormat } from '../../utils/storage';
 
 // PRIMARY surface (design §1.1): "who am I, in two scrolls". Device-first, 6
 // collapsible tiles, 🔴 ZERO network on open. Every tile is a DISCLOSURE, not a
@@ -89,6 +91,14 @@ export function App() {
         >
           Полный отчёт
         </button>
+        {/* Copy-all in the format chosen in Options (design §2.1). 🔴 Device facts
+            only — the popup never lifts the network values out of ConnectionSection,
+            so there is nothing here that could carry the IP into the clipboard. */}
+        <CopyAllButton
+          groups={[browser2, hardware2, groups.screen, groups.locale, privacy2]}
+          format={settings.copyFormat}
+          includeUnavailable={settings.showUnavailable}
+        />
         <button
           type="button"
           className="ui-btn ui-btn--sm"
@@ -99,6 +109,40 @@ export function App() {
         </button>
       </footer>
     </div>
+  );
+}
+
+/** Copy every device fact on screen in the user's chosen `copyFormat`, with the
+ *  same transient acknowledgement as the per-row `CopyIcon`. A real clipboard
+ *  failure surfaces (`✕`) rather than faking success. */
+function CopyAllButton({
+  groups,
+  format,
+  includeUnavailable,
+}: {
+  groups: FieldGroup[];
+  format: CopyFormat;
+  includeUnavailable: boolean;
+}) {
+  const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle');
+  return (
+    <button
+      type="button"
+      className="ui-btn ui-btn--sm"
+      aria-live="polite"
+      aria-label="Скопировать все данные об устройстве"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(serializeReport(format, groups, { includeUnavailable }));
+          setState('ok');
+        } catch {
+          setState('fail');
+        }
+        setTimeout(() => setState('idle'), 1500);
+      }}
+    >
+      {state === 'ok' ? '✓ Скопировано' : state === 'fail' ? '✕ Ошибка' : 'Копировать'}
+    </button>
   );
 }
 

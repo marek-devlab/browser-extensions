@@ -1,86 +1,152 @@
-# `@blur/whoami` — Connection & Device Info · scaffold
+# `@blur/whoami` — Connection & Device Info · implementation
 
-UI-complete scaffold of extension #9 (PLAN.md §15, "Фаза 0"). Surfaces, navigation
-and settings persistence are **real**; the two network fetches are **mocked**.
+Extension #9. **The logic is real.** The scaffold's two mocked fetches (`MOCK`,
+`mockAsync`, `todoLogic`, `<MockBadge>`) are gone — `grep -rn "MOCK\|TODO_LOGIC"`
+over `entrypoints/` and `utils/` returns nothing.
+
 Design source of truth: [`docs/design/whoami.md`](../../docs/design/whoami.md);
-constraints from [`PLAN-2.md`](../../PLAN-2.md) §5, §9, §10.3.
+constraints from [`PLAN-2.md`](../../PLAN-2.md) §5, §9, §10.3 and `TODO.md` §H.
 
-Goal, non-negotiable: **«Показать мои соединение и устройство»**. The whole device
-half runs with `permissions: ["storage"]`, `host_permissions: []` and ZERO network.
+Goal, non-negotiable: **«Показать мои соединение и устройство»**. The device half
+runs with `permissions: ["storage"]`, `host_permissions: []` and ZERO network.
 
-## Surface map
+## Real vs deferred
 
-| Surface | File | Role |
+**Real**
+
+| Area | Where | Notes |
 |---|---|---|
-| **Popup** (primary, 380px) | `entrypoints/popup/{index.html,main.tsx,App.tsx,style.css}` | Device-first, 6 collapsible tiles, 🔴 zero network on open. Device+Browser · CPU/Memory · Screen · Locale/Time · **Connection** (IP flow) · Privacy. Buttons to report + options. |
-| **Full report** (own tab) | `entrypoints/report/{index.html,main.tsx,App.tsx,style.css}` | All fields grouped, filter, "show unavailable" toggle, nav with per-group counts + "N unavailable" counter, copy/download `.md`/`.json`, Connection section. |
-| **Options** | `entrypoints/options/{index.html,main.tsx,App.tsx,style.css}` | Theme/units/copy-format, network opt-ins + **revocation**, ISP provider + token, "what this never does", 2-step reset. |
-| ~~Background SW~~ | **absent — deliberately** | See "No background SW" below. |
+| T0 · device (~40 fields) | `utils/device.ts` | `navigator`, `screen`, `Intl`, `matchMedia`, `hardwareConcurrency`, `maxTouchPoints`, `cookieEnabled`, **GPC**, `webdriver`, `prefers-*`, `forced-colors`, `pointer`/`hover`, `screen.isExtended`, `Intl.Locale` week info. Async: `getHighEntropyValues()`, `storage.estimate()`, `navigator.gpu`, `WEBGL_debug_renderer_info` — each probed for real and degrading to an EXPLAINED chip. |
+| T1 · Cloudflare trace | `utils/network.ts` → `fetchTrace()` | Real `fetch(one.one.one.one/cdn-cgi/trace)`, whitelist `key=value` parse (`ip, loc, colo, tls, http, warp, uag`), per-field degradation, `AbortSignal.timeout(8000)`, byte cap, `credentials:'omit'`, `referrerPolicy:'no-referrer'`, `cache:'no-store'`, `redirect:'error'`. |
+| T2 · ipinfo.io | `utils/network.ts` → `fetchIsp()` | Real `fetch(https://ipinfo.io/json?token=…)` with the **user's own** token. ASN + ISP parsed out of `org`. 401/403 → "token rejected"; 429 → rate-limit with `Retry-After`; timeout/offline/malformed all first-class. |
+| Consent flow | `utils/connection.tsx` | Inline disclosure (always on), modal `<dialog>`, `permissions.request()` as the FIRST call in the gesture, denial state, "don't ask again". |
+| Revocation | `entrypoints/options/App.tsx` + `network.revokeIspPermission()` | `permissions.remove()` **and** flag reset; Options also displays what the browser actually holds (`permissions.contains()`). |
+| Report + export | `entrypoints/report`, `utils/export.ts` | All groups, filter, unavailable counter, `.md`/`.json` copy + download (`Blob` + `<a download>`, no `downloads` permission). **Network block now exports too**, with "include network data" and "hide IP → 203.0.113.x" (design §2.6). |
+| VPN/proxy signals (§8.1) | `utils/connection.tsx` → `VpnSignals` | Timezone vs IP country vs WARP. 🔴 A **discrepancy + explanations**, never a "VPN detected" verdict. Zero extra network. |
 
-Shared logic in `utils/`:
-- `storage.ts` — `WhoamiSettings` (prefs + consent flags ONLY) + `SETTINGS_KEYS`.
-- `settings.tsx` — `useSettings()` hook + theme wiring over `@blur/ui`.
-- `field.tsx` — 🔴 the discriminated-union field model + `<FieldRow>` renderer + reason catalog.
-- `device.ts` — T0 real device collection (sync + async augmentation).
-- `network.ts` — 🔴 mocked T1/T2 fetches + real permission helpers.
-- `connection.tsx` — shared Connection section: 3 IP states, disclosure `<dialog>`, opt-in flow.
-- `export.ts` — report → Markdown/JSON + client-side download.
+**Deferred (deliberately, with reasons)**
 
-## Real vs mocked
+| Not built | Why |
+|---|---|
+| `ipapi.co` keyless fallback | ⚠️ Free-tier commercial-use terms unresolved (TODO §H). It is not in the code, **not in the CSP** and not in the `IspProvider` union. 🔴 We do not ship a fallback whose ToS may ban commercial use — and we never switch providers silently on an error. |
+| WebRTC local-IP panel (§8.2) | 🔴 The local address is unobtainable (mDNS). Not attempted, not promised. (Showing "your leak is closed ✅" would need an `RTCPeerConnection`; it is honest but non-essential — left out rather than half-done.) |
+| Entropy / uniqueness meter (§8.3) | Needs a licensed frequency table (§14.4). 🔴 Inventing numbers is forbidden. |
+| `autoFetchIp` UI beyond the checkbox | Works, but stays off by default and is force-disabled on read unless `cfConsent === 'granted'` — that default is what keeps AMO at `required: ['none']`. |
 
-**Real now**
-- All three surfaces, navigation, theme (`@blur/ui` `seedTheme('blur-whoami:theme')`), settings persistence.
-- Tile collapse (`aria-expanded`/`aria-controls`), report filter + show-unavailable.
-- 🔴 Device half (T0): `navigator.userAgent`, `Intl` timezone/locale, `screen`, `hardwareConcurrency`, `matchMedia`, languages, cookies, DNT — all real. Chromium-only APIs (userAgentData high-entropy, `deviceMemory`, `navigator.connection`, `navigator.gpu`, `WEBGL_debug_renderer_info`) are **really probed** and render via the field model with the "unavailable, and here's why" chip when absent.
-- The 3 IP states (not-requested / granted+loaded / failed), the disclosure `<dialog>` with the ACTUAL RU+EN copy, the permission opt-in (`permissions.request` / `.contains` / `.remove`) wired for real, the "unavailable & why" chips, copy-to-clipboard per field, offline/denied/rate-limited/timeout/field-unavailable states.
+## 🔴 Red lines — how each is enforced *in code*
 
-**Mocked** (each carries `<MockBadge/>`)
-- The two fetches only. IP/country/ISP values are fabricated constants returned via `mockAsync`.
+1. **No fingerprint hash, nothing persisted, zero analytics.**
+   - `grep -rn "crypto\|subtle\|digest\|hash"` over the sources: no hashing exists.
+   - `utils/storage.ts` ends with two **type-level assertions** that run in
+     `npm run compile`: `SETTINGS_KEYS` must equal `keyof WhoamiSettings` exactly,
+     and `Extract<keyof WhoamiSettings, ForbiddenKey>` must be `never` — adding
+     `lastIp`, `ip`, `asn`, `installId`, `fingerprintHash`, `analyticsOptIn`… **fails
+     the build**. §5.3 is now a CI check, not a code-review hope.
+   - There is **no background service worker entrypoint**, so there is no long-lived
+     context that could cache anything. Results live in `useState` and die with the
+     document.
+   - The CSP `connect-src` allows two hosts. No analytics endpoint is reachable even
+     in principle.
+2. **Prominent in-UI disclosure before the first request.**
+   - `ConnectionSection` renders the disclosure `<Callout>` **unconditionally**, and
+     the single button that can start a request is its next sibling. There is no code
+     path from popup-open to a fetch that does not pass through a click on it.
+   - The only auto path (`autoFetchIp`) is unreachable until `cfConsent === 'granted'`
+     — enforced twice: in the UI, and in `normalizeSettings()` on every read (so a
+     hand-edited `storage.local` cannot make the popup phone home on open).
+   - The ipinfo `<dialog>` names the recipient (ipinfo.io, USA), what leaves (the
+     public IP), why, and the retention (none). Confirm = **"Отправить IP / Send my
+     IP"**; default focus is Cancel; Esc/backdrop/Cancel = refusal.
+   - **Revoke is real:** `permissions.remove()` + `ispConsent: 'unset'` → the whole
+     disclosure runs again next time. Not a write-once boolean. An external revoke in
+     `chrome://extensions` is reconciled via `permissions.contains()` on every mount.
+3. **Firefox installs with no data warning.**
+   `data_collection_permissions: { required: ["none"], optional: ["locationInfo"] }`
+   (verified in the built MV2 manifest). No `technicalAndInteraction` anywhere — there
+   is no telemetry.
+4. **WebRTC local IP: not attempted, not promised** (`utils/device.ts`, `collectPrivacy`
+   carries the comment; nothing in the UI claims it).
+5. **`ip-api.com` is never used** — no HTTPS on free (physically impossible under our
+   own CSP) plus a commercial-use ban.
 
-## TODO_LOGIC inventory (`grep -r TODO_LOGIC`)
+## Security posture (audit checklist)
 
-| Marker | File | What lands here |
-|---|---|---|
-| `whoami: cloudflare trace` | `utils/network.ts` → `fetchTrace()` | `fetch('https://one.one.one.one/cdn-cgi/trace', { signal: AbortSignal.timeout(8000), cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer' })`, whitelist-parse `key=value` (ip, loc, colo, tls, http, warp, uag), clamp to 256 chars. |
-| `whoami: ipinfo lookup` | `utils/network.ts` → `fetchIsp()` | Fetch ipinfo.io (with token) or keyless ipapi.co, same security options, whitelist JSON fields (isp, asn, domain, continent). |
+| Rule | Enforcement |
+|---|---|
+| Every fetch has a timeout | `AbortSignal.timeout(8000)` in `requestInit()` — both call sites use it; there is no `fetch(` anywhere else (2 call sites total, both in `network.ts`). |
+| Response = untrusted input | Byte cap (16 KB, stream cancelled on overflow), `Content-Length` pre-check, whitelist keys only, per-value control-char strip + charset regex + 256-char clamp, `JSON.parse` in `try`, schema-check before use. No `Object.assign`/spread of a parsed body into state. |
+| No `innerHTML` / `eval` | None in the sources (grep clean). All values are React text nodes. |
+| No unhandled rejections | Every network path returns a typed `NetOutcome`; `settingsItem` read/write failures are caught (product runs on in-memory defaults). |
+| Every error has a UI state | offline / timeout / rate-limited (+`Retry-After`) / unauthorized / malformed / generic — each with copy that also says *the device data above is unaffected*. |
+| Popup renders with everything missing | The field model cannot print an empty cell; the network section degrades to "not requested"; the device half needs no API that can fail fatally. |
+| Token hygiene | `storage.local` only (never `sync`), `type=password`, clamped to 128 chars, **never** in any export or clipboard copy (it is not part of any `FieldGroup`). |
+| Double-click | The trace/ISP buttons are inert while a request is in flight — two requests would be two disclosures of the IP where the user consented to one. |
+| Unmount | One `AbortController` per mount aborts any in-flight request (report tab); the popup's teardown does it for free. |
 
-Also stubbed but not `TODO_LOGIC`-thrown: report **network export** (device export is real; the IP/ISP block + "hide IP" redaction is marked with a `MockBadge` and a Callout in `report/App.tsx`); the entropy/uniqueness tile and WebRTC-leak panel (design §8) are **not yet built** — noted as open (see below).
+## Mobile (Firefox for Android)
 
-## The disclosure copy — where it lives (design §6.1)
+- Popup is `max-width`, not fixed: at ≤ 400px the field rows stack, and nothing
+  scrolls horizontally at 360px. The `<dialog>` is capped at `100vw - 24px`.
+- `@media (pointer: coarse)` gives every control (tiles, chips, copy buttons, CTA)
+  a ≥ 44px target. No hover-only affordance exists — the copy button and the
+  unavailability chips are always visible buttons.
+- The degradation path is the *normal* path there: no `userAgentData`
+  high-entropy (Gecko), no `deviceMemory`, no `navigator.connection` (→ `mobile-only`
+  / `chromium-only` chips), a different `storage.estimate()`. `connection.type` is the
+  one field that becomes *available* on Android and shows a real value.
 
-- **Place A** (always-on inline, above the "Show my IP" button): `utils/connection.tsx`, the `<Callout tone="info">` in the not-requested branch.
-- **Place B** (modal `<dialog>` before the first ipinfo call, RU + EN final copy): `utils/connection.tsx` → `IpConsentDialog`. 🔴 Confirm button = "Отправить IP / Send my IP", default focus on Cancel, Esc = refusal.
-- **Place C** (source + timestamp + "не сохранено" per value): `utils/connection.tsx` → `IpBlock` / `IspBlock` `.ipblock__source`.
+## Manifest (built output, both browsers)
 
-## "No IP persistence" — how it is architecturally true
+```jsonc
+// chrome-mv3
+"permissions": ["storage"],
+"optional_host_permissions": ["https://ipinfo.io/*"],
+"content_security_policy": { "extension_pages":
+  "script-src 'self'; object-src 'self'; connect-src 'self' https://one.one.one.one https://ipinfo.io;" }
 
-1. **No background service worker entrypoint exists** (`entrypoints/` has none). WXT emits no background because none is defined. There is therefore no long-lived context to cache anything in.
-2. **The fetches run in the popup/report document.** The result lives in React `useState` and dies when the document is torn down (popup close / tab close). Closing the popup aborts an in-flight `fetch` for free — nothing to clean up.
-3. **The settings schema physically has no slot for an IP.** `WhoamiSettings` (utils/storage.ts) holds theme/units/copyFormat/allowCloudflare/cfConsent/autoFetchIp/ispProvider/ipinfoToken/ispConsent/showUnavailable — consent flags and prefs, never data. `SETTINGS_KEYS` is the closed key list; a `settings.spec.ts` (TODO) asserts `Object.keys` equals it and FAILS if anyone adds `lastIp`.
-4. **CSP `connect-src` is pinned** (wxt.config.ts) to `'self' one.one.one.one ipinfo.io ipapi.co` — the extension is physically incapable of sending data elsewhere, so there is no exfiltration path even for a compromised dependency.
+// firefox-mv2
+"permissions": ["storage"],
+"optional_permissions": ["https://ipinfo.io/*"],
+"content_security_policy": "script-src 'self'; object-src 'self'; connect-src 'self' https://one.one.one.one https://ipinfo.io;",
+"browser_specific_settings": { "gecko": { "id": "whoami@blockaly.com",
+  "data_collection_permissions": { "required": ["none"], "optional": ["locationInfo"] } }, "gecko_android": {} }
+```
 
-## "No background SW" decision
+⚠️ **Two hosts, not three.** `ipapi.co` was removed from the CSP together with the
+code that would have called it: a host nothing calls must not sit in the allow-list.
 
-Deliberate (design §0, §1.1). No `contextMenus`, no `webRequest`, no alarms are needed; the only network calls are user-gated and belong in the document that shows them. Absence of the SW is what makes points 1–2 above true rather than promised, and it sidesteps the entire SW-death bug class that cost `perf` a round of fixes (PLAN.md §18a).
+## Open questions for a human
 
-## Permissions / manifest mapping (wxt.config.ts)
-
-- `permissions: ["storage"]` only. `host_permissions: []`.
-- `optional_host_permissions: ["https://ipinfo.io/*"]` (Chrome) / `optional_permissions` (Firefox). ⚠️ Deliberate over-ask: Cloudflare + ipinfo both send `ACAO:*`, so `fetch` works WITHOUT the permission — the optional perm exists purely for the native browser prompt (a second, un-fakeable disclosure) and the native revoke path we reconcile via `permissions.contains()`.
-- CSP with restricted `connect-src` (default MV3 does not restrict it) — commented in the config.
-- Firefox: `gecko.id = whoami@blockaly.com`, `data_collection_permissions: { required: ['none'], optional: ['locationInfo'] }`, `gecko_android: {}`. `required:['none']` is a consequence of `autoFetchIp` defaulting to `false`.
-
-## Open questions (carried from design §14)
-
-1. **ipapi.co ToS.** Free tier may be non-commercial only. If it forbids a free extension, ipapi is not a valid keyless fallback and the ISP feature may ship ipinfo-only (or be dropped — T0+T1 is already a complete product). Options surfaces this as a warning; unresolved until ToS is checked.
-2. `permissions.request()` holding user-activation after `<dialog>` close on Firefox MV2 — verify live (design §4.3). If it does not, the dialog must become an inline panel whose submit button is the gesture.
-3. Entropy/uniqueness table licensing (design §8.3) and the WebRTC-leak panel (§8.2) are **not built in this scaffold** — pending the frequency-table license decision; 🔴 no invented numbers.
-4. Stability of `one.one.one.one/cdn-cgi/trace` as a product dependency (no SLA) — the real parser must degrade per-field.
+1. 🔴 **ipapi.co ToS (TODO §H).** Unresolved, so it is **not shipped**. If its free
+   tier does forbid commercial use (as `ip-api.com`'s does), the answer is simply
+   "ipinfo-only", which is what is in the tree today. T0 + T1 is already a complete
+   product; nothing is blocked on this.
+2. **ipinfo endpoint choice.** We call `https://ipinfo.io/json?token=…`, *not* the
+   Lite API at `https://api.ipinfo.io/lite/me` that PLAN-2 §5.2 names — because
+   `api.ipinfo.io` is a **different host**, and using it would mean the permission
+   warning and the CSP entry say `api.ipinfo.io` while the product says "ipinfo.io".
+   The classic endpoint keeps URL = CSP = host permission identical (one host, one
+   warning, trivially auditable) and still returns ASN + ISP (in `org`) plus
+   country/city. If someone wants the Lite fields (`as_domain`, `continent`) exactly,
+   that is a conscious swap of the host in three places.
+3. **`permissions.request()` after `<dialog>` close on Firefox MV2** (design §14.2) —
+   the code calls it as the first statement of the submit handler, which is correct by
+   spec, but it has **not been verified on a live Firefox for Android build**. If the
+   activation is lost there, the dialog must become an inline panel whose submit button
+   *is* the gesture.
+4. **Cloudflare `trace` has no SLA.** The parser degrades per field and shows the honest
+   failure state, but if the endpoint dies, T1 dies with it. Do we want a second keyless
+   IP-only source (which would mean a third disclosure and a third CSP host)?
+5. `PRIVACY.md` and `STORE.md` need a `whoami` section (both are outside this task's
+   write scope): recipients = Cloudflare + ipinfo.io, zero retention, no server, and the
+   deliberate asymmetry that T1 has **no** host permission while T2 does (design §0.1).
 
 ## Design-section mapping
 
-§0 architecture → wxt.config.ts + storage.ts + "no SW". §1/§2 surfaces → the three
-entrypoints. §2.4/§6.1 disclosure → `connection.tsx`. §2.8/§5/§7 field model + reason
-catalog → `field.tsx`. §3 options inventory → `storage.ts` + `options/App.tsx`. §4
-flows → `connection.tsx`. §6.3 manifest → `wxt.config.ts`. §9 security (no innerHTML,
-untrusted-input whitelist, no persistence) → across `field.tsx`/`network.ts`/`export.ts`.
+§0 architecture → `wxt.config.ts` + `utils/storage.ts` + "no SW". §1/§2 surfaces → the
+three entrypoints. §2.4/§6.1 disclosure → `utils/connection.tsx`. §2.8/§5/§7 field model
++ reason catalog → `utils/field.tsx` (one code added: `provider-omitted` — the third
+party answered but had no value for that field; 🔴 still a closed enum, still never a
+"—"). §3 options inventory → `utils/storage.ts` + `options/App.tsx`. §4 flows +
+§8.1 VPN signals → `utils/connection.tsx`. §6.3 manifest → `wxt.config.ts`. §9/§10
+security + resilience → `utils/network.ts`.

@@ -1,12 +1,14 @@
+import type { FlatNode } from './core/tree';
+import type { ParseSuggestion } from './core/parse';
 import type { FormatPref } from './storage';
 
-// Domain types shared by the (stubbed) logic and the (real) UI. Keeping these
-// here means the tabs render against a stable shape now, and wiring the real
-// parsers later is a matter of making the stubs in format.ts / jwt.ts /
-// schema.ts return the same types.
+// Domain types shared by the logic and the UI.
 
 /** A concrete, detected format (never 'auto' — that is only a *pref*). */
 export type Format = Exclude<FormatPref, 'auto'> | 'jwt';
+
+/** Formats a *document* can be (JWT is a credential, not a document — §1.3). */
+export type DocFormat = Exclude<Format, 'jwt'>;
 
 export const FORMAT_LABELS: Record<Format, string> = {
   json: 'JSON',
@@ -18,108 +20,104 @@ export const FORMAT_LABELS: Record<Format, string> = {
   jwt: 'JWT',
 };
 
-/** One row in the flattened, virtualisable tree view (design §2.4). */
-export interface TreeRow {
-  id: string;
-  /** Indentation level. */
-  depth: number;
-  /** Typographic marker so type is never colour-only (design §9.2). */
-  kind: 'object' | 'array' | 'string' | 'number' | 'bool' | 'null';
-  /** Object key or array index label; null at the document root. */
-  key: string | null;
-  /** Short value preview for scalars, or child count for containers. */
-  preview: string;
-  /** Child count for containers, else null. */
-  count: number | null;
-  /** JSONPath to this node, e.g. `$.users[1].id`. */
-  path: string;
-  expandable: boolean;
+/** A parsed document. `tree` is flat and pre-order (see core/tree.ts). */
+export interface ParsedDoc {
+  format: DocFormat;
+  /** Whether autodetect (vs. an explicit override) chose the format. */
+  autodetected: boolean;
+  /** The source text, verbatim. The text pane renders windows of this. */
+  text: string;
+  /** Offsets of each line start, for O(log n) line lookups + virtualisation. */
+  lineStarts: Int32Array;
+  bytes: number;
+  lines: number;
+  tree: FlatNode[];
+  /** MAX_NODES / MAX_DEPTH cut the tree short — the UI must say so. */
+  truncated: boolean;
+  /** At least one number does not survive a JS double. */
+  bigNumbers: boolean;
+  /** Scalars carry their exact source spelling (JSON/JSONC offsets). */
+  exact: boolean;
+  /** Honest, non-fatal notes from the parser (CSV delimiter, YAML anchors …). */
+  notes: string[];
+  /** File name when the document came from a dropped/selected file. */
+  name: string | null;
+}
+
+/** A parse failure with a real source position (design §5.4). */
+export interface ParseFailure {
+  message: string;
+  line: number;
+  column: number;
+  suggestions: ParseSuggestion[];
+  /** Tree parsed up to the error, shown ghosted rather than discarded. */
+  partial: FlatNode[] | null;
+  /** The text that failed, so the error view can show the offending lines. */
+  text: string;
 }
 
 /** The value-inspector payload (bottom panel, design §2.4). */
 export interface InspectedValue {
   path: string;
-  /** The raw text exactly as written in the source document. */
+  /** The raw text exactly as written in the source document, when known. */
   raw: string;
-  /**
-   * A precision warning when the source number cannot round-trip through a JS
-   * double — the differentiator from PLAN-2 §10.1 (JSON.parse source access).
-   */
+  kind: FlatNode['kind'];
+  /** Set when the source number cannot round-trip through a JS double. */
   precisionNote: string | null;
+  /** Set when this format cannot give us the exact source spelling at all. */
+  exactnessNote: string | null;
+  /** Length in GRAPHEMES for strings — `str.length` lies about emoji. */
+  lengthNote: string | null;
 }
 
-/** Result of parsing a document (design §2.4). */
-export interface ParsedDoc {
-  format: Format;
-  /** Whether autodetect (vs. an explicit override) chose the format. */
-  autodetected: boolean;
-  bytes: number;
-  lines: number;
-  nodes: number;
-  valid: boolean;
-  rows: TreeRow[];
-  /** The (possibly re-indented) source text lines for the text pane. */
-  textLines: string[];
-}
-
-/** A parse error with a source position (design §5.4). */
-export interface ParseError {
-  message: string;
-  line: number;
-  column: number;
-  /** Suggested fixes offered as buttons (e.g. "remove trailing comma"). */
-  suggestions: string[];
-  /** Partial tree parsed up to the error, shown ghosted (design §5.4). */
-  partial: TreeRow[] | null;
-}
-
-/** A lossy-conversion warning (design §2.5 — mandatory panel). */
-export interface ConversionWarning {
-  severity: 'warn' | 'poor';
-  message: string;
-}
+export type { ConversionWarning } from './core/serialize';
+export type { SchemaIssue } from './worker/protocol';
 
 export interface ConversionResult {
-  from: Format;
-  to: Format;
+  from: DocFormat;
+  to: DocFormat;
   text: string;
-  warnings: ConversionWarning[];
+  warnings: import('./core/serialize').ConversionWarning[];
+  /** Set when the target format cannot represent this document at all. */
+  refusal: string | null;
+  /** Real JSONPaths of arrays-of-objects, offered when CSV refuses (§4.6). */
+  candidates: string[];
 }
 
-/** Decoded JWT (design §2.6). */
-export interface JwtDecoded {
-  header: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  /** Pretty-printed header/payload for the panes. */
-  headerText: string;
-  payloadText: string;
-  alg: string;
-  /** e.g. 'none' triggers the red warning block (design §4.4). */
-  algNone: boolean;
-  claims: JwtClaim[];
-  /** base64url segment boundaries for Highlight-API colouring (design §2.6). */
-  segments: { header: [number, number]; payload: [number, number]; signature: [number, number] };
-}
+/* ------------------------------- JWT (§2.6) ------------------------------- */
 
 export interface JwtClaim {
   name: string;
   label: string;
   value: string;
-  /** Human relative time / status, e.g. "expired 1h 4m ago". */
+  /** Human note, e.g. "⛔ ПРОСРОЧЕН на 1 ч 4 мин". */
   note: string | null;
   status: 'ok' | 'warn' | 'poor' | 'info';
+}
+
+export interface JwtDecoded {
+  header: Record<string, unknown> | null;
+  payload: Record<string, unknown> | null;
+  headerText: string;
+  payloadText: string;
+  /** Raw payload text when it is not JSON — a legal, if unusual, JWT (§4.4). */
+  payloadIsJson: boolean;
+  alg: string;
+  algNone: boolean;
+  /** HS* → a shared secret; RS/ES/PS/EdDSA → a public key. */
+  symmetric: boolean;
+  claims: JwtClaim[];
+  /** Segment boundaries in the token string, for Highlight-API colouring. */
+  segments: {
+    header: [number, number];
+    payload: [number, number];
+    signature: [number, number];
+  };
+  /** Non-fatal problems: header decoded but payload did not, etc. */
+  problems: string[];
 }
 
 export type JwtVerifyResult =
   | { status: 'valid'; detail: string }
   | { status: 'invalid'; detail: string }
   | { status: 'error'; detail: string };
-
-/** A single JSON Schema validation error (design §2.8). */
-export interface SchemaError {
-  /** JSONPath into the data. */
-  instancePath: string;
-  message: string;
-  /** JSON pointer into the schema that failed. */
-  schemaPath: string;
-}

@@ -1,6 +1,6 @@
 // Shared domain types for the exporter. Pure data — no browser/React imports, so
 // both the injected `engine.js` (page context) and the React surfaces (popup /
-// options / preview) can share one vocabulary.
+// options / save) can share one vocabulary.
 
 /** File formats we can PRODUCE. 🔴 No video, ever (design §12). */
 export type TableFormat = 'csv' | 'xlsx' | 'md' | 'txt';
@@ -22,9 +22,6 @@ export interface Cell {
   value: string;
   /** True when this position is a rowspan/colspan "shadow" of an anchor cell. */
   merged?: boolean;
-  /** True when the trimmed value starts with = + - @ (0x09/0x0D) and is NOT a
-   *  valid number → the formula guard will prefix it (design §8.3). */
-  formulaRisk?: boolean;
   /** Flattened content of a nested <table> (design §4.5) — surfaced, never silent. */
   nested?: boolean;
 }
@@ -37,9 +34,9 @@ export interface TableColumn {
 }
 
 /**
- * A scored, parsed table. In the scaffold this is fabricated (see
- * utils/mock-data.ts); the real matrix builder is a TODO_LOGIC in
- * utils/table-extract.ts.
+ * A scored, parsed table. `preview` holds only the first rows (design §5.3) —
+ * the FULL matrix never crosses a message boundary; it is rebuilt in the page by
+ * `buildMatrix` at save time.
  */
 export interface TableModel {
   id: string;
@@ -49,12 +46,19 @@ export interface TableModel {
   columns: TableColumn[];
   /** Preview matrix — first N rows only for large tables (design §5.3). */
   preview: Cell[][];
+  /** ⚠️ Did the table actually declare a header row (<thead> / all-<th> first row /
+   *  th[scope=col])? If not, columns are named `Колонка N` and the dialog's
+   *  "first row = headers" toggle must default to OFF (design §6.2, rule 4) —
+   *  otherwise we would silently eat a row of real data. */
+  hasHeaders: boolean;
   /** Heuristic score & flags (design §4.2). Never hides a table, only warns. */
   looksLikeLayout: boolean;
   hasMergedCells: number;
   hasNestedTables: number;
   /** Virtualized / lazy-loaded rows suspected (design §5.10). */
   virtualized?: boolean;
+  /** rows × cols — the number the size guards (design §9.1) act on. */
+  cells: number;
 }
 
 export interface ImageInventory {
@@ -70,8 +74,7 @@ export interface SelectionInfo {
 
 /**
  * What the popup shows: "what can I pull off this page?" (design §2.4). Scanned
- * fresh on open — there is no badge and no precomputed count (design §1.2), so
- * this is always a live read, mocked for now.
+ * fresh on open — there is no badge and no precomputed count (design §1.2).
  */
 export interface PageInventory {
   host: string;
@@ -94,6 +97,8 @@ export interface ExportPrefs {
   csvFormulaGuard: FormulaGuard;
   csvSepLine: boolean;
   mergedCells: 'duplicate' | 'empty';
+  /** How an `<a>` inside a cell is rendered (design §6.6). */
+  linksInCells: 'text' | 'text-url' | 'url';
   parseNumbers: boolean;
   parseDates: boolean;
   visibleRowsOnly: boolean;
@@ -102,3 +107,27 @@ export interface ExportPrefs {
   alwaysPreview: boolean;
   theme: 'auto' | 'light' | 'dark';
 }
+
+/** Knobs the matrix builder needs (subset of prefs — keeps it testable). */
+export interface ExtractOptions {
+  mergedCells: 'duplicate' | 'empty';
+  visibleRowsOnly: boolean;
+  linksInCells: 'text' | 'text-url' | 'url';
+  /** Abort a long chunked extraction (design §9.3). */
+  signal?: AbortSignal;
+}
+
+/* -------- Size limits (design §9.1). Named, not magic numbers. ---------- */
+
+/** Above this we chunk the extraction and warn in the dialog. */
+export const CELLS_WARN = 50_000;
+/** 🔴 Above this .xlsx is refused (write-excel-file holds the whole book in RAM). */
+export const CELLS_XLSX_MAX = 200_000;
+/** Hard format limit of Excel itself — not ours. */
+export const XLSX_MAX_ROWS = 1_048_576;
+/** A single runaway colspan="9999" must not birth 10k columns (design §6.1). */
+export const MAX_SPAN = 1000;
+/** Widest matrix we will ever build. */
+export const MAX_COLS = 1000;
+/** Rows shown in the dialog preview (never the whole matrix — that kills the tab). */
+export const PREVIEW_ROWS = 20;

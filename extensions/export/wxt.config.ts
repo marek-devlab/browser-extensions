@@ -44,7 +44,7 @@ export default defineConfig({
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // public/icon/{16,32,48,128}.png; `action.default_icon` is NOT derived from
-      // those, so it is wired explicitly. (Icons are TODO — see public/icon/.gitkeep.)
+      // those, so it is wired explicitly. The four PNGs ship in public/icon/.
       action: {
         default_icon: {
           16: 'icon/16.png',
@@ -88,14 +88,14 @@ export default defineConfig({
       // 🔴 host_permissions: [] and content_scripts: [] — deliberately absent. Do
       // not add either; they would trade the product's core asset (design §0).
 
-      // `engine.js` (scanner + keyboard picker overlay + preview mount) and
-      // `xlsx.js` (the second-stage write-excel-file writer, injected ONLY when
-      // .xlsx is chosen — design §0) are injected by `scripting.executeScript`, so
-      // they must be web-accessible. Declared in MV3 object form; WXT rewrites it
-      // to the MV2 shape for the Firefox build.
-      web_accessible_resources: [
-        { resources: ['engine.js', 'xlsx.js'], matches: ['<all_urls>'] },
-      ],
+      // 🔴 NO `web_accessible_resources`. `scripting.executeScript({ files })`
+      // injects an extension file directly into the isolated world — it does NOT
+      // need the file to be web-accessible. Declaring engine.js/xlsx.js as WAR would
+      // let ANY page fetch them and use their presence to FINGERPRINT the user as an
+      // installee of this extension, for zero functional gain. (WAR is only needed
+      // when a *web page* itself must load the resource — e.g. a dynamic import()
+      // from the content script, which is exactly the thing we replaced with the
+      // second injection.)
 
       // Optional keyboard shortcut → "pick a table" mode (design §1.1). A command,
       // not a content script, so it costs no warning.

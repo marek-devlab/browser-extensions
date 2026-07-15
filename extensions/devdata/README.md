@@ -5,11 +5,10 @@ CSV, JWT and JSON Schema** — in one full-page tool. Everything runs locally in
 your browser; there is **no network at all** — no fetch, no JWKS lookup, no
 analytics, no telemetry.
 
-> **Scaffold status.** This is a UI-complete scaffold (PLAN.md §15 "Фаза 0"):
-> every surface, tab, route, setting and state is real, but the domain logic
-> (parse / convert / validate / JWT-decode) is **stubbed on mock data**. Every
-> mock surface renders a dashed "демо-данные" badge, and every stub throws
-> `TODO_LOGIC` on its real path (`grep -r TODO_LOGIC extensions/devdata`).
+> **Status: implemented.** Parsing, the tree, syntax highlighting, conversion,
+> JWT decode/verify, JSON Schema validation and the in-page formatter are all
+> real. No mock data, no `TODO_LOGIC` stubs. See `IMPLEMENTATION.md` for the
+> per-area map, the security decisions and what is deliberately deferred.
 
 ## Single purpose
 
@@ -32,10 +31,20 @@ becomes a bundle and fails the single-purpose policy (design §1.1).
 ## Permissions — the honest version
 
 ```
+# Chrome MV3
 permissions:               ['storage', 'contextMenus', 'activeTab']   # zero install warnings
 optional_permissions:      ['scripting']        # "Format JSON on THIS tab", requested on click
 optional_host_permissions: ['<all_urls>']       # opt-in auto-formatter, behind a consent dialog
+
+# Firefox MV2 (no optional_host_permissions key; `scripting` is not an MV2 permission)
+permissions:               ['storage', 'contextMenus', 'activeTab']
+optional_permissions:      ['<all_urls>']
 ```
+
+⚠️ `wxt.config.ts` strips the `host_permissions` that WXT would otherwise hoist out
+of the runtime-registered content script's `matches`. If that hook is removed, the
+install-time permission set silently grows to `<all_urls>`. **Review the built
+manifest, not the source.**
 
 - **No install-time host access.** The baseline manifest triggers no scary
   prompt.
@@ -54,9 +63,15 @@ optional_host_permissions: ['<all_urls>']       # opt-in auto-formatter, behind 
 - **JWTs are credentials.** The token, HS256 secret and public key live **only in
   RAM** — no storage item exists for them; they are never persisted and never
   reach `local:document` (design §7.2).
-- **No `innerHTML`** anywhere. All page-derived/user text renders as React
-  children; syntax colouring will use the CSS Custom Highlight API over a flat
-  `<pre>`, never generated `<span>` HTML.
+- **No `innerHTML`** anywhere — nor `eval`, `new Function`, or
+  `dangerouslySetInnerHTML`. Untrusted text renders as React children or via
+  `textContent`; syntax colouring uses the CSS Custom Highlight API over `Range`s
+  on a flat `<pre>`, so user text is never turned into markup at all.
+- **Untrusted input is parsed in a Worker** with a timeout and a real
+  `terminate()`: a 200 MB CSV, a deeply-nested document or a ReDoS `pattern` in a
+  JSON Schema can hang a thread, and the thread they hang is never the UI's.
+- **XML** is parsed as `application/xml` (never `text/html`) and a DTD declaring
+  `<!ENTITY>` is refused (billion-laughs). YAML anchors are capped.
 
 ## Run it
 
@@ -81,13 +96,27 @@ entrypoints/
     tabs/JwtTab.tsx    #   decode + verify + credential framing
     tabs/SchemaTab.tsx #   JSON Schema validation
     tabs/SettingsTab.tsx  # real prefs persistence + consent dialog
+  formatter.content.ts # in-page JSON viewer; registration: 'runtime' (NOT in the manifest)
 utils/
-  storage.ts           # sync:prefs + local:document + local:schema (versioned)
-  prefs.ts             # single writer for sync:prefs; wires @blur/ui theme
-  router.ts            # tiny hash router (#/data #/jwt #/schema #/settings)
-  permissions.ts       # scripting / <all_urls> FACTS (real, live)
-  format.ts jwt.ts schema.ts format-page.ts   # STUBBED logic (mock + TODO_LOGIC)
-  mock-data.ts types.ts                        # fixtures + domain types
+  core/                # PURE logic — no browser APIs, runs in the Worker
+    detect.ts          #   format autodetect + base64url
+    parse.ts           #   json/jsonc/json5/yaml/csv (lazy imports)
+    tree.ts            #   flat pre-order tree; every walker is iterative
+    serialize.ts       #   JSON/XML/CSV emit + the mandatory loss warnings
+    tokenize.ts        #   token RANGES for the Highlight API (never markup)
+    xml.ts             #   DOMParser injected; XXE/entity refusal
+  worker/
+    data.worker.ts     # parse / convert / validate — all the expensive work
+    client.ts          #   one disposable worker per job; timeout -> terminate()
+    protocol.ts        #   wire types
+  format.ts            # document API (worker orchestration + main-thread XML)
+  document.ts          # the document state machine (empty/loading/ready/failed/fatal)
+  jwt.ts               # decode (own) + verify (jose/WebCrypto, lazy)
+  schema.ts            # JSON Schema validation via the worker
+  highlight.ts         # CSS Custom Highlight API
+  format-page.ts       # one-shot + opt-in auto page formatting
+  permissions.ts       # scripting / <all_urls> FACTS (live)
+  storage.ts prefs.ts handoff.ts router.ts examples.ts types.ts
 ```
 
 See `IMPLEMENTATION.md` for the real-vs-mocked map and the wiring backlog.

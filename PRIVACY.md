@@ -1,19 +1,26 @@
 # Privacy Policy
 
-_Last updated: 2026-07-14_
+_Last updated: 2026-07-15_
 
-This policy covers a suite of four independent browser extensions that are built
-from one monorepo but ship as four separate add-ons (all at version **1.0.0**,
+This policy covers a suite of ten independent browser extensions that are built
+from one monorepo but ship as ten separate add-ons (all at version **1.0.0**,
 published by **Blockaly**, https://blockaly.com):
 
 - **Content Blur** — hide images, video, thumbnails, and matched text on any page.
 - **Ad & Tracker Blocker** — block ads and trackers.
 - **Page Performance & Network** — measure Core Web Vitals and inspect network traffic.
 - **SEO & Accessibility Auditor** — inspect meta tags, headings, structured data, and accessibility issues.
+- **Data Format Toolkit** — parse, convert, and inspect JSON / YAML / XML / CSV / JWT locally.
+- **Page Content Exporter** — export page selections or tables to txt / md / csv / xlsx.
+- **Asset Inspector** — inspect where a page's images, media, and other elements came from.
+- **Connection & Device Info** — show your device, browser, and (on request) your public IP and ISP.
+- **Capture Studio** — record the current tab or a chosen screen/window, plus optional microphone.
+- **Markdown Workbench** — write and format Markdown in a side panel.
 
-The first part of this document is the **architectural invariant** that applies
-to all four. The second part is a **per-extension section** with the exact
-permissions each one declares and what they are used for.
+The first four are the original wave; the last six were added later. The first
+part of this document is the **architectural invariant** that applies to all
+ten. The second part is a **per-extension section** with the exact permissions
+each one declares and what they are used for.
 
 If anything in this document conflicts with what an extension actually does,
 treat that as a bug and report it — the whole design of this suite is to be
@@ -28,25 +35,41 @@ extension reads from a page (images, text, meta tags, headings, DOM structure,
 timings, blocked-request counts), and your settings are all processed locally
 and stored only in your browser's local extension storage.
 
-There is exactly **one** exception, and it is opt-in and disclosed:
+Across all ten extensions there are only **two** features that ever transmit
+anything off your device, and **both are opt-in, click-gated, and disclosed in
+the UI before the first request**:
 
 > **(a) PageSpeed Insights (Page Performance & Network only).** When you
 > explicitly run a "PageSpeed Insights" audit, the extension sends the **URL you
 > are auditing** (the current or user-entered page URL) to Google's PageSpeed
 > Insights API (`https://www.googleapis.com/pagespeedonline/v5/runPagespeed`) so
-> Google can measure that page and return the results. This is the only feature
-> in the entire suite that transmits anything off your device, it only runs when
-> you choose to run it, and it only accepts public URLs. See the Page
-> Performance & Network section below for details. If you provide an optional
-> Google API key, it is sent with the request as authentication and is stored
-> only in local storage.
+> Google can measure that page and return the results. It only runs when you
+> choose to run it, and it only accepts public URLs. See the Page Performance &
+> Network section below for details. If you provide an optional Google API key,
+> it is sent with the request as authentication and is stored only in local
+> storage.
 
-> **(b) Nothing else phones home.** No extension in this suite contains
+> **(b) IP / ISP lookup (Connection & Device Info only).** The entire device
+> half of this extension runs with **zero network and zero host permissions**.
+> Two features are network-backed and both are gated behind an explicit click
+> with an on-screen disclosure shown *before* the first request: (1) pressing
+> "Show my IP" makes a keyless call to Cloudflare's trace endpoint
+> (`https://one.one.one.one/cdn-cgi/trace`), which returns **your own public IP**
+> and country/PoP back to you; (2) opting into an ISP/ASN lookup sends **only
+> your public IP** to **ipinfo.io** (operated in the USA). The IP lives in page
+> memory only, is **never stored, never forwarded, and never logged**, and no
+> fingerprint is ever computed. See the Connection & Device Info section below.
+
+> **(c) Nothing else phones home.** No extension in this suite contains
 > analytics, telemetry, crash reporting, advertising, or user tracking of any
-> kind. Aside from the opt-in PageSpeed Insights call above, none of them make
-> any network request that carries data about you or the pages you visit.
+> kind. The other **eight** extensions — including all of Data Format Toolkit,
+> Page Content Exporter, Asset Inspector, Capture Studio, and Markdown Workbench
+> — make **zero network calls of any kind**; several enforce this at the platform
+> level with a `connect-src 'none'` content-security policy. Aside from the two
+> opt-in calls above, nothing in this suite makes any network request that
+> carries data about you or the pages you visit.
 
-### Common guarantees (all four extensions)
+### Common guarantees (all ten extensions)
 
 - **Local only.** Settings and any cached results live in your browser's
   extension storage (`storage.local` / `storage.sync`). They are not uploaded to
@@ -68,23 +91,38 @@ There is exactly **one** exception, and it is opt-in and disclosed:
 
 ### Access is not collection — please read this before the permission tables
 
-**All four extensions declare a content script that matches `<all_urls>`.** That
-is a *standing*, install-time grant: at install your browser will warn that the
-extension can **"read and change all your data on all websites"**, and it applies
-to every extension in this suite, on both Chrome and Firefox. We do not hide
-that behind an "optional permission" story — it is not optional, and it is not
-requested later. Each per-extension section below states exactly why that
-extension genuinely needs it.
+**The original four extensions each declare a content script that matches
+`<all_urls>`.** That is a *standing*, install-time grant: at install your browser
+will warn that the extension can **"read and change all your data on all
+websites"**, and it applies to Content Blur, Ad & Tracker Blocker, Page
+Performance & Network, and SEO & Accessibility Auditor, on both Chrome and
+Firefox. We do not hide that behind an "optional permission" story — for those
+four it is not optional, and it is not requested later. Each per-extension
+section below states exactly why that extension genuinely needs it.
+
+**The six newer extensions are different, and deliberately so: most of them
+install with no broad-access warning at all.** Asset Inspector, Connection &
+Device Info, Capture Studio, and Markdown Workbench declare **no** `<all_urls>`
+host access — Connection & Device Info in fact declares `host_permissions: []`
+and asks for at most a single optional origin (`https://ipinfo.io/*`) at the
+moment you use it. Data Format Toolkit *does* have `<all_urls>`, but only as an
+**optional** host permission, requested by a user gesture for its opt-in
+"auto-format JSON pages" feature — never at install. Page Content Exporter reads
+a page only through `activeTab` (the tab you are on when you invoke it), not a
+standing content script. So for the new wave, the "read and change all your data
+on all websites" warning is mostly absent, and where broad access exists at all
+it is opt-in.
 
 The important, and separate, fact is this: **broad access is not data
 collection.** Having permission to read a page and actually taking anything off
 your device are two different things. These extensions read pages in order to act
-on them locally — blur them, hide ad elements, time them, audit their markup —
-and then the data stays where it was: in the page, and in your local extension
-storage. The only bytes that ever leave your machine are the opt-in PageSpeed
-Insights URL described above.
+on them locally — blur them, hide ad elements, time them, audit their markup,
+convert their data, export their contents, inspect their assets — and then the
+data stays where it was: in the page, and in your local extension storage. The
+only bytes that ever leave your machine are the two opt-in calls described above
+(the PageSpeed Insights URL, and Connection & Device Info's IP/ISP lookup).
 
-That is also what the four add-ons tell Firefox. Every Firefox build declares
+That is also what the ten add-ons tell Firefox. Every Firefox build declares
 `browser_specific_settings.gecko.data_collection_permissions`, the key that
 drives the data-consent panel Firefox shows at install (mandatory for new AMO
 submissions since 2025-11-03):
@@ -95,6 +133,12 @@ submissions since 2025-11-03):
 | Ad & Tracker Blocker | `required: ["none"]` | Does not collect data |
 | Page Performance & Network | `required: ["none"]`, `optional: ["websiteActivity"]` | Collects nothing by default; may share website activity (the audited page URL) if you opt into the PageSpeed Insights audit |
 | SEO & Accessibility Auditor | `required: ["none"]` | Does not collect data |
+| Data Format Toolkit | `required: ["none"]` | Does not collect data |
+| Page Content Exporter | `required: ["none"]` | Does not collect data |
+| Asset Inspector | `required: ["none"]` | Does not collect data |
+| Connection & Device Info | `required: ["none"]`, `optional: ["locationInfo"]` | Collects nothing by default; may share your IP with ipinfo.io for an ISP lookup only if you opt in |
+| Capture Studio | `required: ["none"]` | Does not collect data |
+| Markdown Workbench | `required: ["none"]` | Does not collect data |
 
 Those declarations and this policy say the same thing on purpose.
 
@@ -103,10 +147,13 @@ Those declarations and this policy say the same thing on purpose.
 Each extension asks for the **minimum** API permissions its single purpose needs.
 Where a permission is genuinely optional (the Chrome-only `debugger` permission
 and the PageSpeed Insights host in Page Performance & Network; the `<all_urls>`
-host *permission* in the Chrome build of Ad & Tracker Blocker), it is declared as
-an optional permission and requested at the moment you use the feature, not at
+host *permission* in the Chrome build of Ad & Tracker Blocker; the optional
+`<all_urls>` and `scripting` in Data Format Toolkit; the optional `downloads` in
+Page Content Exporter; the `https://ipinfo.io/*` origin in Connection & Device
+Info; the optional `desktopCapture` in Capture Studio), it is declared as an
+optional permission and requested at the moment you use the feature, not at
 install. Broad **page access via the content script**, however, is standing for
-all four — see above. The exact list per extension is below.
+the original four — see above. The exact list per extension is below.
 
 ---
 
@@ -277,16 +324,205 @@ anywhere. Firefox declaration:
 
 ---
 
+## Data Format Toolkit
+
+**Purpose:** parse, convert, inspect, and validate structured data — JSON, YAML,
+XML, CSV, and JWTs — entirely on your device. It is a local developer tool, not a
+web service.
+
+**Permissions declared (Chrome MV3 and Firefox MV2):**
+
+| Permission | Why |
+|---|---|
+| `storage` | Save your preferences and recent conversions locally. |
+| `contextMenus` | Provide right-click actions to send selected text into the toolkit. Adds no host access and no network capability. |
+| `activeTab` | Read the current tab's selection or content when you invoke the extension on it. |
+| `scripting` (**optional**) | Requested by a user gesture, only for the opt-in "auto-format JSON pages" feature, to inject the formatter into a page. Never requested at install. |
+| `<all_urls>` host permission (**optional, gesture-only**) | Requested at the moment you enable the opt-in "auto-format JSON pages" feature — **never at install**, so this extension shows no broad-access warning when you add it. On Firefox it is declared under `optional_permissions`. |
+
+**Data:** all parsing and conversion — JSON, YAML, XML, CSV, and JWT — runs
+**100% locally** in your browser. JWT decoding and signature verification happen
+entirely in the browser; the token **never leaves your device**, and the HS256
+secret you type to verify a signature is held in memory only and is **never
+persisted**. The extension makes **zero network calls**. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
+## Page Content Exporter
+
+**Purpose:** export a page selection or table to a file — plain text, Markdown,
+CSV, or `.xlsx` — built locally in your browser.
+
+**Permissions declared (Chrome MV3 and Firefox MV2):**
+
+| Permission | Why |
+|---|---|
+| `contextMenus` | Provide the right-click "Export selection / table" actions. |
+| `activeTab` | Read the current tab's selection or content when you invoke the extension. This is how it reads the page — there is **no standing content script and no `<all_urls>`**. |
+| `scripting` | Inject the extractor into the active tab to read the selection or table you are exporting. |
+| `storage` | Save your export preferences locally. |
+| `clipboardWrite` | Copy exported content to your clipboard. |
+| `downloads` (**optional**) | Save the finished file to disk. Requested by a user gesture only when a cross-origin save requires it; otherwise files are offered through an in-page `Blob` download link. Never requested at install. |
+
+**Data:** the extension builds `.txt` / `.md` / `.csv` / `.xlsx` files **locally**
+from the page content you select, using an in-browser `Blob`. Nothing is uploaded
+and the extension makes **zero network calls**. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
+## Asset Inspector
+
+**Purpose:** inspect where a page's elements came from — the source URL, format,
+and dimensions of images, media, and other assets already on the page. It is an
+inspector, **not a downloader**.
+
+**Permissions declared (Chrome MV3 and Firefox MV2):**
+
+| Permission | Why |
+|---|---|
+| `activeTab` | Read the current tab when you invoke the extension. There is **no standing content script and no `<all_urls>`** — so this extension shows no broad-access warning at install. |
+| `scripting` | Inject the inspector into the active tab to read where its elements came from. |
+| `storage` | Save your UI preferences locally. |
+| `contextMenus` | Provide the right-click "Inspect this asset" action. |
+
+**Data:** the extension reports metadata (source URL, format, dimensions) about
+elements **already present on the page**, and any preview is drawn from the
+existing DOM element via `canvas.drawImage`. It **never fetches media** and
+**never downloads anything** — it declares no `downloads` permission, no
+`<all_urls>`, no `webRequest`, and no `debugger`. It makes **zero network
+calls**. Firefox declaration: `data_collection_permissions.required = ["none"]`.
+
+---
+
+## Connection & Device Info
+
+**Purpose:** show you your own device, browser, screen, and locale — and, on
+request, your public IP, country, and ISP. The **entire device half works
+offline with zero permissions and zero network**; only the IP/ISP features touch
+the network, and only when you ask.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `storage` | Save your theme, units, provider choice, an optional ipinfo.io token (stored locally only, **never synced**), and boolean consent flags. The settings schema **physically contains no field** for an IP address, country, ASN, or fingerprint hash. |
+| `https://ipinfo.io/*` host permission (**optional**) | Requested at the exact moment you opt into the ISP/ASN lookup, granting access to that **single origin only**. Declared as `optional_host_permissions` on Chrome and `optional_permissions` on Firefox. **Never requested at install.** |
+
+There is **no** `host_permissions`, **no** `activeTab`, **no** `scripting`, and
+**no** background service worker — the extension does not touch the pages you
+visit at all.
+
+**How the data flows:**
+
+- **Device data (~45 fields).** UA, screen, CPU/RAM, GPU, locale, timezone, and
+  media features are read synchronously from `navigator`, `screen`, `Intl`, and
+  `matchMedia`. This needs **no permissions and no network**, and it is what you
+  see the instant the popup opens — before any request is made.
+- **"Show my IP" (opt-in, click-gated).** Only when you press the button does the
+  extension make a **keyless** request to Cloudflare's trace endpoint
+  (`https://one.one.one.one/cdn-cgi/trace`), which returns **your own public IP**
+  plus country/PoP/TLS info back to you. **Cloudflare** therefore sees your IP —
+  it is your own request to them — and this is disclosed in the UI, in text that
+  sits directly above the button, before the first request.
+- **ISP / ASN lookup (opt-in, click-gated).** Only if you choose to look up your
+  ISP does the extension send **your public IP and nothing else** to
+  **ipinfo.io** (operated in the **USA**). This is gated behind a modal
+  disclosure that names the recipient, the data sent, the purpose, and the
+  retention, **and** the browser's own permission prompt for the `ipinfo.io`
+  origin.
+
+**Recipients (named for store review):** **Cloudflare** (receives your IP when
+you press "Show my IP", and shows it back to you) and **ipinfo.io, operated in
+the USA** (receives only your IP when you opt into an ISP lookup).
+
+**Data:** your IP address lives in page memory (React state) only. It is **never
+stored, never forwarded to us (we operate no server), and never logged**;
+closing the popup discards it. **No fingerprint hash is ever computed, stored, or
+sent.** The complete set of hosts the extension is even *able* to contact is
+pinned in the manifest's content-security policy
+(`connect-src 'self' https://one.one.one.one https://ipinfo.io`), so it cannot
+reach anywhere else even if a dependency tried. Firefox declaration:
+`data_collection_permissions.required = ["none"], optional: ["locationInfo"]` —
+nothing by default; your IP is shared with ipinfo.io only if you opt into the ISP
+lookup.
+
+---
+
+## Capture Studio
+
+**Purpose:** record the current tab, or a screen/window you choose, plus an
+optional microphone; then trim, annotate, and export the result. Everything is
+recorded, encoded, and stored **on your device**.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `storage` | Save your recording and export preferences locally. |
+| `unlimitedStorage` | Store recordings as chunks in IndexedDB without the small default storage quota — video recordings can be large. |
+| `downloads` | Save the finished video or screenshot file to disk. |
+| `activeTab` | Identify the current tab so it can be the capture target when you press Record. |
+| `tabCapture` (**Chrome only**) | Capture the current tab's video and audio. Does not exist on Firefox. |
+| `offscreen` (**Chrome only**) | Run the recorder (`MediaRecorder` needs a DOM, which a service worker lacks) in an invisible offscreen document that survives the service worker being torn down. Does not exist on Firefox. |
+| `desktopCapture` (**optional**) | Requested **only** when you choose "Record whole screen or window". Never requested at install or by default. |
+
+On **Firefox** there is no `tabCapture` or `offscreen` (those APIs do not exist);
+the extension captures a screen or window via `getDisplayMedia` from its recorder
+window, and **cannot capture tab audio** there — only the microphone. This limit
+is stated in the UI, not hidden.
+
+**Data:** screen and microphone capture is stored **locally in IndexedDB** and
+encoded **locally in your browser** (WebCodecs plus the bundled `mediabunny`
+library). It is **never transmitted anywhere**: the manifest's content-security
+policy is `connect-src 'none'`, which makes the extension **architecturally
+incapable of any network request**. It records **your own** tab or screen — it is
+not a tool for downloading media from other sites. A privacy policy is provided
+because the extension captures your screen and (optionally) your microphone, even
+though every byte stays on your device. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
+## Markdown Workbench
+
+**Purpose:** write, format, and preview Markdown in a browser side panel, with
+local drafts. No cloud, no account, no AI.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `storage` | Save your Markdown drafts and preferences in local storage. |
+| `contextMenus` | Provide right-click actions to send selected text into the workbench. |
+| `clipboardWrite` | Copy rendered Markdown or HTML to your clipboard. |
+| `activeTab` | Read a selection from the current tab when you send it into the workbench. |
+| `sidePanel` (Chrome) / `sidebar_action` (Firefox) | Host the workbench in the browser's side panel (Chrome) or sidebar (Firefox). |
+
+**Data:** Markdown is written, formatted, and previewed **entirely locally**;
+your drafts live in `storage.local`. There is **no cloud sync, no account, and no
+AI or other network feature of any kind** — the manifest's content-security
+policy is `connect-src 'none'`. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
 ## Licensing
 
 Blockaly's own extension code is MIT-licensed (root `LICENSE`). The extensions
 also redistribute third-party material under other terms — React (MIT),
 `web-vitals` (Apache-2.0), axe-core (MPL-2.0), and the Ad & Tracker Blocker's
-filter-list **data** (GPL-3.0 / CC-BY-SA 3.0). Full notices are in
-`THIRD-PARTY-NOTICES.md` in the source repository, a copy ships inside every
-extension package (`THIRD-PARTY-NOTICES.md` at the package root), and the filter
-lists carry their own `rules/ATTRIBUTION.md`. None of this changes what the
-extensions do with your data: nothing.
+filter-list **data** (GPL-3.0 / CC-BY-SA 3.0). The newer extensions add a few
+more notable licenses: **mediabunny** (MPL-2.0, Capture Studio's video/audio
+encoder), **DOMPurify** (MPL-2.0 OR Apache-2.0, Markdown Workbench), **yaml**
+(ISC, Data Format Toolkit), and a set of MIT libraries (papaparse, json5, jose,
+`@cfworker/json-schema`, jsonc-parser, markdown-it, write-excel-file, fflate,
+emojibase-data). Full notices are in `THIRD-PARTY-NOTICES.md` in the source
+repository, a copy ships inside every extension package
+(`THIRD-PARTY-NOTICES.md` at the package root), and the filter lists carry their
+own `rules/ATTRIBUTION.md`. None of this changes what the extensions do with your
+data: nothing.
 
 ---
 

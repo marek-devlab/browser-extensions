@@ -31,6 +31,32 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
 
+  // 🔴 AUDIT BLOCKER, AND IT IS NOT HYPOTHETICAL — the build produced it.
+  //
+  // `entrypoints/inspector.content.ts` declares `matches: ['*://*/*']` because WXT's
+  // content-script type demands a `matches` (it is inert for `registration: 'runtime'`
+  // — the script is NOT listed in `content_scripts` and never runs ambiently). But
+  // WXT ALSO derives `host_permissions` from that `matches`, and shipped
+  //     "host_permissions": ["*://*/*"]      (Chrome MV3)
+  //     "permissions": [..., "*://*/*"]      (Firefox MV2)
+  // which is exactly `<all_urls>` — the "Read and change all your data on all
+  // websites" install warning, the single thing this extension's whole architecture
+  // exists to avoid (design §9.4, §13 №6; PLAN-2 §4.2).
+  //
+  // We do not need it: `activeTab`, granted by the toolbar click / hotkey / context-
+  // menu click, is what authorises `scripting.executeScript` on the current tab. So
+  // the host pattern is stripped from BOTH manifests after generation, and this hook
+  // is a permanent guard: if a future change reintroduces a host permission, it dies
+  // here rather than in review.
+  hooks: {
+    'build:manifestGenerated': (_wxt, manifest) => {
+      delete manifest.host_permissions;
+      if (Array.isArray(manifest.permissions)) {
+        manifest.permissions = manifest.permissions.filter((p) => !String(p).includes('://'));
+      }
+    },
+  },
+
   // Store artifact naming. Without this, `{{name}}` is derived from the package
   // name (`@blur/assets` -> `blurassets`). `zip.name` overrides that one template
   // variable, and BOTH artifactTemplate and sourcesTemplate interpolate it, so the

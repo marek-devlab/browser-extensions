@@ -1,0 +1,59 @@
+/* `save.html` — the CSP-blocked fallback route (design §5.5). Tokens come from
+   @blur/ui tokens.css (imported first in main.tsx), so theming is free; only
+   layout lives here. */
+
+.pv-page {
+  min-height: 100vh;
+  padding: 24px 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.pv {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv__title {
+  font-size: 18px;
+  margin: 0;
+}
+
+.pv__sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.pv__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pv__raw {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  padding: 10px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  max-height: 40vh;
+}
+
+/* Mobile: Firefox for Android renders extension pages in a normal tab. */
+@media (max-width: 480px) {
+  .pv-page { padding: 12px 8px; }
+  .pv__actions button { flex: 1; min-height: 44px; }
+}

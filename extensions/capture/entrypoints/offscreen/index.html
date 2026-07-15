@@ -2,6 +2,10 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <!-- CHROME ONLY. `chrome.offscreen` does not exist in Firefox, so this
+         document is not merely unused there — it is unreachable. Shipping it in
+         the Firefox build would be dead code a reviewer has to ask about. -->
+    <meta name="wxt.exclude" content="['firefox']" />
     <title>Capture Studio — offscreen</title>
   </head>
   <body>

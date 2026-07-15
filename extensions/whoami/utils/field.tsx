@@ -18,6 +18,7 @@ export type ReasonCode =
   | 'not-requested' // network field, before the user clicked
   | 'permission-denied' // the user declined the host permission
   | 'request-failed' // network / timeout / 429
+  | 'provider-omitted' // ⚠️ the third party answered, but had no value for this field
   | 'unsupported-here'; // not a secure context, private window, etc.
 
 export type Field =
@@ -105,6 +106,16 @@ export const REASONS: Record<ReasonCode, ReasonCopy> = {
     chip: 'Запрос не удался',
     title: 'Запрос не удался',
     body: 'Внешний сервер не ответил (нет сети, таймаут, лимит запросов или блокировка). Данные об устройстве от этого не зависят и остаются на месте.',
+  },
+  // ⚠️ Added when the network half became real: a third party can answer 200 OK and
+  // still have no value for a given field (Cloudflare never returns an ISP; ipinfo
+  // may omit `hostname`). That is neither an error nor an empty cell — it is the
+  // recipient having nothing to say, and we say exactly that. 🔴 We never fill the
+  // gap from another source without a fresh disclosure.
+  'provider-omitted': {
+    chip: 'Сервис не вернул это поле',
+    title: 'Ответ получен, поля в нём нет',
+    body: 'Внешний сервис ответил, но это поле в его ответе отсутствует. Например, Cloudflare принципиально не отдаёт название провайдера, а ipinfo.io не всегда знает обратное DNS-имя. Мы 🔴 не подставляем сюда значение из другого источника — это был бы незаявленный запрос.',
   },
   'unsupported-here': {
     chip: 'Недоступно в этом контексте',

@@ -1,5 +1,0 @@
-# TODO(icons): ship 16/32/48/128 PNGs here before store submission.
-#
-# WXT auto-discovers `public/icon/{16,32,48,128}.png` into the manifest `icons`
-# map, and wxt.config.ts wires `action.default_icon` to the same four files. None
-# are committed yet (scaffold phase) — this .gitkeep keeps the directory in git.

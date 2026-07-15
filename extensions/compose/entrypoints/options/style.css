@@ -41,6 +41,27 @@ body { background: var(--bg); }
 }
 .opt-row input[type='number'] { width: 72px; }
 
-.opt-flags { display: flex; gap: 10px; font-size: 12px; }
+.opt-flags { display: flex; gap: 10px; font-size: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .opt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .opt-loading { padding: 24px; color: var(--text-dim); }
+
+/* The file input is driven by the "Импорт" button — it must stay reachable for
+ * keyboard users, so it is off-screen, not `display: none`. */
+.opt-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.opt-status { font-size: 12px; color: var(--text-dim); margin: 6px 0; }
+
+/* Mobile (Firefox for Android): full-width column, ≥44px targets. */
+@media (max-width: 480px) {
+  .opt { padding: 12px; }
+  .opt-row { flex-wrap: wrap; }
+}
+@media (pointer: coarse) {
+  .opt-row select,
+  .opt-row input[type='number'] { min-height: 44px; }
+}

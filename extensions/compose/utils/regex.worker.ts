@@ -1,42 +1,118 @@
-// Regex matching Web Worker (design §2.5, §8.1). 🔴 STUBBED.
+// Regex matching Web Worker (design §2.5, §8.1).
 //
-// Lives in utils/ (NOT entrypoints/) so WXT doesn't try to classify it as an
-// extension entrypoint; it is bundled by Vite when instantiated with
+// Lives in utils/ (NOT entrypoints/) so WXT doesn't classify it as an extension
+// entrypoint; Vite bundles it when it is instantiated with
 // `new Worker(new URL('./regex.worker.ts', import.meta.url), { type: 'module' })`.
 //
-// 🔴 WHY A WORKER: `new RegExp(userInput)` is NEVER run on the main thread —
-// not even to check validity. A pathological pattern (nested quantifiers, ReDoS)
-// can hang forever; the only way to interrupt it is `worker.terminate()`. The
-// main thread arms a `regexTimeoutMs` timer and kills + respawns the worker on
-// timeout (design §5.3). The worker has NO storage access — it is a pure
-// function "text + pattern → ranges", so compromising it yields nothing.
+// 🔴 WHY A WORKER: `new RegExp(userInput)` is NEVER run on the main thread — not
+// even to check validity. A pathological pattern (nested quantifiers → ReDoS)
+// can hang for hours; the ONLY way to interrupt a running regex is
+// `worker.terminate()`. The main thread arms a `regexTimeoutMs` timer and kills
+// + respawns this worker on timeout (design §5.3).
 //
-// Protocol: main → { id, pattern, flags, text }; worker → { id, matches } |
-//           { id, error }. Only the latest `id` is honoured (keystroke gating).
+// 🔴 The worker has NO storage access and NO chrome.* — it is a pure function
+// "text + pattern → ranges". Compromising it yields nothing.
+//
+// Protocol: main → RegexRequest; worker → RegexResponse. Only the latest `id` is
+// honoured by the client (keystroke gating).
 
 export interface RegexRequest {
   id: number;
   pattern: string;
   flags: string;
   text: string;
+  /** Replacement template ($1, $&, $<name>) — expanded HERE, see below. */
+  replacement: string;
+  /** When false the pattern is escaped and matched literally (the "Regex" box). */
+  regex: boolean;
+}
+
+export interface RegexMatch {
+  start: number;
+  end: number;
+  groups: string[];
+  /** The expanded replacement for THIS match. */
+  replaced: string;
 }
 
 export type RegexResponse =
-  | { id: number; matches: [number, number, string[]][] }
-  | { id: number; error: string };
+  | {
+      id: number;
+      ok: true;
+      matches: RegexMatch[];
+      groupNames: string[];
+      /** true when the hard cap stopped the scan (design §5.5). */
+      truncated: boolean;
+    }
+  | { id: number; ok: false; error: string };
 
-// TODO_LOGIC (compose): compile `new RegExp(pattern, flags)` inside this worker,
-// catch SyntaxError and post it back as { error } (validation happens HERE, not
-// on the main thread — design §8.1), iterate matches with a hard match cap, and
-// post [start, end, groups][]. Runs in the worker so the main-thread timeout can
-// terminate a runaway match.
+/** Hard cap: a pattern like `.*` on a 400 KB draft must not build a 10⁶-entry
+ *  array and blow memory in the worker. */
+const MATCH_CAP = 5000;
+
+function escapeLiteral(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Expand a `$…` replacement template against a match. Written by hand rather
+ * than calling `String.replace(re, tpl)` because that would RE-RUN the user's
+ * regex — a second chance to hang, and the whole point is that the pattern is
+ * executed exactly once, under the timeout.
+ */
+function expand(tpl: string, m: RegExpMatchArray): string {
+  return tpl.replace(/\$(\$|&|<([^>]*)>|\d{1,2})/g, (_whole, token: string, name?: string) => {
+    if (token === '$') return '$';
+    if (token === '&') return m[0];
+    if (name !== undefined) return m.groups?.[name] ?? '';
+    const n = Number(token);
+    return m[n] ?? '';
+  });
+}
+
 self.addEventListener('message', (ev: MessageEvent<RegexRequest>) => {
-  const { id } = ev.data;
-  // Scaffold: no real matching yet. Reply with an explicit not-implemented error
-  // so a wired-but-empty path fails loudly instead of pretending to find nothing.
-  const response: RegexResponse = {
-    id,
-    error: 'TODO_LOGIC: not implemented — regex-worker: compile + match with cap',
-  };
-  (self as unknown as Worker).postMessage(response);
+  const req = ev.data;
+  const post = (r: RegexResponse) => (self as unknown as Worker).postMessage(r);
+
+  try {
+    const source = req.regex ? req.pattern : escapeLiteral(req.pattern);
+    // Iteration needs `g`; if the user did not ask for it we still compile with
+    // it and keep only the first match, so "replace" means "replace once".
+    const wantsAll = req.flags.includes('g');
+    const flags = wantsAll ? req.flags : req.flags + 'g';
+
+    // 🔴 The one and only `new RegExp(userInput)` in the codebase, and it is in
+    // a terminable thread. Compilation itself can throw (SyntaxError) — that is
+    // reported as a message, never as an uncaught error.
+    const re = new RegExp(source, flags);
+
+    const matches: RegexMatch[] = [];
+    let groupNames: string[] = [];
+    let truncated = false;
+    let last = -1;
+
+    for (const m of req.text.matchAll(re)) {
+      const start = m.index ?? 0;
+      // A zero-length match at the same index would spin forever in a manual
+      // loop; matchAll advances lastIndex itself, but guard anyway.
+      if (m[0].length === 0 && start === last) break;
+      last = start;
+      if (groupNames.length === 0 && m.groups) groupNames = Object.keys(m.groups);
+      matches.push({
+        start,
+        end: start + m[0].length,
+        groups: m.slice(1).map((g) => g ?? ''),
+        replaced: expand(req.replacement, m),
+      });
+      if (!wantsAll) break;
+      if (matches.length >= MATCH_CAP) {
+        truncated = true;
+        break;
+      }
+    }
+
+    post({ id: req.id, ok: true, matches, groupNames, truncated });
+  } catch (e) {
+    post({ id: req.id, ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });

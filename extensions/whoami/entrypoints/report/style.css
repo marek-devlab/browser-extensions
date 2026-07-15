@@ -276,6 +276,75 @@
   color: var(--text-dim);
 }
 
+/* The one button that can start a network request — always directly below the
+   disclosure text, never beside it. */
+.conn__cta {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.conn__note {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.conn__causes {
+  margin: 4px 0 8px;
+  padding-inline-start: 20px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.conn__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+/* Export options: the "include network data" / "hide IP" pair (design §2.6). */
+.report__exportopts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.report__toggle--off {
+  color: var(--text-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Touch: Firefox for Android opens this page as a normal tab (design §11). */
+@media (pointer: coarse) {
+  .report__nav a,
+  .copybtn,
+  .chip,
+  .ui-btn {
+    min-height: 44px;
+  }
+
+  .copybtn,
+  .chip {
+    min-width: 44px;
+  }
+}
+
 .conn__divider {
   font-size: 11px;
   text-transform: uppercase;
@@ -306,7 +375,8 @@
 /* ---- Consent dialog (shared) ---------------------------------------------- */
 
 .consent {
-  max-width: 460px;
+  max-width: min(460px, calc(100vw - 24px));
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);

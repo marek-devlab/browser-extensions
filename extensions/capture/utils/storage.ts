@@ -1,5 +1,6 @@
 import { storage } from '#imports';
 import type {
+  RecordingSource,
   ScreenshotFormat,
   SizePreset,
   VideoFormat,
@@ -8,17 +9,18 @@ import type {
 
 // Storage layout (design capture.md §3, §9.6).
 //
-// Two stores, deliberately split:
-//   - `sync:`  LIGHTWEIGHT UI prefs (this file). Theme + recording/export
-//              defaults + the editable size-preset list + watermark defaults.
-//              Quotas are HARD failures on exceed (8,192 bytes PER ITEM) — the
-//              exact trap `blur` hit (PLAN.md §18a). These prefs are tiny, so
-//              they fit; if the preset list ever grows unbounded, MOVE it to
-//              `local:` (design §9.6 keeps larger data out of sync for this
-//              reason). Every field here is a scalar or a short list.
-//   - IndexedDB (NOT storage at all): recording CHUNKS and the session manifest.
-//              See utils/recording-state.ts for why a Blob array in storage.local
-//              is forbidden (design §0, §10.3).
+// Three stores, deliberately split:
+//   - `local:`   settings (this file). Theme + recording/export defaults + the
+//                editable size-preset list + watermark defaults.
+//                🔴 NOT `sync:` — design §9.6 is explicit: the sync quota is a
+//                HARD 8,192 bytes PER ITEM and exceeding it fails the write, the
+//                exact trap `blur` fell into (PLAN.md §18a). The editable preset
+//                list is user-growable, so this belongs in `local`.
+//   - `session:` the LIVE recording pointer (utils/live-state.ts) — dies with the
+//                browser, which is correct: a pointer to a running recording has
+//                no business surviving a restart.
+//   - IndexedDB  recording CHUNKS, session manifests, clips, blobs (utils/db.ts).
+//                🔴 Never a Blob array in storage.* — see utils/db.ts (§10.3).
 //
 // `version` + `migrations` are declared from day one so the schema can evolve
 // without wiping user data on update.
@@ -40,6 +42,9 @@ export interface CapturePrefs {
   // Recording defaults (design §3.1). MP4 on Chrome, WebM on Firefox — but the
   // stored default is a preference; the live UI down-corrects it per browser
   // (Firefox cannot record MP4 — design §3.1, §8).
+  /** 'screen' consumes the OPTIONAL `desktopCapture` permission, requested from
+   *  the user's click and never at install (design §3.1). */
+  source: RecordingSource;
   defaultVideoFormat: VideoFormat;
   /** null = "As-is" (record at the tab's native resolution — no upscale, §13). */
   defaultResolution: { width: number; height: number } | null;
@@ -85,6 +90,7 @@ export interface CapturePrefs {
 
 export const DEFAULT_PREFS: CapturePrefs = {
   theme: 'auto',
+  source: 'tab',
   defaultVideoFormat: 'mp4',
   defaultResolution: null,
   defaultFps: 30,
@@ -110,11 +116,17 @@ export const DEFAULT_PREFS: CapturePrefs = {
   disclosureAccepted: false,
 };
 
-export const prefsItem = storage.defineItem<CapturePrefs>('sync:capturePrefs', {
+export const prefsItem = storage.defineItem<CapturePrefs>('local:capturePrefs', {
   fallback: DEFAULT_PREFS,
   version: 1,
   migrations: {},
 });
+
+/** Watermark logo, kept as a Blob in IndexedDB under this key (design §9.6).
+ *  🔴 There is deliberately no "logo URL" field anywhere: an external image
+ *  taints the canvas and makes convertToBlob() throw at the END of an export,
+ *  after minutes of encoding (design §9.3). */
+export const LOGO_BLOB_KEY = 'watermark-logo';
 
 /** localStorage seed key for flash-free theme (design §11.3, PLAN.md §18c). Same
  *  naming scheme as the family: 'blur-<ext>:theme'. */

@@ -1,6 +1,7 @@
 # Third-Party Notices
 
-This repository (Blockaly browser extensions: **blur**, **adblock**, **perf**, **seo**)
+This repository (Blockaly browser extensions: **blur**, **adblock**, **perf**, **seo**,
+**devdata**, **export**, **assets**, **whoami**, **capture**, **compose**)
 is published by Blockaly under the MIT License (see [`LICENSE`](./LICENSE)).
 
 The MIT License covers **Blockaly's own source code only**. This repository and the
@@ -10,7 +11,7 @@ referenced below. Nothing in `LICENSE` grants rights over third-party material.
 
 All version numbers and license identifiers below were verified against the `license`
 field and `LICENSE` file of the installed package under `node_modules/` at the versions
-resolved by `package-lock.json` (verified 2026-07-14).
+resolved by `package-lock.json` (verified 2026-07-15).
 
 ---
 
@@ -21,11 +22,23 @@ artifacts. Their notices must travel with the distributed extension.
 
 | Package | Version | License | Ships in | Upstream |
 | --- | --- | --- | --- | --- |
-| `react` | 19.2.7 | MIT | blur, adblock, perf, seo | https://github.com/facebook/react |
-| `react-dom` | 19.2.7 | MIT | blur, adblock, perf, seo | https://github.com/facebook/react |
-| `scheduler` | 0.27.0 | MIT | blur, adblock, perf, seo (transitive dep of `react-dom`) | https://github.com/facebook/react |
+| `react` | 19.2.7 | MIT | all ten extensions | https://github.com/facebook/react |
+| `react-dom` | 19.2.7 | MIT | all ten extensions | https://github.com/facebook/react |
+| `scheduler` | 0.27.0 | MIT | all ten extensions (transitive dep of `react-dom`) | https://github.com/facebook/react |
 | `web-vitals` | 5.3.0 | Apache-2.0 | perf | https://github.com/GoogleChrome/web-vitals |
 | `axe-core` | 4.12.1 | MPL-2.0 | seo | https://github.com/dequelabs/axe-core |
+| `mediabunny` | 1.50.8 | MPL-2.0 | capture | https://github.com/Vanilagy/mediabunny |
+| `yaml` | 2.9.0 | ISC | devdata | https://github.com/eemeli/yaml |
+| `papaparse` | 5.5.4 | MIT | devdata | https://github.com/mholt/PapaParse |
+| `@cfworker/json-schema` | 4.1.1 | MIT | devdata | https://github.com/cfworker/cfworker |
+| `json5` | 2.2.3 | MIT | devdata | https://github.com/json5/json5 |
+| `jose` | 6.2.3 | MIT | devdata | https://github.com/panva/jose |
+| `jsonc-parser` | 3.3.1 | MIT | devdata | https://github.com/microsoft/node-jsonc-parser |
+| `write-excel-file` | 2.3.10 | MIT | export | https://github.com/catamphetamine/write-excel-file |
+| `fflate` | 0.8.3 | MIT | export | https://github.com/101arrowz/fflate |
+| `markdown-it` | 14.3.0 | MIT | compose | https://github.com/markdown-it/markdown-it |
+| `dompurify` | 3.4.12 | MPL-2.0 OR Apache-2.0 | compose | https://github.com/cure53/DOMPurify |
+| `emojibase-data` | 16.0.3 | MIT (data; emoji annotations derive from Unicode CLDR) | compose | https://github.com/milesj/emojibase |
 
 ### react / react-dom / scheduler — MIT
 
@@ -76,6 +89,73 @@ axe-core source remain available under MPL-2.0 and (b) recipients be informed of
 Blockaly does not modify any axe-core source file, so no Blockaly-authored file becomes
 subject to the MPL. Source for the exact version is available at
 https://github.com/dequelabs/axe-core/tree/v4.12.1 and via `npm pack axe-core@4.12.1`.
+
+### mediabunny — Mozilla Public License 2.0
+
+Copyright © Vanilagy. Licensed under the Mozilla Public License, Version 2.0.
+Full text: https://mozilla.org/MPL/2.0/ (also at `node_modules/mediabunny/LICENSE`).
+
+`mediabunny` is imported by the **capture** extension and bundled unmodified into
+the JavaScript that ships in the package. It performs all video/audio muxing and
+encoding **entirely in the browser** (WebCodecs); it is never fetched or updated
+at runtime, and the exact bytes reviewed are the exact bytes that run. MPL-2.0 is
+a **file-level** copyleft: because mediabunny is used unmodified and merely linked
+into a Larger Work, the MPL only requires that (a) the mediabunny source remain
+available under MPL-2.0 and (b) recipients be informed of that. Blockaly modifies
+no mediabunny source file, so no Blockaly-authored file becomes subject to the
+MPL. Source for the exact version is available at
+https://github.com/Vanilagy/mediabunny and via `npm pack mediabunny@1.50.8`.
+
+### dompurify — MPL-2.0 OR Apache-2.0 (dual)
+
+Copyright © Dr.-Ing. Mario Heiderich, Cure53. Dual-licensed; recipients may use it
+under **either** the Mozilla Public License, Version 2.0 **or** the Apache License,
+Version 2.0. Full texts: https://mozilla.org/MPL/2.0/ and
+https://www.apache.org/licenses/LICENSE-2.0 (also at `node_modules/dompurify/LICENSE`).
+
+`dompurify` is imported by the **compose** extension to sanitize the HTML produced
+when Markdown is rendered to a preview. It is bundled unmodified and runs entirely
+in the browser; it is never fetched at runtime. Because it is used unmodified,
+neither license imposes any obligation on Blockaly's own source beyond preserving
+this notice and the accompanying license text.
+
+### yaml — ISC
+
+Copyright © Eemeli Aro. Licensed under the ISC License.
+Full text: `node_modules/yaml/LICENSE`.
+
+`yaml` is imported by the **devdata** extension for YAML parsing and serialization.
+It is bundled unmodified and runs entirely in the browser; it is never fetched at
+runtime.
+
+### papaparse, json5, jose, @cfworker/json-schema, jsonc-parser (devdata) — MIT
+
+The **devdata** extension bundles the following MIT-licensed libraries, unmodified,
+all running entirely in the browser and never fetched at runtime:
+
+- `papaparse` 5.5.4 — © Matthew Holt — CSV parsing. https://github.com/mholt/PapaParse
+- `json5` 2.2.3 — © Aseem Kishore and others — JSON5 parsing. https://github.com/json5/json5
+- `jose` 6.2.3 — © Filip Skokan — JWT/JWS decoding and verification, fully local. https://github.com/panva/jose
+- `@cfworker/json-schema` 4.1.1 — © Jeremy Danyow — JSON Schema validation. https://github.com/cfworker/cfworker
+- `jsonc-parser` 3.3.1 — © Microsoft Corporation — JSON-with-comments parsing. https://github.com/microsoft/node-jsonc-parser
+
+The MIT license text is identical to the React notice reproduced above; a copy of
+each ships in the respective `node_modules/<pkg>/LICENSE`.
+
+### write-excel-file, fflate (export) — MIT
+
+The **export** extension bundles the following MIT-licensed libraries, unmodified,
+running entirely in the browser and never fetched at runtime:
+
+- `write-excel-file` 2.3.10 — © catamphetamine — `.xlsx` generation. https://github.com/catamphetamine/write-excel-file
+- `fflate` 0.8.3 — © Arjun Barrett — zip/deflate (the OOXML container for `.xlsx`; transitive dep of write-excel-file). https://github.com/101arrowz/fflate
+
+### markdown-it, emojibase-data (compose) — MIT
+
+The **compose** extension bundles, unmodified and browser-only:
+
+- `markdown-it` 14.3.0 — © Vitaly Puzrin, Alex Kocharin — Markdown rendering. https://github.com/markdown-it/markdown-it
+- `emojibase-data` 16.0.3 — © Miles Johnson — emoji **data** (MIT). The emoji annotations within it derive from the **Unicode CLDR** and remain subject to the Unicode license terms. https://github.com/milesj/emojibase
 
 ---
 

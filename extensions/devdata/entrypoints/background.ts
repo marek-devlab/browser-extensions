@@ -1,33 +1,42 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
+import { putHandoff } from '../utils/handoff';
+import { prefsItem } from '../utils/storage';
+import { registerAutoFormat, unregisterAutoFormat } from '../utils/format-page';
 
-// The service worker is almost empty by design (§8): its ONLY jobs are the
-// context-menu item and opening the tool page. No parsing ever happens here — the
-// SW has no DOM and no Highlight API, and MV3 kills it after ~30s idle, so any
-// heavy work would be truncated mid-document. All parsing lives in a Worker on
-// the tool page instead.
+// The service worker stays almost empty by design (§8). Its whole job:
+//   - the context-menu item,
+//   - opening the tool page,
+//   - keeping the opt-in auto-format registration in step with the PERMISSION,
+//   - answering the content script's "am I allowed to render?" question.
 //
-// MV3 survival rules baked in (design §8):
-//   - `contextMenus.onClicked` is registered at the TOP LEVEL, not inside an
-//     async callback — otherwise, after the SW is recycled, the menu would
-//     silently stop working (the classic MV3 footgun).
-//   - The menu item is (re)created in BOTH `runtime.onInstalled` AND on SW
-//     startup, so a recycled worker restores it.
-//   - No state is held in SW memory.
+// 🔴 No parsing here, ever. The SW has no DOM, no Highlight API, and MV3 recycles
+// it after ~30 s idle — it would be killed mid-document.
+//
+// MV3 survival rules baked in:
+//   - every listener is registered at the TOP LEVEL of the entrypoint, not
+//     inside an async callback: after the SW is recycled the listeners are what
+//     wake it, and a listener added later never fires (the classic MV3 footgun).
+//   - the menu item is created on install AND on every SW startup.
+//   - no state is held in SW memory.
 
 const MENU_ID = 'devdata-open-selection';
-
 const TOOL_URL = '/tool.html';
 
-/** Open the tool page in a new tab. `route` targets a tab via the hash router. */
-async function openTool(route: 'data' | 'jwt' | 'schema' | 'settings' = 'data'): Promise<void> {
-  await browser.tabs.create({ url: browser.runtime.getURL(`${TOOL_URL}#/${route}`) });
+type Route = 'data' | 'jwt' | 'schema' | 'settings';
+
+async function openTool(route: Route = 'data'): Promise<void> {
+  try {
+    await browser.tabs.create({ url: browser.runtime.getURL(`${TOOL_URL}#/${route}`) });
+  } catch {
+    // No window to open into (rare, e.g. all windows closing). Failing to open a
+    // tab must not surface as an unhandled rejection in the service worker.
+  }
 }
 
 function createMenu(): void {
-  // `contexts: ['selection']` — the item appears only when text is selected. We
-  // read `info.selectionText` directly; we do NOT inject a script to grab the
-  // selection (design §1.2 — no host access needed for this path).
+  // `contexts: ['selection']` — we read `info.selectionText` directly. No script
+  // is injected and no host permission is needed for this path (design §1.2).
   browser.contextMenus.create(
     {
       id: MENU_ID,
@@ -35,41 +44,91 @@ function createMenu(): void {
       contexts: ['selection'],
     },
     () => {
-      // Swallow the "duplicate id" error when the item already exists (created on
-      // both install and startup). `runtime.lastError` must be read to silence it.
+      // Reading lastError silences the benign "duplicate id" from the second
+      // create() (install + startup both call it).
       void browser.runtime.lastError;
     },
   );
 }
 
+/** Is the auto-formatter both WANTED (pref) and ALLOWED (permission)? */
+async function autoFormatActive(): Promise<boolean> {
+  try {
+    const [prefs, granted] = await Promise.all([
+      prefsItem.getValue(),
+      browser.permissions.contains({ origins: ['<all_urls>'] }),
+    ]);
+    return prefs.autoFormat && granted;
+  } catch {
+    return false;
+  }
+}
+
+/** Bring the content-script registration in line with the facts. */
+async function syncAutoFormat(): Promise<void> {
+  try {
+    if (await autoFormatActive()) await registerAutoFormat();
+    else await unregisterAutoFormat();
+  } catch {
+    // A failed registration must not take the SW down. The Settings tab shows
+    // the permission FACT regardless, so the UI cannot claim the feature works.
+  }
+}
+
 export default defineBackground(() => {
-  // Recreate on install/update.
   browser.runtime.onInstalled.addListener(() => {
     createMenu();
+    void syncAutoFormat();
   });
-  // ...and on every SW startup, so a recycled worker restores the menu.
+  // ...and on every SW startup, so a recycled worker restores both.
   createMenu();
+  void syncAutoFormat();
 
-  // TOP-LEVEL click handler — see the MV3 note above.
   browser.contextMenus.onClicked.addListener((info) => {
     if (info.menuItemId !== MENU_ID) return;
-    // TODO_LOGIC: devdata — hand `info.selectionText` to the tool page (via a
-    // one-shot `storage.session` handoff or a query the tool reads on load) so
-    // the selected text opens pre-filled. For the scaffold we just open the tool.
-    void openTool('data');
+    void (async () => {
+      // Non-credential text travels through `storage.session` (one-shot, cleared
+      // on read, never on disk) rather than a URL — a URL would be capped in
+      // length, logged in history, and visible in the omnibox.
+      //
+      // 🔴 A selected JWT is REFUSED by `putHandoff` (it would otherwise sit in
+      // extension storage — not the RAM the token invariant promises). When that
+      // happens we open the JWT tab so the user pastes it there instead.
+      const outcome = info.selectionText
+        ? await putHandoff(info.selectionText, 'selection')
+        : 'empty';
+      await openTool(outcome === 'jwt-skipped' ? 'jwt' : 'data');
+    })();
   });
 
-  // The popup also opens the tool directly; this message path lets any surface
-  // ask the SW to open it (e.g. a future keyboard command).
+  // Revoked from chrome://extensions? Unregister immediately — otherwise the
+  // script would stay registered while the UI says "off" (design §8).
+  browser.permissions.onRemoved.addListener(() => {
+    void syncAutoFormat();
+  });
+  browser.permissions.onAdded.addListener(() => {
+    void syncAutoFormat();
+  });
+
   browser.runtime.onMessage.addListener((message: unknown) => {
-    if (
-      typeof message === 'object' &&
-      message !== null &&
-      (message as { type?: unknown }).type === 'openTool'
-    ) {
-      const route = (message as { route?: 'data' | 'jwt' | 'schema' | 'settings' }).route;
-      void openTool(route ?? 'data');
+    const type = (message as { type?: string } | null)?.type;
+
+    // The content script asks before rendering unprompted, so a ONE-SHOT
+    // injection never surprises the user with a viewer they did not ask for.
+    if (type === 'devdata:auto?') {
+      return autoFormatActive().then((auto) => ({ auto }));
     }
+
+    if (type === 'openTool') {
+      const route = (message as { route?: Route }).route;
+      void openTool(route ?? 'data');
+      return undefined;
+    }
+
+    if (type === 'devdata:sync-autoformat') {
+      return syncAutoFormat().then(() => ({ ok: true }));
+    }
+
     return undefined;
   });
 });

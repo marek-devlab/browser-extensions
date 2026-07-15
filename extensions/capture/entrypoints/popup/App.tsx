@@ -1,28 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browser } from '#imports';
-import { Button, MockBadge } from '@blur/ui';
+import { Button, Callout } from '@blur/ui';
+import { listClips } from '../../utils/db';
 import { formatBytes, formatDuration } from '../../utils/format';
-import { MOCK_SESSION, MOCK_LIBRARY, MOCK_LIBRARY_BYTES } from '../../utils/mock-data';
-import { useTicker } from '../../utils/use-ticker';
+import { getLive, isStale, watchLive } from '../../utils/live-state';
+import { SHOT_COOLDOWN_MS } from '../../utils/media';
+import { send, type Reply, type StartOptions } from '../../utils/messages';
+import { capabilities, NO_RECORDING_TITLE } from '../../utils/platform';
+import { usePrefs } from '../../utils/use-prefs';
+import { elapsedMs, type LiveState } from '../../utils/types';
 
-// Popup — the 320px REMOTE, not the studio (design capture.md §1.1, §2.1). Two
-// jobs only: (1) the pre-record setup form + Record/Screenshot, and (2) a
-// fallback recording panel (design §2.5) when a capture is already live — a click
-// on the icon during recording must NEVER show the setup form again (§2.5).
+// POPUP — the 320px REMOTE, not the studio (design capture.md §1.1, §2.1).
 //
-// The setup form and both browser variants are REAL. Starting a recording reaches
-// the stubbed background orchestration; here the Record button optimistically
-// flips to the recording panel (over a mock session with a REAL ticking timer)
-// so both popup states are reviewable. <MockBadge/> marks the fabricated parts.
+// Clicking the toolbar icon is the ONE gesture that yields `activeTab` and lets
+// tabCapture attach to the current tab without <all_urls>. So this is where a
+// recording STARTS — but nothing about a recording may LIVE here: the popup dies
+// the moment focus moves, and a stream it owned would die with it (§1.1).
+//
+// Two states, and only two:
+//   idle       → the setup form + Record / Screenshot;
+//   recording  → the fallback remote (§2.5). Clicking the icon mid-recording must
+//                NEVER show the setup form again — offering "Record" on top of a
+//                live recording is the classic bug of the genre.
 
 const isFirefox = import.meta.env.FIREFOX;
-
-type View = 'setup' | 'recording';
+const caps = capabilities();
 
 export function App() {
-  const [view, setView] = useState<View>('setup');
-  const openStudio = () =>
-    void browser.tabs.create({ url: browser.runtime.getURL('/editor.html') });
+  const [live, setLive] = useState<LiveState | null>(null);
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    void getLive().then(setLive);
+    return watchLive(setLive);
+  }, []);
+  useEffect(() => {
+    const id = globalThis.setInterval(() => tick((n) => n + 1), 1000);
+    return () => globalThis.clearInterval(id);
+  }, []);
+
+  const active = !!live && !isStale(live);
 
   return (
     <div className="popup">
@@ -34,61 +51,174 @@ export function App() {
           type="button"
           className="icon-btn"
           aria-label="Настройки"
-          onClick={() =>
-            void browser.tabs.create({
-              url: browser.runtime.getURL('/options.html'),
-            })
-          }
+          onClick={() => void openStudio('#/settings')}
         >
           ⚙
         </button>
       </header>
 
-      {view === 'setup' ? (
-        <SetupForm onRecord={() => setView('recording')} openStudio={openStudio} />
+      {active && live ? (
+        <RecordingPanel live={live} />
       ) : (
-        <RecordingPanel onStop={() => setView('setup')} onShowWindow={() => void showRecorder()} />
+        <SetupForm stale={!!live && isStale(live)} />
       )}
     </div>
   );
 }
 
-function showRecorder() {
-  return browser.runtime.sendMessage({ type: 'recorder:focus' }).catch(() => undefined);
+function openStudio(hash = '') {
+  return browser.tabs
+    .create({ url: browser.runtime.getURL('/editor.html') + hash })
+    .catch(() => undefined);
 }
 
-function SetupForm({
-  onRecord,
-  openStudio,
-}: {
-  onRecord: () => void;
-  openStudio: () => void;
-}) {
-  const [source, setSource] = useState<'tab' | 'screen'>('tab');
-  const [tabAudio, setTabAudio] = useState(true);
-  const [mic, setMic] = useState(false);
+/** Has the user already granted the microphone to this extension's ORIGIN?
+ *  ⚠️ The offscreen document cannot ask — it has no UI (design §5.9) — so the
+ *  grant has to come from a visible page. This popup is one. */
+async function micGranted(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions?.query({
+      name: 'microphone' as PermissionName,
+    });
+    if (status) return status.state === 'granted';
+  } catch {
+    /* Firefox does not implement the `microphone` permission query */
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    // Device labels are only revealed once a grant exists — the classic probe.
+    return devices.some((d) => d.kind === 'audioinput' && d.label !== '');
+  } catch {
+    return false;
+  }
+}
 
-  function record() {
-    // Real path: message the background to start (Chrome: streamId→offscreen;
-    // Firefox: open the recorder window). It currently reaches a todoLogic stub,
-    // so we swallow the rejection and optimistically show the recording panel.
-    void browser.runtime
-      .sendMessage({ type: 'capture:start', source, tabAudio, mic })
+function SetupForm({ stale }: { stale: boolean }) {
+  const { prefs, update } = usePrefs();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [shotCooling, setShotCooling] = useState(false);
+  const [needMicGrant, setNeedMicGrant] = useState(false);
+  const [lib, setLib] = useState<{ n: number; bytes: number } | null>(null);
+
+  useEffect(() => {
+    void listClips()
+      .then((clips) =>
+        setLib({ n: clips.length, bytes: clips.reduce((s, c) => s + c.sizeBytes, 0) }),
+      )
       .catch(() => undefined);
-    onRecord();
+  }, []);
+
+  useEffect(() => {
+    if (!prefs.mic) {
+      setNeedMicGrant(false);
+      return;
+    }
+    void micGranted().then((g) => setNeedMicGrant(!g));
+  }, [prefs.mic]);
+
+  async function record() {
+    setBusy(true);
+    setError(null);
+    const options: StartOptions = {
+      source: prefs.source,
+      // Firefox: not a choice of ours — getDisplayMedia has no audio track at all.
+      tabAudio: caps.canRecordTabAudio ? prefs.tabAudio : false,
+      mic: prefs.mic,
+      micDeviceId: prefs.micDeviceId,
+      format: caps.canRecordMp4 ? prefs.defaultVideoFormat : 'webm',
+      fps: prefs.defaultFps,
+      maxHeight: prefs.defaultResolution?.height ?? null,
+      quality: prefs.defaultQuality,
+    };
+    const reply = await send<Reply>({ type: 'capture:start', options });
+    setBusy(false);
+    if (!reply) {
+      setError('Фоновый скрипт не ответил. Попробуйте ещё раз.');
+      return;
+    }
+    if (!reply.ok) {
+      setError(reply.error);
+      return;
+    }
+    // Chrome: the stream is already live in the offscreen document, so the popup
+    // may close freely. Firefox: the recorder window is open, waiting for the
+    // second (unavoidable) click.
+    globalThis.close();
+  }
+
+  async function screenshot() {
+    setShotCooling(true);
+    const reply = await send<Reply>({ type: 'capture:screenshot' });
+    // The platform's 2/sec limit is enforced honestly: the button greys out for
+    // 550 ms instead of the click being silently swallowed (design §5.14).
+    globalThis.setTimeout(() => setShotCooling(false), SHOT_COOLDOWN_MS);
+    if (reply && !reply.ok) setError(reply.error);
+    else globalThis.close();
+  }
+
+  async function grantMic() {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
+      setNeedMicGrant(false);
+    } catch {
+      setError('Микрофон не разрешён. Запись пойдёт без него — молча этого не сделаем.');
+    }
+  }
+
+  // 🔴 A platform that cannot record says so plainly, and keeps what DOES work.
+  // Never a dead button, never a spinner that resolves to nothing (§8, PLAN-2 §1.5).
+  if (!caps.canRecord) {
+    return (
+      <>
+        <Callout tone="warn" title={NO_RECORDING_TITLE}>
+          {caps.reason}
+          <br />
+          Запись экрана в мобильных браузерах невозможна в принципе: там нет ни{' '}
+          <code>tabCapture</code>, ни <code>getDisplayMedia</code>. Мы этого не обещаем и не
+          имитируем.
+        </Callout>
+        {caps.canScreenshot && (
+          <>
+            <p className="hint">Скриншоты работают — они не требуют захвата потока.</p>
+            <div className="actions">
+              <Button variant="primary" onClick={() => void screenshot()} disabled={shotCooling}>
+                ⛶ Скриншот
+              </Button>
+            </div>
+          </>
+        )}
+        {error && <Callout tone="warn">{error}</Callout>}
+        <button type="button" className="library-link" onClick={() => void openStudio()}>
+          Открыть библиотеку →
+        </button>
+      </>
+    );
   }
 
   return (
     <>
-      {/* SOURCE */}
+      {stale && (
+        <Callout tone="warn" title="Прошлая запись прервалась">
+          Записанное сохранено на диске. Откройте библиотеку, чтобы восстановить.
+        </Callout>
+      )}
+      {error && (
+        <Callout tone="warn" title="Не удалось">
+          {error}
+        </Callout>
+      )}
+
       <section>
         <h2>Источник</h2>
         {isFirefox ? (
           // Firefox degradation is shown by REMOVING the choice and EXPLAINING —
-          // never a disabled radio (design §2.2, §8).
+          // never a disabled radio, which reads as "I misconfigured something"
+          // instead of "the browser cannot do this" (design §2.2, §8).
           <p className="hint">
-            Firefox спросит сам, что записывать, — своим диалогом. Мы не можем
-            выбрать за вас.
+            Firefox спросит сам, что записывать, — своим диалогом. Мы не можем выбрать за
+            вас.
           </p>
         ) : (
           <div className="radio-list">
@@ -96,167 +226,184 @@ function SetupForm({
               <input
                 type="radio"
                 name="source"
-                checked={source === 'tab'}
-                onChange={() => setSource('tab')}
+                checked={prefs.source === 'tab'}
+                onChange={() => update({ source: 'tab' })}
               />
-              <span>
-                Эта вкладка
-                <em className="mono">example.com/dashboard</em>
-              </span>
+              <span>Эта вкладка</span>
             </label>
             <label className="radio">
               <input
                 type="radio"
                 name="source"
-                checked={source === 'screen'}
-                onChange={() => setSource('screen')}
+                checked={prefs.source === 'screen'}
+                onChange={() => update({ source: 'screen' })}
               />
               <span>
                 Весь экран или окно…
-                <em>ⓘ потребует доступ (один раз)</em>
+                <em>ⓘ запросит доступ — по кнопке, не при установке</em>
               </span>
             </label>
           </div>
         )}
       </section>
 
-      {/* AUDIO */}
       <section>
         <h2>Звук</h2>
-        {isFirefox ? (
-          // The tab-audio checkbox is NOT rendered disabled — it is replaced by an
-          // explanation (design §2.2, §8: a disabled checkbox reads as "I set
-          // something wrong"; the explanation reads as "the browser can't").
-          <div className="callout callout--warn" role="note">
-            <strong>⚠ Звук вкладки в Firefox записать невозможно.</strong> Это
-            ограничение браузера (getDisplayMedia не отдаёт аудио), а не нашей
-            настройки. Доступен только микрофон.
-          </div>
-        ) : (
+        {caps.canRecordTabAudio ? (
           <label className="check">
             <input
               type="checkbox"
-              checked={tabAudio}
-              onChange={(e) => setTabAudio(e.target.checked)}
+              checked={prefs.tabAudio}
+              onChange={(e) => update({ tabAudio: e.target.checked })}
             />
             Звук вкладки
           </label>
+        ) : (
+          <div className="callout callout--warn" role="note">
+            <strong>⚠ Звук вкладки в Firefox записать невозможно.</strong> Это ограничение
+            браузера (<code>getDisplayMedia</code> не отдаёт аудиодорожку), а не нашей
+            настройки. Доступен только микрофон.
+          </div>
         )}
         <label className="check">
-          <input type="checkbox" checked={mic} onChange={(e) => setMic(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={prefs.mic}
+            onChange={(e) => update({ mic: e.target.checked })}
+          />
           Микрофон
         </label>
-        {mic && (
-          <p className="hint">
-            ⓘ Первый раз браузер спросит разрешение — в окне записи (промпт не
-            может прийти из невидимого offscreen — §5.9).
-          </p>
+        {prefs.mic && needMicGrant && (
+          <div className="callout callout--info" role="note">
+            Браузер ещё не выдал доступ к микрофону. Разрешение спрашивается только с{' '}
+            <strong>видимой</strong> страницы — невидимый offscreen-документ этого не умеет.
+            <button type="button" className="ui-btn ui-btn--sm" onClick={() => void grantMic()}>
+              Разрешить микрофон
+            </button>
+          </div>
         )}
       </section>
 
-      {/* QUALITY */}
       <section>
         <h2>Качество</h2>
         <div className="field">
-          <label>Разрешение</label>
-          <select defaultValue="asis">
-            <option value="asis">Как есть (1920×1080)</option>
-            <option value="720">1280×720</option>
-            <option value="480">854×480</option>
+          <label htmlFor="res">Разрешение</label>
+          <select
+            id="res"
+            value={prefs.defaultResolution?.height ?? 0}
+            onChange={(e) => {
+              const h = Number(e.target.value);
+              // Only DOWNSCALE is ever offered: upscaling is a lie about quality
+              // (design §13).
+              update({
+                defaultResolution: h ? { width: Math.round((h * 16) / 9), height: h } : null,
+              });
+            }}
+          >
+            <option value={0}>Как есть</option>
+            <option value={1080}>1080p</option>
+            <option value={720}>720p</option>
+            <option value={480}>480p</option>
           </select>
         </div>
         <div className="field">
-          <label>Частота</label>
-          <select defaultValue="30">
-            <option value="30">30 к/с</option>
-            <option value="25">25 к/с</option>
-            <option value="15">15 к/с</option>
+          <label htmlFor="fps">Частота</label>
+          <select
+            id="fps"
+            value={prefs.defaultFps}
+            onChange={(e) => update({ defaultFps: Number(e.target.value) })}
+          >
+            <option value={30}>30 к/с</option>
+            <option value={25}>25 к/с</option>
+            <option value={15}>15 к/с</option>
+            <option value={60}>60 к/с</option>
           </select>
         </div>
         <div className="field">
-          <label>Формат</label>
-          {isFirefox ? (
-            <select defaultValue="webm">
+          <label htmlFor="fmt">Формат</label>
+          {caps.canRecordMp4 ? (
+            <select
+              id="fmt"
+              value={prefs.defaultVideoFormat}
+              onChange={(e) =>
+                update({ defaultVideoFormat: e.target.value === 'mp4' ? 'mp4' : 'webm' })
+              }
+            >
+              <option value="mp4">MP4 (H.264)</option>
               <option value="webm">WebM (VP9)</option>
             </select>
           ) : (
-            <select defaultValue="mp4">
-              <option value="mp4">MP4 (H.264)</option>
+            <select id="fmt" value="webm" disabled>
               <option value="webm">WebM (VP9)</option>
             </select>
           )}
         </div>
-        {isFirefox ? (
+        {!caps.canRecordMp4 && (
           <p className="hint">
-            ⚠ Firefox пишет только WebM. MP4 доступен на шаге экспорта
-            (перекодирование, ~1–3 мин).
+            ⚠ Этот браузер пишет только WebM. MP4 получится на экспорте — это
+            перекодирование, а не смена расширения.
           </p>
-        ) : (
-          <p className="hint">ⓘ ≈ 7 МБ на каждые 10 секунд (из выбранного битрейта).</p>
         )}
+        <p className="hint">
+          ⓘ Битрейт записи — только пожелание: браузер вправе его не послушаться. Точный
+          размер задаётся на экспорте.
+        </p>
       </section>
 
-      {/* ACTIONS */}
       <div className="actions">
-        <Button variant="primary" onClick={record}>
+        <Button variant="primary" onClick={() => void record()} disabled={busy}>
           {isFirefox ? '● Открыть окно записи' : '● Записать'}
         </Button>
-        <Button onClick={onScreenshot}>⛶ Скриншот</Button>
+        <Button onClick={() => void screenshot()} disabled={shotCooling}>
+          {shotCooling ? '…' : '⛶ Скриншот'}
+        </Button>
       </div>
       {isFirefox && (
         <p className="hint">
-          ⓘ Запись начнётся в отдельном окне — здесь она бы оборвалась.
+          ⓘ Запись начнётся в отдельном окне и потребует ещё одного клика — здесь она
+          оборвалась бы вместе с popup.
         </p>
       )}
       <p className="shortcuts mono">Alt+Shift+R · Alt+Shift+A</p>
 
-      <button type="button" className="library-link" onClick={openStudio}>
-        Библиотека: {MOCK_LIBRARY.length} записей · {formatBytes(MOCK_LIBRARY_BYTES)} →
+      <button type="button" className="library-link" onClick={() => void openStudio()}>
+        {lib ? `Библиотека: ${lib.n} · ${formatBytes(lib.bytes)} →` : 'Библиотека →'}
       </button>
     </>
   );
-
-  function onScreenshot() {
-    void browser.runtime.sendMessage({ type: 'capture:screenshot' }).catch(() => undefined);
-  }
 }
 
-function RecordingPanel({
-  onStop,
-  onShowWindow,
-}: {
-  onStop: () => void;
-  onShowWindow: () => void;
-}) {
-  const [paused, setPaused] = useState(false);
-  const elapsed = useTicker(MOCK_SESSION.startedAt, !paused);
+/** The fallback remote (design §2.5). */
+function RecordingPanel({ live }: { live: LiveState }) {
+  const paused = live.status === 'paused';
+  const elapsed = elapsedMs(live);
 
   return (
     <div className="rec-panel">
-      <MockBadge note="Демо-сессия записи · таймер настоящий, захват замокан (scaffold)." />
       <div className="rec-status" role="status" aria-live="polite">
         <span className={paused ? 'rec-label rec-label--paused' : 'rec-label'}>
           {paused ? '❚❚ ПАУЗА' : '● ЗАПИСЬ'}
         </span>
-        {/* The ticking timer is aria-hidden so a screen reader isn't spammed
-            every second (design §11.2); state changes are announced via the
-            role="status" wrapper text above. */}
         <span className="rec-timer mono" aria-hidden="true">
           {formatDuration(elapsed)}
         </span>
       </div>
-      <p className="rec-meta mono">{MOCK_SESSION.host}</p>
-      <p className="rec-meta mono">{formatBytes(MOCK_SESSION.bytesOnDisk)}</p>
+      <p className="rec-meta mono">{live.host || 'экран'}</p>
+      <p className="rec-meta mono">{formatBytes(live.bytesOnDisk)} на диске</p>
 
       <div className="actions">
-        <Button onClick={() => setPaused((p) => !p)}>
+        <Button onClick={() => void send({ type: paused ? 'capture:resume' : 'capture:pause' })}>
           {paused ? '▶ Продолжить' : '❚❚ Пауза'}
         </Button>
-        <Button variant="primary" onClick={onStop}>
+        <Button variant="primary" onClick={() => void send({ type: 'capture:stop' })}>
           ■ Стоп
         </Button>
       </div>
-      <button type="button" className="library-link" onClick={onShowWindow}>
+      <button
+        type="button"
+        className="library-link"
+        onClick={() => void send({ type: 'recorder:focus' })}
+      >
         Показать окно записи
       </button>
     </div>

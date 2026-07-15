@@ -34,11 +34,18 @@ export default defineConfig({
     // That is the "architecturally, not by promise" evidence PLAN-2 §5.3 asks for.
     // PRIVACY.md points at this line as the exhaustive host list.
     //   - one.one.one.one : Cloudflare trace (IP + country), no key, ACAO:*
-    //   - ipinfo.io       : ISP / ASN lookup (opt-in), needs the user's token
-    //   - ipapi.co        : keyless ISP alternative (opt-in), ~1000 req/day
+    //                       → utils/network.ts TRACE_URL
+    //   - ipinfo.io       : ISP / ASN lookup (opt-in, user's own token)
+    //                       → utils/network.ts IPINFO_URL
+    //
+    // ⚠️ TWO hosts, not three. `ipapi.co` was in the scaffold as a keyless fallback
+    // and is now GONE: its free tier's commercial-use terms are unresolved (TODO §H,
+    // design §14.1), so no code calls it — and a host nothing calls must not sit in
+    // the allow-list. 🔴 `ip-api.com` is excluded permanently: no HTTPS on the free
+    // tier (physically impossible under this very CSP) plus a commercial-use ban.
     const connectSrc =
       "script-src 'self'; object-src 'self'; " +
-      "connect-src 'self' https://one.one.one.one https://ipinfo.io https://ipapi.co;";
+      "connect-src 'self' https://one.one.one.one https://ipinfo.io;";
 
     return {
       name: 'Connection & Device Info',
@@ -52,8 +59,7 @@ export default defineConfig({
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // `public/icon/{16,32,48,128}.png`; `action.default_icon` is NOT derived from
-      // those files, so it is wired here. TODO: ship the four PNGs (see
-      // public/icon/.gitkeep) — none are committed yet.
+      // those files, so it is wired here.
       action: {
         default_icon: {
           16: 'icon/16.png',

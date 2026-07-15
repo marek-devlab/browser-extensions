@@ -1,35 +1,34 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { Button, Callout, MockBadge, ThemeToggle } from '@blur/ui';
+import { Button, Callout, ThemeToggle } from '@blur/ui';
 import { usePrefs } from '../../utils/prefs';
 import { usePermissionFact, requestScripting } from '../../utils/permissions';
 import { formatActiveTab, type FormatPageResult } from '../../utils/format-page';
+import { putHandoff } from '../../utils/handoff';
 
-// Popup = a ~5-second LAUNCHER, not a workspace (design §1.2, §2.1). Three
-// actions + the theme toggle. The real work happens in the full tool tab, which
-// survives focus loss; a popup would throw away a parsed 8 MB document the moment
-// the user clicks away.
+// The popup is a ~5-second LAUNCHER, not a workspace (design §1.2, §2.1). The
+// real work happens in the full tool tab, which survives focus loss — a popup
+// would throw away a parsed 8 MB document the moment the user clicked away.
 //
-// REAL here: theme persistence, reading the activeTab host, the `scripting`
-// permission FACT, opening the tool page, the "looks like JSON" heuristic (URL
-// suffix only — we cannot read contentType without injecting). STUBBED: the
-// actual in-page formatting (formatActiveTab → todoLogic).
+// What the toolbar click buys us: `activeTab`. That is the ONLY gesture that
+// grants the current tab, which is why "format this tab" lives here.
 
 interface ActiveTab {
   id: number | null;
   host: string;
   /** URL ends in .json/.geojson — a HINT, never a claim (design §2.2). */
   looksJson: boolean;
-  /** chrome://, about:, store pages — injection impossible (design §4.3). */
+  /** chrome://, about:, store pages — injection is impossible (design §4.3). */
   restricted: boolean;
 }
 
-function classifyUrl(url: string): Pick<ActiveTab, 'host' | 'looksJson' | 'restricted'> {
+function classifyUrl(url: string): Omit<ActiveTab, 'id'> {
   try {
     const u = new URL(url);
     const restricted =
-      /^(chrome|edge|about|view-source|moz-extension|chrome-extension):/.test(u.protocol) ||
-      u.hostname.endsWith('chromewebstore.google.com');
+      /^(chrome|edge|about|view-source|moz-extension|chrome-extension|resource):/.test(
+        u.protocol,
+      ) || u.hostname.endsWith('chromewebstore.google.com');
     return {
       host: u.hostname || url,
       looksJson: /\.(json|geojson)$/i.test(u.pathname),
@@ -45,36 +44,57 @@ export function App() {
   const scripting = usePermissionFact('scripting');
   const [tab, setTab] = useState<ActiveTab | null>(null);
   const [pageResult, setPageResult] = useState<FormatPageResult | 'loading' | null>(null);
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const [active] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (!active) {
+      try {
+        const [active] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (!active) {
+          setTab({ id: null, host: 'эта вкладка', looksJson: false, restricted: true });
+          return;
+        }
+        setTab({ id: active.id ?? null, ...classifyUrl(active.url ?? '') });
+      } catch {
         setTab({ id: null, host: 'эта вкладка', looksJson: false, restricted: true });
-        return;
       }
-      setTab({ id: active.id ?? null, ...classifyUrl(active.url ?? '') });
     })();
   }, []);
 
   const openTool = (route: 'data' | 'jwt' | 'schema' | 'settings' = 'data') => {
-    void browser.tabs.create({ url: browser.runtime.getURL(`/tool.html#/${route}`) });
-    window.close();
+    browser.tabs
+      .create({ url: browser.runtime.getURL(`/tool.html#/${route}`) })
+      .catch(() => undefined)
+      .finally(() => window.close());
   };
 
-  const pasteAndOpen = () => {
-    // design §4.1: clipboard read from a popup can fail (no transient
-    // activation) — the tool page must never dead-end. For the scaffold we open
-    // the tool with a hint; the real read happens on the tool page.
-    // TODO_LOGIC: devdata — attempt navigator.clipboard.readText() here and hand
-    // the text to the tool; fall back to opening an empty, focused editor (§4.1).
-    openTool('data');
+  const pasteAndOpen = async () => {
+    // `readText()` from a popup can fail (no transient activation, or the user
+    // denied clipboard-read). That must never be a dead end: we open the tool
+    // anyway and tell the user to press ⌘/Ctrl+V there (design §4.1).
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim() === '') {
+        setPasteNote('Буфер обмена пуст. Откройте инструмент и вставьте текст туда (⌘/Ctrl+V).');
+        return;
+      }
+      // A clipboard JWT is refused by putHandoff (credentials never touch
+      // storage) — we land on the JWT tab and the user pastes it there.
+      const outcome = await putHandoff(text, 'clipboard');
+      openTool(outcome === 'jwt-skipped' ? 'jwt' : 'data');
+    } catch {
+      setPasteNote(
+        'Браузер не дал прочитать буфер обмена из попапа. Открываем инструмент — нажмите там ⌘/Ctrl+V.',
+      );
+      setTimeout(() => openTool('data'), 900);
+    }
   };
 
   const formatHere = async () => {
     if (tab?.id == null) return;
-    // Chrome: request `scripting` permission-only (no host → no scary prompt,
-    // design §4.3) when we don't already hold it. Firefox MV2 reports it as held.
+    // Chrome MV3: `scripting` is a PERMISSION-only request — no host is asked
+    // for, so there is no "read your data on all sites" prompt (design §4.3).
+    // Firefox MV2 does not need it at all and reports it as held.
     if (scripting === false) {
       const granted = await requestScripting();
       if (!granted) {
@@ -83,8 +103,7 @@ export function App() {
       }
     }
     setPageResult('loading');
-    const result = await formatActiveTab(tab.id);
-    setPageResult(result);
+    setPageResult(await formatActiveTab(tab.id));
   };
 
   const canFormatHere = tab !== null && tab.id !== null && !tab.restricted;
@@ -101,11 +120,11 @@ export function App() {
         </span>
       </header>
 
-      <MockBadge />
-
       {tab?.looksJson && !tab.restricted && (
         <Callout tone="info" title="ⓘ Похоже на JSON-документ">
-          Открыть содержимое этой вкладки в инструменте?
+          {/* "Похоже", not "это": without injecting a script we cannot read
+              document.contentType, and pretending otherwise would be a lie (§2.2). */}
+          Судим только по адресу — тип документа отсюда не виден.
           <div className="row row--gap">
             <Button variant="primary" onClick={() => openTool('data')}>
               Открыть
@@ -118,11 +137,17 @@ export function App() {
       )}
 
       <div className="stack">
-        <Button variant="primary" onClick={pasteAndOpen}>
-          Вставить из буфера и открыть <kbd>⌘⇧V</kbd>
+        <Button variant="primary" onClick={() => void pasteAndOpen()}>
+          Вставить из буфера и открыть
         </Button>
         <Button onClick={() => openTool('data')}>Открыть инструмент</Button>
       </div>
+
+      {pasteNote !== null && (
+        <p className="fine" role="status" aria-live="polite">
+          {pasteNote}
+        </p>
+      )}
 
       <section>
         <h2 className="ui-section-heading">Форматирование страниц</h2>
@@ -142,19 +167,10 @@ export function App() {
           )}
         </div>
 
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={prefs?.autoFormat ?? false}
-            // Toggling the INTENT here still requires the <all_urls> grant, which
-            // is requested behind the consent dialog on the Settings tab (§2.11).
-            onChange={() => openTool('settings')}
-          />
-          <span>
-            Форматировать JSON-страницы автоматически
-            <span className="fine"> — требует доступа, настраивается в параметрах</span>
-          </span>
-        </label>
+        <button type="button" className="linkish" onClick={() => openTool('settings')}>
+          Авто-формат JSON-страниц — в настройках
+          <span className="fine"> (требует доступа ко всем сайтам)</span>
+        </button>
       </section>
 
       <footer className="foot">100% офлайн · ноль сети · ноль аналитики</footer>
@@ -165,12 +181,14 @@ export function App() {
 function describeResult(result: FormatPageResult): string {
   switch (result.status) {
     case 'formatted':
-      return 'Готово: вкладка отформатирована (демо).';
+      return 'Готово: вкладка отформатирована. Кнопка ✕ на странице вернёт исходный документ.';
     case 'not-json':
-      return `На этой странице нет JSON-документа (тип: ${result.contentType}).`;
+      return `На этой странице нет JSON-документа (тип: ${result.contentType}). Скопируйте нужный фрагмент и вставьте в инструмент.`;
     case 'restricted':
       return 'Браузер не разрешает расширениям работать на этой странице.';
     case 'denied':
-      return 'Доступ не выдан — фича не работает.';
+      return 'Доступ не выдан — фича не работает. Всё остальное работает как работало.';
+    case 'error':
+      return `Не удалось отформатировать: ${result.message}`;
   }
 }

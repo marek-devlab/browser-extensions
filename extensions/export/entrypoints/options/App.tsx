@@ -47,7 +47,15 @@ export function App() {
 
   if (!prefs) return <div className="opt" />;
 
+  // `permissions.request` MUST be called from an extension page inside a user
+  // gesture — a content script cannot do it. That is why the engine's honest
+  // refusal (design §5.9) links HERE instead of prompting on the page.
   const requestDownloads = async () => {
+    if (downloadsGranted) {
+      await browser.permissions?.remove({ permissions: ['downloads'] });
+      setDownloadsGranted(false);
+      return;
+    }
     const granted = await browser.permissions?.request({ permissions: ['downloads'] });
     setDownloadsGranted(!!granted);
   };
@@ -157,11 +165,25 @@ export function App() {
               ]}
               onChange={(v) => update({ mergedCells: v as ExportPrefs['mergedCells'] })}
             />
+            <SelectRow
+              label="Ссылки в ячейках"
+              value={prefs.linksInCells}
+              options={[
+                ['text', 'Только текст'],
+                ['text-url', 'Текст (URL)'],
+                ['url', 'Только URL'],
+              ]}
+              onChange={(v) => update({ linksInCells: v as ExportPrefs['linksInCells'] })}
+            />
             <CheckRow
               label="Распознавать «1 234,56» как число"
               checked={prefs.parseNumbers}
               onChange={(v) => update({ parseNumbers: v })}
             />
+            <Callout tone="info">
+              Неоднозначные числа («1,234» — это 1234 или 1.234?) остаются текстом. Ошибиться
+              здесь дороже, чем не угадать: молча испорченный отчёт хуже, чем ячейка-текст.
+            </Callout>
             <CheckRow
               label="Распознавать даты (05.06 → 5 июня)"
               checked={prefs.parseDates}
@@ -242,28 +264,72 @@ export function App() {
       )}
 
       {tab === 'about' && (
-        <Group title="Разрешения">
-          <p className="opt__hint">
-            Сохранение картинок с других доменов требует разрешения «Управление
-            загрузками». Без него браузер даёт только открыть картинку, а не
-            сохранить её (кросс-домен).
-          </p>
-          <p className="line">
-            Статус:{' '}
-            {downloadsGranted === null
-              ? '…'
-              : downloadsGranted
-                ? 'разрешение выдано'
-                : 'не выдано'}
-          </p>
-          <button className="opt__btn" onClick={() => void requestDownloads()}>
-            Запросить разрешение
-          </button>
-          <Callout tone="info">
-            Ничего не уходит в сеть. Файл собирается локально в браузере. Нет
-            телеметрии, нет аналитики.
-          </Callout>
-        </Group>
+        <>
+          <Group title="Как это работает">
+            <p className="opt__hint">
+              Выделите текст → правая кнопка → «Сохранить контент страницы». Или откройте
+              это расширение из панели: там видно, что вообще есть на странице — выделение,
+              таблицы, картинки — и оттуда же всё запускается.
+            </p>
+            <p className="opt__hint">
+              На телефоне (Firefox для Android) контекстного меню нет — все действия
+              доступны из окна расширения.
+            </p>
+          </Group>
+
+          <Group title="Разрешения">
+            <p className="opt__hint">
+              Расширение не имеет постоянного доступа ни к одному сайту: страница читается
+              только в момент вашего жеста. Поэтому при установке нет строчки «читать и
+              изменять все ваши данные на всех сайтах».
+            </p>
+            <p className="opt__hint">
+              <strong>Сохранение картинок с чужих доменов.</strong> Атрибут{' '}
+              <code>download</code> браузер игнорирует для чужих доменов: вместо сохранения
+              произошёл бы переход по ссылке. Мы этого не делаем. Если сервер картинки
+              разрешает CORS — мы прочитаем её и сохраним сами. Если нет — честно откажем и
+              предложим открыть картинку. Разрешение «Управление загрузками» снимает это
+              ограничение, но добавляет строчку в предупреждения при установке — поэтому
+              оно опциональное и выключено по умолчанию.
+            </p>
+            <p className="line">
+              Статус:{' '}
+              {downloadsGranted === null
+                ? '…'
+                : downloadsGranted
+                  ? 'разрешение выдано'
+                  : 'не выдано'}
+            </p>
+            <div className="btnrow">
+              <button className="opt__btn" onClick={() => void requestDownloads()}>
+                {downloadsGranted ? 'Отозвать разрешение' : 'Запросить разрешение'}
+              </button>
+            </div>
+          </Group>
+
+          <Group title="Безопасность">
+            <Callout tone="info" title="Ноль сети, ноль телеметрии">
+              Файл собирается локально в браузере. Единственный сетевой запрос, который
+              расширение вообще может сделать, — загрузка той самой картинки, которую вы
+              попросили сохранить. Никакой аналитики, никакого удалённого кода.
+            </Callout>
+            <Callout tone="warn" title="Формулы в .csv">
+              Ячейка, начинающаяся с <code>=</code>, <code>+</code>, <code>-</code> или{' '}
+              <code>@</code>, исполняется Excel как формула — а данные берутся с
+              произвольной веб-страницы. По умолчанию мы ставим перед такой ячейкой
+              апостроф. Валидные числа (<code>-5</code>) не трогаем. Формат{' '}
+              <strong>.xlsx этой проблемы не имеет вообще</strong>: там формула — отдельный
+              элемент файла, и текстовая ячейка ею не станет. Поэтому .xlsx — формат по
+              умолчанию.
+            </Callout>
+            <Callout tone="info" title="Имена файлов">
+              RTL-подмена (<code>отчет‮exe.xslx</code>), путь наружу (<code>../</code>),
+              зарезервированные имена Windows (<code>CON</code>, <code>PRN</code>) и
+              управляющие символы обезвреживаются перед записью. Расширение файла всегда
+              ставим мы — из выбранного формата, никогда из вашего ввода.
+            </Callout>
+          </Group>
+        </>
       )}
     </div>
   );

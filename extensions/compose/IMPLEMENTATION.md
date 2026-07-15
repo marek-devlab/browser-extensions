@@ -1,141 +1,190 @@
 # Markdown Workbench — implementation notes
 
-Extension #10 (`@blur/compose`), scaffold phase (PLAN.md §15 "Фаза 0 — фундамент").
-UI-complete: every surface, navigation and settings persistence is real; domain
-logic runs on mocks. Design source: [`docs/design/compose.md`](../../docs/design/compose.md).
+Extension #10 (`@blur/compose`). **The domain logic is real — the scaffold's mocks
+are gone.** Design source: [`docs/design/compose.md`](../../docs/design/compose.md).
+
+Every `todoLogic()` stub, every `<MockBadge>` and `utils/mock.ts` itself have been
+deleted. `grep -rn "todoLogic\|MockBadge\|TODO_LOGIC" components entrypoints utils`
+returns nothing.
 
 ---
 
-## 🔴 #1 THING TO VERIFY ON FIRST BUILD — `side_panel` vs `sidebar_action`
+## ✅ Resolved: the `side_panel` vs `sidebar_action` open question
 
-**Open question (design §12, PLAN-2 §11): does WXT emit BOTH manifest keys from
-the single `entrypoints/sidepanel/` entry, or does it generate one itself and
-CONFLICT with the manual keys in `wxt.config.ts`?**
+The #1 build-time risk (design §12, PLAN-2 §11) is **answered on real builds**:
 
-- WXT has first-class "sidepanel" support and may already auto-generate
-  `side_panel` (Chrome) / `sidebar_action` (Firefox) from the `sidepanel`
-  entrypoint directory. `wxt.config.ts` ALSO declares them manually
-  (`manifest.side_panel` / `manifest.sidebar_action` → `sidepanel.html`).
-- On first `wxt build` and `wxt build -b firefox`, **inspect the generated
-  `.output/*/manifest.json`**:
-  - Chrome: exactly one `side_panel.default_path: "sidepanel.html"`, and
-    `sidePanel` in `permissions`.
-  - Firefox: exactly one `sidebar_action.default_panel: "sidepanel.html"`, and
-    NO `side_panel` / `sidePanel` leaking in.
-- If WXT double-declares or errors, **remove the manual keys** from
-  `wxt.config.ts` and rely on WXT's generation (or vice-versa). Do this BEFORE
-  building any more UI (design §12).
-- If WXT does NOT bridge the two at all, fall back to two thin HTML shells over
-  the one React app (`WorkbenchApp surface="panel"`).
+- WXT does **not** auto-generate either key from `entrypoints/sidepanel/`. The
+  manual declarations in `wxt.config.ts` are what produce them, and they do not
+  conflict or double-declare.
+- `npx wxt build` → `side_panel: { default_path: "sidepanel.html" }` + `sidePanel`
+  in `permissions`; **no** `sidebar_action`.
+- `npx wxt build -b firefox` → `sidebar_action: { default_panel: "sidepanel.html" }`;
+  **no** `side_panel`, **no** `sidePanel` permission leak.
 
-Related unknowns to check while you're there: clipboard `write()` with `text/html`
-in the Firefox sidebar (design §12); `sidePanel.open()` / `sidebarAction.open()`
-from the context-menu gesture.
+### ⚠️ …and the mobile consequence, which is load-bearing
 
----
+**Firefox for Android has no sidebar** (and Chrome for Android has no extensions
+at all). `sidebar_action` is simply not honoured there. So the full-page
+**`entrypoints/workbench/` (`workbench.html`) is not a nicety — on mobile it is
+the only editor surface that exists**, and both builds emit it.
+
+`utils/surface.ts` picks the surface by **feature detection, never UA sniffing**:
+
+```
+openEditor():  sidePanel.open()      → Chrome desktop
+               sidebarAction.open()  → Firefox desktop
+               tabs.create(workbench.html) → Firefox Android / anything else
+```
+
+The toolbar action routes through it (`browser.action ?? browser.browserAction`,
+house convention), and the panel has an explicit "⛶ open in tab" button.
 
 ## Surface map
 
-| # | Surface | Path | Real | Mocked |
-|---|---------|------|------|--------|
-| **S1** | Side panel (primary) | `entrypoints/sidepanel/` → `components/Workbench` | layout, tabs↔split, toolbar insert, draft persist, theme, counter | preview render, conversion, regex, translit |
-| **S2** | Full-page Workbench | `entrypoints/workbench/` → same `Workbench` | same component, wide split view | same |
-| **S3** | Options | `entrypoints/options/` | all prefs persist to `sync:settings` | export/import/clear buttons |
-| **S4** | Context menu | `entrypoints/background.ts` | one item + "…as quote"; appends to active draft under lock; opens panel | rich selection read (uses `info.selectionText`) |
-| **S5** | Toolbar action | `entrypoints/background.ts` | opens side panel (Chrome `setPanelBehavior`), NOT a popup | — |
+| # | Surface | Path | Status |
+|---|---------|------|--------|
+| **S1** | Side panel / sidebar (primary, desktop) | `entrypoints/sidepanel/` → `components/Workbench` | real |
+| **S2** | Full-page Workbench (wide desktop **+ the only mobile surface**) | `entrypoints/workbench/` → same `Workbench` | real |
+| **S3** | Options | `entrypoints/options/` | real, incl. export / import / clear |
+| **S4** | Context menu | `entrypoints/background.ts` | real — ONE item + "…as quote" |
+| **S5** | Toolbar action | `entrypoints/background.ts` | real — opens S1, falls back to S2 |
 
 S1 and S2 are **one** component (`components/Workbench.tsx`); a `ResizeObserver`
-picks tabs (<560px) vs split, mirroring the `@container` CSS (design §1.2, §5.8).
+picks tabs (<560 px) vs split, mirroring the `@container` CSS (design §1.2, §5.8).
 
-## Real vs mocked
+## What is real
 
-**Real now**
-- All three layouts; header (draft select, target switch, save status, theme).
-- Toolbar buttons + keyboard shortcuts → `utils/editor-actions.ts` (pure string
-  insertion into the draft: bold/italic/code/list/task/`<details>`/table/link/emoji).
-- Tab navigation for the regex / translit / stats drawer (roving tabindex, arrows).
-- Target-platform switcher UI.
-- Draft persistence to `local:drafts` (debounced, Web-Lock-serialized) + honest
-  save status (`saving`→`saved` only after `setValue` resolves).
-- Prefs persistence to `sync:settings`; theme via `@blur/ui`.
-- **The character counter** (`utils/counter.ts`) — `Intl.Segmenter` graphemes +
-  words, `TextEncoder` bytes, UTF-16, lines, paragraphs. **Not mocked** (design
-  §10.1); it is small and correct, so it ships real. Falls back to code-point
-  counting flagged `approximate` if `Intl.Segmenter` is absent.
-- States: empty draft, regex ok/invalid/timeout (toggle in the drawer),
-  sanitizer-stripped banner (PreviewPane), narrow vs wide.
-- Security shape: `PreviewPane` attaches a fragment via `replaceChildren` only;
-  no `innerHTML`/`dangerouslySetInnerHTML` anywhere in the tree.
+- **Preview**: `markdown-it` (`html:true`, `linkify:false`, `typographer:false`)
+  → **DOMPurify** allow-list with `RETURN_DOM_FRAGMENT` → `replaceChildren` into a
+  **closed Shadow DOM**. GFM task lists are added by a ~30-line core rule (no extra
+  dependency). Debounced + `requestIdleCallback`; a slow render (>50 ms) or a huge
+  draft (>200 k chars) flips the pane to honest manual-refresh mode.
+- **Conversion on output** for 7 targets from the one markdown-it token stream:
+  GitHub / GitLab (identity), **Jira** wiki markup, **Slack** mrkdwn, **Telegram**
+  MarkdownV2 (full special-character escaping), **HTML**, **Plain**. Nothing is ever
+  dropped silently: tables degrade to aligned code blocks, `<details>` expands under
+  a bold heading, checkboxes become `(x)` / `• ☑` — and every degradation is listed
+  in the `<dialog>` **before** the copy happens. The stored Markdown is never
+  rewritten, so switching target back and forth is lossless.
+- **Copy as HTML**: one `ClipboardItem` carrying **both** `text/html` and
+  `text/plain` (formatted into Google Docs, clean Markdown into a textarea), with a
+  `writeText` → `execCommand` → manual-copy-dialog fallback chain.
+- **Regex find & replace**: compile *and* match **only inside a Web Worker**, with a
+  main-thread timeout → `terminate()` → respawn. Highlighting via the **CSS Custom
+  Highlight API** on a mirror `<pre>` behind the textarea. Replacement templates
+  (`$1`, `$&`, `$<name>`) are expanded in the worker; "Replace all" is a splice on
+  the main thread (no regex) landing as **one** undo step.
+- **Transliteration**: five hand-written tables (ICAO/passport, BGN/PCGN, ISO 9,
+  GOST 7.79-B, slug) with the contextual rules that off-the-shelf packages get
+  wrong (`е`→`ye` after a vowel, `ц`→`c`/`cz`, terminal `й`, `ь`/`ъ`), plus a slug
+  post-processor. The per-standard example in the UI is **computed from the real
+  tables on the user's own text** — it cannot drift from what the button does.
+- **Counter**: `Intl.Segmenter` graphemes/words, `TextEncoder` bytes, UTF-16, code
+  points, lines, paragraphs + limit presets (commit 50/72, branch 63, X 280,
+  meta 160), each labelled **with its unit**.
+- **Emoji picker**: `emojibase-data` loaded **lazily** (`await import()` → its own
+  541 kB chunk, never the main bundle), returns **both** the character and the
+  `:shortcode:`; the shortcode radio is disabled (with a reason) for Jira/Telegram,
+  and the converter swaps leftover shortcodes for characters on copy.
+- **Templates + "Insert environment"** (browser / OS / screen / timezone / language,
+  optional full UA, and the active tab's URL when `activeTab` has been granted).
+- **Drafts**: `local:` only, debounced autosave under a Web Lock, honest save status,
+  quota banner, `session:` mirror + recovery banner, snapshot ring buffer with ⚑
+  pre-destructive snapshots, history dialog, `.md` / `.json` export, import, clear.
 
-**Mocked / stubbed** (each throws `todoLogic('compose: …')` from `@blur/ui`, or
-returns a `mockAsync`/static value behind a `<MockBadge>`)
-- Markdown → HTML render (`utils/markdown.ts` `renderPreview`).
-- The DOMPurify sanitizer pipeline (`utils/sanitize.ts` `sanitizeToFragment`) —
-  the scaffold renders a static safe fragment (`mockPreviewFragment`).
-- Platform conversion on copy (`utils/convert.ts` `convert`).
-- Regex worker engine (`utils/regex.worker.ts` + `utils/regex-client.ts`).
-- Five transliteration tables + slug (`utils/translit.ts` `transliterate`).
-- Rich page-selection read in the context menu (uses `info.selectionText`).
+## Deferred (explicitly, not silently)
 
-## TODO_LOGIC inventory (`grep -rn "todoLogic\|TODO_LOGIC" extensions/compose`)
+- Ukrainian / Belarusian transliteration and Latin→Cyrillic layout fixing (design
+  says v2; the language `<select>` is disabled with a note).
+- Custom user templates (CRUD) — the five built-ins are real and stored in
+  `local:templates`; there is no editor for them yet.
+- Split-divider drag (`settings.splitRatio` is stored but the divider is fixed 50/50).
+- Mermaid, syntax highlighting inside preview code blocks (design §10.2: deliberate).
+- Rich page-selection read via `scripting.executeScript` — **see below**.
 
-| Location | What to wire | Library |
-|----------|--------------|---------|
-| `utils/sanitize.ts` `sanitizeToFragment` | DOMPurify `RETURN_DOM_FRAGMENT` + allow-list + hooks (force `<input disabled>`, `<a rel=noopener>`, collect `removed[]`) | `dompurify` |
-| `utils/markdown.ts` `renderPreview` | markdown-it `{ html:true, linkify:false, typographer:false }` → sanitize | `markdown-it` |
-| `utils/convert.ts` `convert` | 6 target converters + escaping, from markdown-it tokens | `markdown-it` |
-| `utils/translit.ts` `transliterate` | 5 standards + contextual rules + slug post-process | own tables |
-| `utils/regex.worker.ts` | compile `RegExp` in worker, validate, match with cap | — |
-| `utils/regex-client.ts` `runRegex` | Worker lifecycle: id-gate, timeout, terminate+respawn | — |
-| `components/PreviewPane.tsx` | render preview in a **closed Shadow DOM** (clickjacking defence, §7.2) | — |
-| `components/EditorPane.tsx` | list-indent on Tab only when caret is in a list; own undo stack | — |
-| `entrypoints/background.ts` | rich selection read via `scripting.executeScript` on gesture | — |
-| `entrypoints/options/App.tsx` | export `.md`/`.json` via `<a download>`, import, two-step clear | — |
-| `utils/counter.ts` | (none — real) | — |
+## Security decisions
 
-## Libraries to wire (declared as deps, imported only where stubbed)
+1. **One string→DOM point in the codebase**: `utils/sanitize.ts::sanitizeToFragment`.
+   `RETURN_DOM_FRAGMENT` + `replaceChildren`. `serializeFragment` walks the
+   already-sanitized DOM back to a string for the clipboard — DOM→string, the safe
+   direction; it re-checks the allow-list and entity-escapes everything.
+2. **Allow-list, not deny-list** (design §7.2), plus `FORBID_TAGS`/`FORBID_ATTR` as
+   a second wall. `ALLOWED_URI_REGEXP = /^(?:https?|mailto):/i` — `javascript:`,
+   `data:`, `blob:`, `vbscript:` cannot survive. `style` **as an attribute is
+   forbidden**: it is the clickjacking primitive (paint a fake "Copy" button over
+   the real one). Hooks force `<input>` → disabled checkbox, `<a>` →
+   `rel="noopener noreferrer nofollow" target=_blank`, `<img>` → lazy + no-referrer.
+3. **Closed Shadow DOM** for the preview: a hostile `class` cannot reach the
+   extension's stylesheet, and the preview cannot restyle the panel. Tokens still
+   inherit (CSS custom properties cross the boundary), so the theme is free.
+4. **`linkify: false`** — auto-linking would turn arbitrary user text into `href`s.
+   Links exist only where the user wrote `[t](u)`.
+5. **No `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `dangerouslySetInnerHTML`
+   / `eval` / `new Function` anywhere.** Verified by grep (zero hits in code; only
+   the comments that forbid them). ⚠️ **This repo has no ESLint config at all**, so
+   the ban is enforced by construction + review. See "Needs a human" below.
+6. **`new RegExp(userInput)` never runs on the main thread** — not even to validate.
+   Validation happens in the worker and comes back as a message. The only regexes on
+   the main thread are our own literals.
+7. **Zero network, mechanically**: `content_security_policy` now ships
+   `connect-src 'none'` on both targets. It is not a promise in a README — fetch/XHR/
+   WebSocket are impossible from every extension page.
+8. **Permissions: `storage`, `contextMenus`, `clipboardWrite`, `activeTab`**
+   (+ `sidePanel` on Chrome). Every one is used; nothing else is requested.
 
-- `markdown-it` (MIT) — preview render + converter token stream.
-- `dompurify` (+ `@types/dompurify`, MPL-2.0/Apache-2.0) — the sanitizer, held
-  behind the single `sanitizeToFragment()` so a future native `Element.setHTML()`
-  swaps one function (design §7.2).
-- `emojibase-data` (MIT / CC-BY-4.0 data) — emoji set, loaded **lazily** in a
-  separate chunk, never the main bundle (design §10.2). Add the CC-BY line to
-  `THIRD-PARTY-NOTICES.md` when wired.
-- Transliteration + slug: **own tables**, no library (design §10.2).
+### Why the context menu uses `info.selectionText`
+
+Design §4.2 describes a richer selection read via `scripting.executeScript`. That
+would require the **`scripting`** permission, which is not in the agreed budget and
+carries an install warning. `info.selectionText` already delivers the selection for
+a selection-context click, so the extra permission buys a marginally better read at
+a permanent cost. **Decision: keep `selectionText`, do not add `scripting`.**
+
+### The clobber race (fixed)
+
+The background appends to the active draft while the panel may hold an unflushed
+edit. A plain `setValue(ourList)` would overwrite the appended selection: the Web
+Lock serializes the writes but cannot make a stale payload fresh. `useDraft.persist`
+now does the read-modify-write **inside** the lock with an append-merge against a
+`base` snapshot, so a context-menu append during typing survives.
 
 ## Storage (design §1.4)
 
-- `local:` — `drafts`, `activeDraftId`, `history`, `templates`. ⚠️ **Drafts are
-  `local:`, NEVER `sync:`** — the 8 KB per-item sync cap shreds a long bug report
-  (`utils/storage.ts` header; the exact `blur`/PLAN §18a bug).
-- `sync:` — `settings` (theme, default target, translit standard, editor prefs).
-- `session:` — `unsaved` buffer (survives SW death, not restart).
-- All draft RMWs go through `withDraftsLock` (Web Locks), shared by the panel and
-  the background context-menu writer.
+- `local:` — `settings`, `drafts`, `activeDraftId`, `history`, `templates`,
+  `recentEmoji`. ⚠️ **Nothing goes to `sync:`** — the 8 KB per-item cap shreds a long
+  bug report and the UI would still say "saved" (the `blur` / PLAN §18a bug).
+- `session:` — the `unsaved` buffer (survives SW death and a destroyed panel
+  document, not a browser restart).
+- All draft RMWs go through `withDraftsLock` (Web Locks), shared with the background.
 
-## Permissions & security
+## Verification performed
 
-- `permissions`: `storage`, `contextMenus`, `clipboardWrite`, `activeTab`
-  (+ `sidePanel` on Chrome only). Zero install warnings, zero host permissions,
-  zero network (page-extension CSP `connect-src 'none'`) — design §7.4.
-- Preview is the security boundary; the only string→DOM point is
-  `sanitizeToFragment` → `replaceChildren`. An ESLint ban on
-  `innerHTML`/`dangerouslySetInnerHTML` should be added at the repo level.
+- `npm run compile -w @blur/compose` → clean (tsc covers all 39 files).
+- `npx wxt build` / `npx wxt build -b firefox` → both clean; manifests verified
+  (see above); `workbench.html` emitted in both.
+- **XSS suite** (19 payloads through the real pipeline in headless Chromium):
+  `<script>`, `onerror`, `onclick`, `javascript:`/`data:` links, `<svg onload>`,
+  `<iframe srcdoc>`, `<style>`, `style=` clickjack, `<form>`, `<base>`,
+  `<meta refresh>`, bare interactive `<input>` → **0 leaks, `window.__pwned` never
+  set**; task lists, `<details>`, tables, `https:`/`mailto:` links survive intact.
+- **ReDoS**: `(a+)+$` on 40 `a`s → worker stuck, main-thread timer fired at 530 ms,
+  `terminate()` killed it, the page stayed responsive, and the next request ran on a
+  fresh worker.
+- Converters exercised on a full bug report → GitHub / Jira / Slack / Telegram /
+  Plain output inspected by hand; transliteration checked against the five standards
+  (`Щербаков, Юлия` → `Shcherbakov, Iuliia` / `Shcherbakov, Yuliya` / `Ŝerbakov, Ûliâ`
+  / `Shherbakov, Yuliya` / `shcherbakov-yuliya`).
 
-## Icons
+## Needs a human / cross-cutting
 
-Not generated (task constraint). `public/icon/.gitkeep` holds a TODO to extend
-`scripts/gen-icons.mjs`. `action.default_icon` / top-level `icons` will 404 until
-then.
-
-## Design-section map
-
-§1.1 single purpose → `wxt.config.ts`, `background.ts` (one menu item) · §1.2
-S1/S2 one component → `Workbench.tsx` + `ResizeObserver` · §1.4 data model →
-`utils/types.ts`, `utils/storage.ts` · §2.3 toolbar → `Toolbar.tsx`,
-`editor-actions.ts` · §2.4 emoji popover → `EmojiPicker.tsx` · §2.5–2.7 drawer →
-`ToolDrawer.tsx` · §2.8 counter strip → `CounterStrip.tsx` · §2.11/§3 options →
-`options/App.tsx` · §5.1 empty, §5.3/5.4 regex states, §5.8 narrow/wide →
-`Workbench.tsx`/`ToolDrawer.tsx` · §7 security → `sanitize.ts`, `PreviewPane.tsx`
-· §8.1 worker → `regex.worker.ts`/`regex-client.ts` · §10.1 counter → `counter.ts`.
+- **ESLint**: the repo has **no** ESLint config (`eslint.config.*` / `.eslintrc*` do
+  not exist anywhere). The design mandates a mechanical ban on `innerHTML` &
+  friends. Someone should add a root config with
+  `no-restricted-properties` / `react/no-danger` / `no-eval` / `no-implied-eval`, so
+  the rule survives the next contributor. Until then: enforced by construction.
+- **Design doc typo**: §2.6 shows ГОСТ 7.79-Б as `Shcherbakov`; the standard maps
+  `щ` → `shh`, i.e. `Shherbakov` (what we now produce, and what the scaffold's own
+  table said). Worth correcting in `docs/design/compose.md`.
+- `TODO.md` §L can be ticked (every line except the explicit v2 items).
+- The design's "manual clipboard" and history overlay copy is Russian-only, like the
+  rest of the family. No i18n layer exists yet in any extension.

@@ -3,7 +3,7 @@ import type { Target } from './types';
 // Target-platform metadata (design §6). The label + copy-button verb are REAL
 // UI; the per-target feature matrix here drives the compatibility warnings and
 // the counter's platform-specific limits. The actual CONVERSION that reads this
-// (utils/convert.ts) is still stubbed — see there.
+// lives in utils/convert.ts (seven real targets).
 
 export interface TargetInfo {
   id: Target;

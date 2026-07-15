@@ -28,6 +28,7 @@
     "dev:capture:firefox": "npm run dev:firefox --workspace @blur/capture",
     "dev:compose": "npm run dev --workspace @blur/compose",
     "dev:compose:firefox": "npm run dev:firefox --workspace @blur/compose",
+    "guards": "node scripts/check-guards.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "store-assets": "node scripts/gen-store-assets.mjs",
     "build": "npm run build --workspaces --if-present",

@@ -1,0 +1,289 @@
+/* Popup — 360px, local-first. Tokens + primitives come from @blur/ui (tokens.css +
+   components.css, imported first in main.tsx); this file adds only linksafe layout.
+   Everything keys off the shared CSS variables, so the theme applies for free.
+
+   ⚠️ MOBILE IS A REAL TARGET (Firefox for Android): the width is a MAXIMUM, never a
+   fixed size, and the layout survives 360px. */
+
+.popup {
+  width: 360px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.head h1 {
+  font-size: 15px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.localbadge {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--good-fg);
+}
+
+.sect {
+  margin: 0 0 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sect h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.hint--error {
+  color: var(--poor-fg);
+}
+
+.block {
+  width: 100%;
+}
+
+/* ---- inputs -------------------------------------------------------------- */
+
+.inputrow {
+  display: flex;
+  gap: 6px;
+}
+
+.ui-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  padding: 7px 9px;
+  font: inherit;
+  direction: ltr;
+}
+
+.ui-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- result card --------------------------------------------------------- */
+
+.mono {
+  font-family: var(--mono);
+}
+
+.card {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  padding: 10px;
+}
+
+.card__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card__host {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+  font-size: 12px;
+}
+
+.card__meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.reasons {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reason {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.reason--poor {
+  color: var(--poor-fg);
+}
+
+.reason--warn {
+  color: var(--warn-fg);
+}
+
+.reason--info {
+  color: var(--text-dim);
+}
+
+.reason--ok {
+  color: var(--text-dim);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* ---- disclosure (network resolve) --------------------------------------- */
+
+.resolvebtn {
+  margin-top: 10px;
+}
+
+.disclose {
+  margin-top: 10px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--bg);
+}
+
+.disclose__title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--warn-fg);
+}
+
+.disclose__body {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.disclose__always {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.resolved {
+  margin-top: 10px;
+}
+
+.resolved__url {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin: 4px 0 0;
+  color: var(--text);
+}
+
+/* ---- trusted list -------------------------------------------------------- */
+
+.trusted {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trusted__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.trusted__row .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+}
+
+/* ---- footer -------------------------------------------------------------- */
+
+.foot {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* ---- spinner ------------------------------------------------------------- */
+
+.ui-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: linksafe-spin 0.7s linear infinite;
+}
+
+@keyframes linksafe-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner {
+    animation: none;
+  }
+}
+
+/* Touch targets ≥ 44px on any coarse pointer. */
+@media (pointer: coarse) {
+  .ui-btn,
+  .ui-input {
+    min-height: 44px;
+  }
+}

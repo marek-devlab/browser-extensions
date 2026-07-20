@@ -1,0 +1,381 @@
+/* Universal Converter popup. Tokens + primitives come from @blur/ui (imported
+   first in main.tsx); this only adds layout. Everything keys off the shared CSS
+   variables, so light/dark applies for free.
+
+   ⚠️ Firefox for Android is a real target: the width is a MAXIMUM, never fixed, and
+   the layout survives 360px. Touch targets are ≥44px on coarse pointers. */
+
+.wrap {
+  width: 400px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+}
+
+@media (max-width: 420px) {
+  .wrap {
+    width: 100%;
+  }
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 20px 8px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.head h1 {
+  font-size: 15px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Tabs ----------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.tab {
+  appearance: none;
+  flex: 1 1 auto;
+  min-height: 34px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tab--active {
+  color: var(--badge-fill-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.panel {
+  min-height: 120px;
+}
+
+/* ---- Shared converter layout ---------------------------------------------- */
+
+.conv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.field > span:first-child {
+  flex: 0 1 auto;
+  color: var(--text-dim);
+}
+
+.field select,
+.field input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.field input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The from/to input grid. Wraps on narrow screens rather than overflowing. */
+.io {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.io .field {
+  flex: 1 1 130px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.io .field > span:first-child {
+  font-size: 11px;
+}
+
+.swap {
+  appearance: none;
+  min-height: 34px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* ---- Primary result ------------------------------------------------------- */
+
+.primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.primary__val {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.primary__sym {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.primary__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pin {
+  appearance: none;
+  min-height: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* ---- Result rows ---------------------------------------------------------- */
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.rrow:last-child {
+  border-bottom: none;
+}
+
+.rrow__val {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.rrow__sym {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.zrow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.zrow:last-child {
+  border-bottom: none;
+}
+
+.zrow__zone {
+  color: var(--text-dim);
+}
+
+.zrow__time {
+  overflow-wrap: anywhere;
+}
+
+/* ---- Disclosures + fine print --------------------------------------------- */
+
+.disclose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.fine {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+/* ---- Pinned bar ----------------------------------------------------------- */
+
+.pinned {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pinned__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.pinned__chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pinned__load {
+  appearance: none;
+  border: none;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.pinned__x {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ---- Settings ------------------------------------------------------------- */
+
+.settings {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.settings > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.settings__body .field {
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.seg__btn {
+  appearance: none;
+  min-height: 32px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.seg__btn--active {
+  color: var(--badge-fill-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Touch + motion ------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  .tab,
+  .swap,
+  .pin,
+  .seg__btn,
+  .pinned__load,
+  .field select,
+  .field input {
+    min-height: 44px;
+  }
+}

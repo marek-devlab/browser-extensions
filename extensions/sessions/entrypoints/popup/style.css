@@ -1,0 +1,220 @@
+/* Popup — 360px, save-first. Tokens + `.ui-*` primitives come from @blur/ui
+   (imported first in main.tsx); this file only adds layout. Everything keys off the
+   shared CSS variables so light/dark applies for free.
+
+   ⚠️ Firefox for Android is a real target: the popup is a full-width sheet there, so
+   the width is a MAXIMUM and the layout must survive 360px. */
+
+.pop {
+  width: 340px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+@media (max-width: 380px) {
+  .pop {
+    width: 100%;
+  }
+}
+
+.pop__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 20px 8px;
+}
+
+.pop__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pop__head h1 {
+  font-size: 15px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pop__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pop__actions .ui-btn {
+  flex: 1 1 auto;
+}
+
+.pop__toast {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ---- Crash-recovery banner ------------------------------------------------ */
+
+.pop__crash {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+
+.pop__crashtitle {
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.pop__crashbody {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.pop__crashrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- Permission microcopy ------------------------------------------------- */
+
+.pop__perm {
+  margin: 10px 0 4px;
+}
+
+.linkbtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent-fg);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.pop__popover {
+  display: block;
+  max-width: min(320px, calc(100vw - 24px));
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.pop__popovertitle {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pop__popoverbody {
+  display: block;
+  color: var(--text-dim);
+}
+
+/* ---- Session list --------------------------------------------------------- */
+
+.pop__empty {
+  margin-top: 12px;
+}
+
+.pop__list {
+  margin-top: 12px;
+}
+
+.pop__listhead {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 0 0 6px;
+}
+
+.srow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.srow:last-child {
+  border-bottom: none;
+}
+
+.srow__info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.srow__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srow__meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.srow__actions {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+/* ---- Footer --------------------------------------------------------------- */
+
+.pop__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.pop__footnote {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Touch targets ≥ 44px on a coarse pointer; no hover-only affordances. */
+@media (pointer: coarse) {
+  .pop__actions .ui-btn,
+  .srow__actions .ui-btn,
+  .pop__crashrow .ui-btn,
+  .pop__foot .ui-btn {
+    min-height: 44px;
+  }
+}

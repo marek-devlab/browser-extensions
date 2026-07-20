@@ -1,0 +1,301 @@
+/* Full manager page. Tokens + `.ui-*` primitives from @blur/ui; this file adds the
+   page layout. Theme-aware for free via the shared CSS variables. */
+
+.mgr {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+.mgr__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.mgr__head h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.mgr__toast {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.mgr__toolbar {
+  margin: 16px 0;
+}
+
+.mgr__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.mgr__empty {
+  color: var(--text-dim);
+  padding: 16px 4px;
+}
+
+.mgr__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- Session card --------------------------------------------------------- */
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  padding: 12px 14px;
+}
+
+.card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.card__name {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: start;
+}
+
+.card__name:hover {
+  color: var(--accent-fg);
+}
+
+.card__rename {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.card__renameinput {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.card__restore,
+.card__manage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card__restorelabel {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.card__del:hover {
+  color: var(--poor-fg);
+}
+
+.card__matches {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.card__tabs {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.card__tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card__favicon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.card__tablink {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.card__tablink:hover .card__tabtitle {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.card__tabtitle {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.card__taburl {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  direction: ltr;
+}
+
+/* ---- Setting panels ------------------------------------------------------- */
+
+.mgr__panel {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.mgr__panel h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
+.mgr__row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mgr__hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 8px 0 0;
+  max-width: 640px;
+}
+
+.mgr__version {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mgr__setrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+
+.mgr__setlabel {
+  font-size: 13px;
+}
+
+.mgr__toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.mgr__toggle input {
+  margin-top: 2px;
+  flex: none;
+}
+
+.mgr__toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.mgr__toggle small {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 620px;
+}
+
+@media (pointer: coarse) {
+  .card__actions .ui-btn,
+  .mgr__row .ui-btn {
+    min-height: 44px;
+  }
+}

@@ -2,7 +2,7 @@
 
 > Актуально на **2026-07-20**. **Единственный документ со статусом**: сюда смотрят, когда спрашивают «что сделано, что нет, какие проблемы, что дальше».
 >
-> - [`PLAN.md`](./PLAN.md) — архитектура и обоснования всех десяти расширений (слой «почему/как», Часть I — волна 1, Часть II — волна 2). Обоснования живут там, статус — здесь. Не дублировать.
+> - [`PLAN.md`](./PLAN.md) — архитектура и обоснования (слой «почему/как»): Часть I — волна 1, Часть II — волна 2, **Часть III — волна 3 (спроектирована, не построена)**. Обоснования живут там, статус — здесь. Не дублировать.
 > - [`STORE.md`](./STORE.md) — чеклист публикации и тексты листингов.
 > - [`docs/design/`](./docs/design/) — UX/UI-макеты шести новых расширений.
 > - [`docs/audit/`](./docs/audit/) — аудит всех десяти от 2026-07-14.
@@ -11,10 +11,11 @@
 
 ## 📦 Общий статус
 
-**Десять расширений, все реализованы.** Монорепо WXT, две волны, общие `@blur/core` + `@blur/ui`.
+**Четырнадцать расширений реализованы** (десять волн 1–2 + четыре волны 3; №15 proof отложен). Монорепо WXT, общие `@blur/core` + `@blur/ui`.
 
 - **Волна 1 (v1.0.0):** blur, adblock, perf, seo. Код готов; **все блокеры аудита §0 закрыты** (см. ниже).
 - **Волна 2:** capture, devdata, export, assets, whoami, compose. Реальная логика + store-хардненинг закоммичены; privacy policy покрывает все десять.
+- **Волна 3 — РЕАЛИЗОВАНА (v0), зелёная сборка:** convert, linksafe, vision, sessions (+ proof отложен). Typecheck/guards/build Chrome+Firefox зелёные. Долги (иконки, тесты, headed-смоук, live-CORS) — в разделе «🌱 Волна 3» ниже.
 
 **Зелёная верификация (2026-07-15):** `typecheck` 11/11 воркспейсов · `wxt build` Chrome+Firefox по всем · `npm run guards` чисто на 20 манифестах · `npm run e2e` — blur 53 / perf 14 / seo 20 / adblock logic 36.
 
@@ -79,6 +80,32 @@
 - [ ] **blur: точность счётчиков** для min-size gate и link-hiding марджинально «щедрая» (у core-движка нет per-matched-element хука). Визуал корректен, цифра слегка завышена — уже честно помечено в UI.
 
 ---
+
+## 🌱 Волна 3 — РЕАЛИЗОВАНА (v0, зелёная сборка) · proof отложен
+
+Четыре расширения (№11–14) реализованы 2026-07-20; №15 (proof) осознанно отложен. Дизайн/обоснования — [`PLAN.md`](./PLAN.md) Часть III. Тот же ров: single-purpose, минимум прав, ничего не уходит из браузера, честный UI, кросс-браузер, fail-safe, свежая платформа 2026, no-remote-code.
+
+**Зелёная верификация волны 3 (2026-07-20):** `typecheck` все воркспейсы · `wxt build` Chrome MV3 + Firefox MV2 по всем четырём · `npm run guards` чисто на **28** собранных манифестах. Манифесты подтверждены: **convert/linksafe/vision инсталлятся с ПУСТЫМ списком варнингов** (ноль host_permissions), **sessions** — один честный `tabs` («Read your browsing history») + optional остальное.
+
+| # | Расширение | Статус | Манифест (Chrome) |
+|---|---|---|---|
+| 11 | **convert** | ✅ MVP зелёный | `storage,activeTab,scripting,contextMenus` + `omnibox` + opt-host на 2 rate-API; **ноль варнингов** |
+| 12 | **linksafe** | ✅ MVP зелёный | `contextMenus,activeTab,scripting,storage` + opt `<all_urls>`; **ноль варнингов** (hoist снят `manifestGenerated`-хуком) |
+| 13 | **vision** | ✅ MVP зелёный (я, референс) | `activeTab,scripting,storage`; **ноль варнингов** |
+| 14 | **sessions** | ✅ MVP зелёный | `tabs,storage,alarms` + optional `tabGroups/sessions/unlimitedStorage`; один честный `tabs`-варнинг |
+| 15 | **proof** | ⏸️ отложен осознанно | — (детали PLAN §15; строить после волны 3) |
+
+**Реализовано (кратко):** vision — матрицы Machado 2009 (severity сверены с Blink) + linearRGB + инъекция через `scripting` (DOMParser, guard-safe), полный EN/RU/ET. convert — 15 категорий юнитов руками (US/Imperial, SI/IEC honesty), мульти-календарь из `Intl` (feature-detect, Hijri ±1 лейбл), таблица Frankfurter → сумма локальна, omnibox+context-menu. linksafe — punycode/UTS-39/tldts локально, honest-формулировки (CJK не флагается), сеть opt-in. sessions — atomic `idx`+`sess:<uuid>` + карантин, Chrome placeholder / Firefox discarded lazy-restore + троттлинг, MV3 auto-save + crash-recovery.
+
+### 🔶 Долги/незакрытое волны 3 (перед стором)
+
+- [ ] **Реальные иконки:** сейчас плейсхолдеры (копия whoami). Добавить 4 бренда в `scripts/lib/draw.mjs` `BRAND` + глифы → `npm run icons`.
+- [ ] **Тесты волны 3:** пока только само-верификация сборкой; нет unit/e2e. Приоритетно покрыть чистую логику (convert `units.ts`/`datetime.ts`/`rates.ts`, linksafe `analyze.ts`, sessions `model.ts`/atomic-commit) — она уже вынесена browser-free.
+- [ ] **Живой headed-смоук** каждого (инъекция vision/linksafe, omnibox/badge convert, реальный save/restore sessions) — как у perf, единственный человеческий гейт.
+- [ ] **convert:** ⚠️ проверить **живые CORS** Frankfurter+CoinGecko (host-free fetch); ⚠️ Firefox MV2 не эмитит `optional_host_permissions` для CORS-fallback (у convert; linksafe уже развёл per-browser) — доделать, если fallback понадобится; Temporal-полифилл для Safari.
+- [ ] **PRIVACY.md / STORE.md** дополнить четырьмя расширениями (получатели: convert → Frankfurter/ECB + CoinGecko при явном действии; linksafe → целевой хост при opt-in резолве; vision/sessions → никто).
+- [ ] **Firefox gecko-id** уже проставлены (`<name>@blockaly.com`); сверить `data_collection_permissions` (у всех `none`, кроме — по факту все `none`).
+- [ ] Кандидаты на вынос в пакеты: `@blur/picker` (linksafe/assets/export scan), SVG-filter общее ядро (vision/blur). Техдолг, не блокер.
 
 ## ❓ Открытые вопросы (проверить перед соответствующей фазой)
 

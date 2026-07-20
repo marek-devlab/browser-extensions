@@ -1427,3 +1427,198 @@ extensions/compose/     🆕 №10
 - **Дозрел ли нативный `Element.setHTML()` / Sanitizer API до Baseline?** Если да — он предпочтительнее `DOMPurify` в §6.3. Пока не подтверждено первоисточником.
 - **Как WXT разводит `side_panel` (Chrome) и `sidebar_action` (Firefox)** из одного entrypoint — проверить на живой сборке до старта расширения 10.
 - Насколько точно GitLab GLFM расходится с GFM в `<details>` и чекбоксах — проверить вживую, превью обещать «близко», а не «идентично».
+
+---
+
+# ЧАСТЬ III — Волна 3: convert, linksafe, vision, sessions, proof (отложен)
+
+> 🟢 **РЕАЛИЗОВАНО (v0) 2026-07-20** — №11–14 построены и зелёные (typecheck/guards/build Chrome+Firefox); №15 (proof) отложен. Статус и долги — в [`TODO.md`](./TODO.md) «🌱 Волна 3». Ниже — слой дизайна (почему/как).
+>
+> Пять новых расширений (№11–15), собираемых тем же monorepo. Слой «почему/как», как и Части I–II. Основано на раунде deep-research с адверсариальной верификацией по первоисточникам (developer.chrome.com, MDN, extensionworkshop.com, TC39/W3C, caniuse, репозитории библиотек + их LICENSE, ToS API-провайдеров) на **2026-07-20**. ⚠️ — факты, опровергшие «очевидную» архитектуру.
+>
+> **Ров тот же и он структурный:** single-purpose, минимум разрешений (никаких install-time broad-host варнингов, кроме честно неизбежных), **ничего не уходит из браузера** (а если уходит — раскрыто и минимизировано), честный UI (оценка ≠ точность), кросс-браузер через WXT, fail-safe, свежая платформа 2026 (Temporal, Intl-календари, Machado-матрицы, Baseline) вместо библиотек, **no-remote-code** (MV3). Выигрываем не фичами, а **тем, чего не делаем**: не просим страшных прав и не отправляем данные.
+
+## 🔴 0. Главное решение: пять расширений, одно отложено
+
+Каждое проходит тест ревьюера «цель одной фразой», и каждая фича/разрешение ей служат.
+
+| # | Расширение | Цель одной фразой | Базовые разрешения | Install-варнинг | Риск ревью |
+|---|---|---|---|---|---|
+| 11 | **Universal Converter**<br/>`extensions/convert` | «Конвертировать юниты, валюты, время и даты прямо при просмотре» | `storage`, `activeTab`, `contextMenus`, `scripting`, ключ `omnibox` | **нет** | низкий |
+| 12 | **Link Inspector**<br/>`extensions/linksafe` | «Показать, куда реально ведёт ссылка, до клика» | `storage`, `activeTab`, `contextMenus` | **нет** | низкий |
+| 13 | **Vision Simulator**<br/>`extensions/vision` | «Увидеть страницу глазами людей с нарушениями зрения» | `activeTab`, `scripting`, `storage` | **нет** | минимальный |
+| 14 | **Session Saver**<br/>`extensions/sessions` | «Сохранять и восстанавливать наборы вкладок — только на этом устройстве» | `tabs`, `storage`, `alarms` | **«Read your browsing history»** (неизбежен) | средний |
+| 15 | **On-device Writing Checker**<br/>`extensions/proof` — **ОТЛОЖЕН** | «Проверять орфографию и стиль в полях ввода — целиком на устройстве» | `activeTab` + opt-in per-site | нет (при opt-in) | — (не строим сейчас) |
+
+**Ключевые следствия ров-дизайна волны 3:**
+- **№11–13 инсталлятся с пустым списком варнингов.** Сеть у конвертера (курсы) идёт на CORS-эндпоинты без `host_permissions`; доступ к странице у linksafe/vision — программной инъекцией по `activeTab`-клику, а не декларативным `<all_urls>` контент-скриптом. ⚠️ Помнить [[wxt-all-urls-manifest-hoist]]: runtime-`matches` контент-скрипта WXT хойстит в `host_permissions` собранного манифеста → варнинг. Поэтому **не** объявлять статический контент-скрипт там, где хватает `scripting.executeScript`; аудировать **собранный** манифест.
+- **№14 честно принимает один варнинг.** Прочитать URL всех вкладок нельзя без `tabs` (или broad-host), а `activeTab` даёт только активную. Значит «Read your browsing history» неизбежен — его **владеют честно** (микрокопия в popup: «мы читаем заголовки/URL вкладок, чтобы их сохранить; ничего не уходит»), а все прочие права (`tabGroups`, `sessions`, `cookies`, `unlimitedStorage`) держат **optional** и запрашивают по жесту. Так же проходят OneTab/Session Buddy/Toby.
+- **№15 отложен осознанно** — драйверы отсрочки ниже (§15). Не блокер волны 3.
+
+## Стек-дополнения волны 3 (что нового используем)
+
+| Слой | Выбор | Обоснование |
+|---|---|---|
+| **Дата/время/календари** | нативные `Temporal` + `Intl.DateTimeFormat` | Temporal в проде: **Chrome 144 (13.01.2026), Firefox 139, ES2026 Stage 4**. ⚠️ Нет в Safari/iOS → бандлить `@js-temporal/polyfill` (MIT). Таймзоны и календари всё равно через `Intl` |
+| **Мульти-календарь** | `Intl` `calendar`-опция | buddhist/chinese/dangi/hebrew/indian/islamic-umalqura/japanese/persian/roc — **из платформы, без библиотек и файлов данных** |
+| **CVD-симуляция** | SVG `feColorMatrix`, матрицы **Machado 2009** | Gold standard; ровно то, что использует Blink. ⚠️ linearRGB + Brettel-tritan — см. §13 |
+| **Punycode/IDN** | `punycode.js` (MIT) + `unicode-confusables` (UTS #39) + `tldts` (MIT, PSL MPL-2.0) | Нативного декода `xn--`→Unicode в браузере нет |
+| **Курсы валют** | Frankfurter (ECB, no-key, коммерция OK) | Отдаёт **всю таблицу** одним запросом → сумма считается локально и не уходит |
+| **Вкладки/группы** | `tabs`, `tabGroups`, `sessions`, `windows` | ⚠️ Расхождения Chrome/Firefox по discarded-восстановлению и версиям tabGroups — см. §14 |
+
+---
+
+# РАСШИРЕНИЕ 11 — Universal Converter (`extensions/convert`)
+
+## 11.1 Разрешения — ноль install-варнингов
+`storage` (префы, кэш курсов, избранное), `activeTab` (инлайн-конвертация выделения по клику), `contextMenus` («Convert selection»), `scripting`, и **ключ манифеста `omnibox`** (не разрешение, варнинга не даёт; Firefox тоже поддерживает — WXT эмитит обоим). ⚠️ **Сеть без host-варнинга:** курс/крипта-эндпоинты шлют пермиссивный CORS (`Access-Control-Allow-Origin: *`), поэтому SW делает `fetch()` **без** `host_permissions`. **Проверить живые CORS-заголовки** перед релизом; если провайдер снимет CORS — увести за `optional_host_permissions` по жесту. Opt-in авто-аннотация страницы — только `activeTab`/`optional_host_permissions`, **никогда** статический `<all_urls>`.
+
+## 11.2 ⚠️ Юниты — честность там, где конкуренты врут
+Санкционированный список `Intl.NumberFormat` `style:"unit"` — только ~50 юнитов (`mile-per-hour`, `celsius`, `byte`…); произвольные (furlong, pica, hex) он **не форматит** → для них ручной формат. Сами факторы — **руками, аудируемой таблицей** для честных категорий, где `convert-units`/`js-quantities` (оба MIT) молча схлопывают неоднозначность:
+- **SI-decimal vs IEC-binary:** MB (10⁶) ≠ MiB (2²⁰). Показывать обе, лейбл явный.
+- **US vs Imperial:** gallon/ton/fluid-ounce различаются — селектор «US / Imperial», не молчаливый дефолт.
+- **mpg-US / mpg-UK / L·100km**, **bin/oct/dec/hex**, **px/pt/em/rem/pica** (dev-аудитория).
+- **Cooking cups↔grams** — нужна per-ingredient таблица плотностей (руками), лейбл «≈, зависит от ингредиента».
+
+## 11.3 Валюта/крипта — приватный дизайн (тянем таблицу, не сумму)
+**Валюта: Frankfurter (frankfurter.dev)** — no-key, без дневных капов, ECB + ~84 ЦБ, коммерция «yes, absolutely», self-hostable. **`GET /v2/rates?base=USD` отдаёт ВСЮ таблицу** → сумма пользователя умножается **локально и наружу не уходит**. Кэш + disclosure «as of \<date\>, source ECB via Frankfurter». Фолбэк: **open.er-api.com** (no-key, но ⚠️ обязательная атрибуция + запрет редистрибуции). ⚠️ **exchangerate.host в 2026 уже требует ключ** — выбыл. ⚠️ Проверить, что таблица Frankfurter надёжно покрывает RUB (ECB дропал пары) — иначе RUB через фолбэк.
+
+**Крипта: CoinGecko keyless** `/simple/price?ids=bitcoin,ethereum&vs_currencies=usd,eur,rub` — no-key, IP-rate-limit. ⚠️ **Коммерция требует видимой атрибуции «Data provided by CoinGecko» + ссылки**; keyless shared-IP лимиты волатильны → дать опцию вставить свой free Demo-ключ. Фолбэк: Coinbase/Kraken public ticker.
+
+## 11.4 Мульти-календарь + ⚠️ caveats (фишка расширения)
+`Intl.DateTimeFormat` `calendar` покрывает **все** целевые: gregory/islamic-umalqura/chinese/hebrew/persian(jalali)/japanese/indian(saka)/buddhist/dangi/coptic/ethiopic/roc — из платформы. Китайский зодиак: `formatToParts()` даёт `yearName` (стебель-ветвь, напр. 甲子) + `relatedYear`; 12 животных — из земной ветви (крошечная таблица имён).
+- ⚠️ **Firefox версионно-зависим:** до ICU4X-миграции 2026 ([Bugzilla 1954138](https://bugzilla.mozilla.org/show_bug.cgi?id=1954138)) не имел chinese/dangi/persian/islamic-umalqura. **Feature-detect** `Intl.supportedValuesOf('calendar')` в рантайме, деградировать мягко. Проверить против целевого Firefox ESR.
+- ⚠️ **Hijri честность:** `islamic-umalqura` — предвычисленная **табличная** система, не наблюдение луны; для Рамадана/Шавваля/Зуль-хиджа официальная дата может отличаться **±1 день**. Лейбл «Umm al-Qura (tabular) — religious dates may vary ±1 day by local sighting», **никогда** не подавать как авторитетную дату Ид.
+
+## 11.5 Temporal vs Intl
+Использовать нативный `Temporal` где есть (чистые `PlainDate`/`ZonedDateTime`/календарная арифметика), **feature-detect**, бандлить `@js-temporal/polyfill` (MIT) для Safari/iOS и старого Firefox (бандл-полифилл под MV3 легален). Таймзоны/формат календаря — всегда через `Intl`.
+
+## 11.6 UX/UI (детально)
+Продукт-оунер просил проработать особо. Четыре поверхности, все клавиатуро-first, offline-first (юнит/дата/тз/календарь работают без сети; сеть — только курсы, из кэша):
+1. **Инлайн-конвертация выделения** (киллер-UX): выделил «5 miles» / «20°C» / «$50» / «3pm EST» на любой странице → парсер распознаёт величину и юнит → ненавязчивый dismissable-бейдж с результатом; на hover — источник+таймстемп. По `activeTab`, без постоянного присутствия.
+2. **Popup «один вход → много выходов»**: одно умное поле, живой список целей (1 BTC → USD+EUR+RUB одновременно), `Tab`/`↑↓` навигация, `Enter`/`⌘C` копирование, swap. **Неоднозначность surface, не прячем**: при «gallon»/«MB» всплывает селектор «US/Imperial», «MB decimal/MiB binary».
+3. **Omnibox quick-convert**: ключевое слово → «5mi to km» → результат. Ноль доступа к странице.
+4. **Context-menu «Convert selection»** + **opt-in per-page авто-аннотация** распознанных величин (за `optional_host_permissions`).
+
+Плюс: избранное/пиннед пары, мульти-календарная дата-панель (с Hijri-caveat), hex/bin/oct-панель для девов, контроль точности/округления, locale-формат через `Intl.NumberFormat`, тема + i18n (EN/RU/ET). **Fail-safe:** если курсы устарели/недоступны — показать последний кэш с возрастом, **никогда** выдуманное число.
+
+## 11.7 Мобильные
+**Firefox Android** — основная мобильная цель (omnibox, contextMenus, Temporal 139+, ICU4X-календари). **Safari iOS** — popup-first: ⚠️ нет Temporal (полифилл), проверить покрытие календарей в WebKit-ICU, ограниченный паритет omnibox/contextMenus.
+
+---
+
+# РАСШИРЕНИЕ 12 — Link Inspector (`extensions/linksafe`)
+
+## 12.1 Разрешения — warning-free инсталл
+`contextMenus` + `storage` + `activeTab` как стоячий набор — ни один не даёт host-варнинга. ⚠️ **Не** объявлять `<all_urls>` контент-скрипт (в отличие от seo, который принимает broad-host ради чтения каждой страницы): hover/scan-UI инжектится `scripting.executeScript` по клику. Сетевой резолв и hop-by-hop — за `optional_host_permissions` (`<all_urls>`), запрос по жесту. Firefox: `optional_host_permissions` c FF128 (bug 1766026); MV2 кладёт паттерны в `optional_permissions`.
+
+## 12.2 ⚠️ Финальный URL дёшев, цепочка — нет
+`fetch` `redirect:"follow"` отдаёт **только первый и последний** URL (`response.url`); промежуточных хопов нет. `redirect:"manual"` → **opaqueredirect** (status 0, `Location` **не читается**). Следствие: **«финальный адрес» = один fetch** (MVP). **Hop-by-hop со статусами требует `webRequest.onBeforeRedirect`** (observational webRequest в Chrome MV3 ещё разрешён, в Firefox нативен) + host-грант → отдельный advanced opt-in (webRequest добавляет ревью-вес). ⚠️ **HEAD ≠ GET** (шортенеры отдают 405 или другой Location; meta-refresh/JS-редиректы fetch не видит вовсе) → резолвнутый URL = «следующий хоп по мнению сервера для нашего неаутентифицированного запроса», не гарантия. Честный UI это говорит. ⚠️ `mode:"no-cors"` → opaque (бесполезен) → резолв **действительно** требует host-гранта, permission-free шортката нет.
+
+## 12.3 Локально vs сеть — приватный дизайн
+**Дефолт = 100% локально, ноль сети.** ⚠️ **Резолв ссылки её ОТПРАВЛЯЕТ.** Шортенер/трекинг-URL часто несут one-time токены (unsubscribe, reset, per-recipient id); фетч **сжигает токен и деанонимизирует** — ровно тот вред, от которого защищаем. Поэтому сеть — opt-in, по-действию, за host-грантом, с plain-language warning («это обратится к `bit.ly` и раскроет, что вы кликнули; любой трекинг-код уйдёт»). Per-domain allowlist «always resolve» для доверенных.
+
+## 12.4 Локальные эвристики (ноль сети) + лицензии
+- **Punycode→Unicode:** `new URL(href).hostname` даёт `xn--`-форму, нативного декода нет → бандлить **punycode.js** (MIT).
+- **Confusable/mixed-script (UTS #39):** флажить смешанные скрипты (кириллическая «аpple.com») через **`unicode-confusables`** (MIT). ⚠️ Не over-flag легитимные не-латинские домены: «looks like apple.com but uses Cyrillic letters», не «phishing».
+- **Cross-registrable-domain** (anchor-текст `paypal.com` vs href eTLD+1 `evil.com`): eTLD+1 через **`tldts`** (MIT); сам PSL — MPL-2.0, периодический рефреш в бандле.
+- Плюс: insecure `http://`, опасные схемы `data:`/`javascript:`/`blob:`, список известных шортенеров, strip трекинг-параметров (utm_*, fbclid, gclid…) + copy-clean.
+
+## 12.5 ⚠️ Safe Browsing — НЕ встраиваем
+⚠️ **Safe Browsing API — только non-commercial**; коммерции нужен платный **Web Risk**. Значит в бандл **не встраиваем**. MVP: локальные эвристики + опционально bundled периодически-обновляемый open-блоклист (напр. URLhaus), проверяемый локально. Либо BYO-key Web Risk как opt-in с disclosure. **Конкуренты (Unshorten.it/CheckShortURL/WhereGoes)** — серверные резолверы: вы отдаёте им ссылку с токенами, они видят ваш браузинг — ровно то, чего мы избегаем.
+
+## 12.6 Мобильные
+**Firefox Android**: нет hover на тач → long-press context-menu + tap-to-inspect в scan-списке. **Safari/iOS**: только локальный reveal/context-menu, сетевой резолв — drop.
+
+---
+
+# РАСШИРЕНИЕ 13 — Vision Simulator (`extensions/vision`)
+
+## 13.1 Разрешения — сильнейший фит ров
+Нет privacy/FOUC-императива (симуляция может примениться через сотни мс) → **не нужен** `<all_urls>`/`document_start`. `activeTab` + `scripting` (`insertCSS`/`executeScript` по клику), `storage`. **Ноль broad-host варнинга.** ⚠️ Не декларировать статический контент-скрипт (manifest-hoist). ⚠️ Нельзя на `chrome://`/веб-сторе/AMO → fail-safe «can't simulate this page».
+
+## 13.2 CVD-матрицы — авторитетный источник
+**Machado, Oliveira & Fernandes (2009), IEEE TVCG** — то, что использует Blink; опубликованная Chrome deuteranopia `0.367…` совпадает с Machado severity-1.0 (провенанс подтверждён). Хранить **11 матриц на тип** (severity 0.0–1.0 шаг 0.1) → нативно питает слайдер аномальной трихромазии (protanomaly/deuteranomaly/tritanomaly). Achromatopsia = luma-grayscale (Rec.709 `0.2126/0.7152/0.0722`).
+- ⚠️ **Не использовать наивные Wikipedia/hail2u-матрицы** (channel-copy `0.625 0.375 0`) — не физиологичны, пере-насыщают.
+- ⚠️ **Фильтры обязаны считаться в linearRGB** (`color-interpolation-filters="linearRGB"`) иначе результат неверный.
+- ⚠️ **Тританопия не выражается одной матрицей корректно** — точный режим требует **Brettel 1997** (две полуплоскости + `feBlend`); матрица Machado-tritan = аппроксимация. Ship Machado (protan/deutan/anomalous) по умолчанию, Brettel-tritan — opt-in «accurate», лейблы честные.
+
+## 13.3 Техника на условие + ⚠️ containing-block
+| Условие | Техника |
+|---|---|
+| CVD (все) | `feColorMatrix` |
+| Achromatopsia/grayscale | `saturate(0)` luma |
+| Cataract | `feGaussianBlur` + жёлтый tint + падение контраста |
+| Refractive blur (миопия) | `feGaussianBlur stdDeviation` слайдером (реюз blur-компетенции) |
+| Low contrast | `feComponentTransfer` slope<1 |
+| Glaucoma/AMD/retinopathy/hemianopia | **radial/linear-gradient маски**, fixed full-viewport `pointer-events:none` overlay |
+
+`filter` на `documentElement`. ⚠️ **Ключевая ловушка:** `filter` на предке делает его containing-block для `position:fixed` потомков → sticky-хедеры скроллятся с контентом (для whole-page симуляции визуально приемлемо, но помнить). ✅ **Cross-origin iframes покрываются бесплатно**: ancestor-`filter` применяется к композитным пикселям iframe → **одна** инъекция в топ-фрейм (в отличие от blur, которому нужен allFrames). Overlay-маски — отдельным top-layer элементом (не filtered-потомком), трекают вьюпорт.
+
+## 13.4 ⚠️ Производительность
+`feColorMatrix` дёшев per-pixel, но full-page `filter` промоутит композит-слой и рерастеризует на скролле; `feGaussianBlur` (катаракта/миопия) заметно дороже (свёртка) + выбивает видео с hardware-overlay. ⚠️ **Firefox: SVG-фильтры были CPU-bound до FF132** (WebRender-ускорение, окт-2024). На 2026-baseline ок, но на старом ESR full-page фильтры лагают → **fail-safe: режим «статичный скриншот-симуляция»**. Gate `feGaussianBlur` за явный тоггл с cost-warning.
+
+## 13.5 Live-инструменты (всё локально)
+Всё в single-purpose «прочувствовать нарушения»: (1) **WCAG-контраст на hover** (4.5:1/3:1, формула WCAG 2.2, локально; ⚠️ на тач — tap-fallback через `CAN_HOVER`-паттерн blur); (2) **text-spacing стресс-тест** (WCAG 1.4.12: line 1.5/letter 0.12em/word 0.16em/para 2em → клиппинг?); (3) **reflow-тест** (1.4.10, 320px/400%); (4) **prefers-reduced-motion превью**; (5) grayscale (reliance-on-color). ⚠️ **Photosensitivity (2.3.1)** — настоящий three-flash анализ тяжёл (PEAT-уровня) → только грубая «rapid-flash» эвристика с лейблом «non-authoritative» или опустить.
+
+## 13.6 Конкуренты
+**NoCoffee** — снят из CWS, только Firefox, заброшен, автор признаёт «не медицински-аудирован». **Funkify** — freemium, провенанс матриц не раскрыт. **DevTools Rendering→Emulate vision deficiencies** — только 4 CVD + blur + reduced contrast, **без слайдера**, без глаукомы/AMD/hemianopia, Chrome-only, закопан. Бьём широтой + слайдером + one-click popup + кросс-браузер. Скриншот симуляции — делегировать sibling `capture` (фильтр — реальные пиксели, `captureVisibleTab` их включает).
+
+---
+
+# РАСШИРЕНИЕ 14 — Session Saver (`extensions/sessions`)
+
+## 14.1 ⚠️ `tabs`-варнинг неизбежен — владеем честно
+Чтение `Tab.url`/`title` через `tabs.query()` требует `tabs` (или broad-host); `activeTab` даёт только активную вкладку по жесту → бесполезно для «сохрани все вкладки окна». Значит **«Read your browsing history» неизбежен**. Владеем честно: описание в house-стиле («Reads your open tabs only to save them; stored on your device, never sent»), Firefox `data_collection_permissions:{required:['none']}` (как `export`), и микрокопия в popup под `?`. Под **CWS Limited Use (энфорс 01.08.2026)** local-only = «collect nothing». Все прочие права — **optional, по жесту**.
+
+## 14.2 Разрешения
+| Право | Варнинг | Зачем |
+|---|---|---|
+| `tabs` | «Read your browsing history» | ядро: URL/title. Неизбежно |
+| `storage` | тихо | локальное хранение |
+| `alarms` | тихо | авто-сейв под MV3 |
+| `tabGroups` (Chrome, **optional**) | ⚠️ **«View and manage your tab groups»** (реальный варнинг!) | восстановить имя/цвет группы, по жесту |
+| `sessions` (**optional**) | сворачивается в `tabs`-варнинг | «восстановить недавно закрытые» |
+| `cookies` (Firefox, **optional**) | тихо | `tabs.create({cookieStoreId})` в контейнер |
+| `unlimitedStorage` (**optional**) | **тихо** | выйти за 10 MB для power-users |
+
+Ни host-permissions, ни контент-скриптов, ни `downloads`.
+
+## 14.3 ⚠️ Разъезды Chrome/Firefox
+- **tabGroups:** Chrome стабилен 137+; ⚠️ **Firefox — `tabs.group()` c FF138, полный `tabGroups.update()` (title/color/collapsed) только c FF139**. Feature-detect `browser.tabGroups`.
+- **Восстановление без спайка:** ⚠️ **Chrome `tabs.create` не имеет `discarded`** (у Firefox есть). Chrome-воркэраунд: `active:false` → `tabs.discard(id)`, но нельзя дискардить до коммита/активную → надёжный паттерн: bundled **suspended-placeholder** (`sessions.html#<realURL>`), грузящий реальный URL только на активацию (ноль сети до клика). ⚠️ **Троттлить создание (напр. по 5)** — массовое восстановление discarded-вкладок ловило дедлоки UI-треда Chromium.
+- **Контейнеры (`cookieStoreId`)** — только Firefox; на Chrome молча дропать.
+
+## 14.4 Модель данных + отказоустойчивость
+`storage.local` cap **10 MB** (URL+title ~150 B/tab → ~60k вкладок), `unlimitedStorage` снимает (тихо → запрашивать при подходе к квоте). Модель: один `idx` + по ключу на сессию (`sess:<uuid>`), чтобы не переписывать все сессии на каждый сейв. **Resilience:** пишем `sess:<uuid>` первым, `idx`-указатель флипаем **последним** (atomic-ish commit); rolling `sess:autosave`; на чтении валидируем shape и **карантиним** битые ключи, не падаем; храним last-good — прямой ответ на **потерю данных Session Buddy v4**.
+
+## 14.5 Авто-сейв под MV3
+SW умирает через ~30с → **не** держать состояние в памяти SW. Событийная персистентность: слушатели `tabs.onCreated/onUpdated/onRemoved/onMoved` + `windows` пишут debounced-снапшот прямо в `storage.local`; `chrome.alarms` (мин 30с) переpersist'ит «живую» сессию. Каждый листенер будит SW, делает одну запись, отпускает. **Crash recovery:** на старте предложить восстановить `sess:autosave`. **Export/import** — downloads-free (Blob + `<a download>` со страницы расширения, как `export`), ноль `downloads`.
+
+## 14.6 Конкуренты (privacy-грехи) + мобильные
+**Toby** — облако + аккаунт, лимит 60 вкладок, воркспейс на их серверах. **OneTab** — локально, но «share as web page» аплоад + переустановка **убивает данные**. **Session Buddy** — локально, но v4-миграция 2025 **потеряла годы сессий**. **Workona/Partizion** — полное облако. Хук доверия: прецедент **EditThisCookie «продали мутному покупателю»** — что звонит домой/держит аккаунт, можно продать и вооружить; **local-only = нечего продать, синкать, взломать, subpoena.** ⚠️ **Firefox Android**: `tabs` есть, но одно окно, нет `sessions` API → урезанный билд. Safari — best-effort save/restore. Chrome Android — расширений нет.
+
+---
+
+# РАСШИРЕНИЕ 15 — On-device Writing Checker (`extensions/proof`) — ОТЛОЖЕН
+
+> Анти-Grammarly: текст **никогда не уходит** из браузера. Самое сложное в постройке из всех — исследовано, чтобы отсрочка была обоснована, а будущий билд имел карту мин. Ниже — почему откладываем.
+
+## 15.1 ⚠️ Editor-integration — главный драйвер отсрочки
+По собственному инжинирингу Grammarly: они **отказались** от in-DOM подчёркиваний (портят содержимое поля, ломают сайты) в пользу overlay через `Range.getClientRects()` **вне** поля — но трекинг позиции `getBoundingClientRect()` «легко съедает >90% CPU»; ProseMirror/Quill/Draft.js **активно блокируют** мутацию DOM расширением; IME/композиция превращает поддержку подчёркиваний «из Hard в Nightmare». Плюс sticky-хедеры, попапы, clipped-контейнеры. Надёжное read/underline/replace через `<input>`/`<textarea>`/contenteditable **и** Slate/ProseMirror/Lexical/CodeMirror без поломки страниц — мульти-квартальная работа и **настоящий ров Grammarly**.
+
+## 15.2 ⚠️ Реальная грамматика — неподъёмна в 2026
+`retext`+`nlcst` (все MIT: retext-spell/-passive/-simplify/-repeated-words…) — чистый JS, мгновенно, оффлайн, но это **правила/эвристики**, не грамматика (нет согласования, времён, артиклей). **On-device модель** (transformers.js+WebGPU): реальна, но **400 MB–2 GB** загрузки, **2–5 с/сложное предложение**, WebGPU-gated → враждебно «лёгкому single-purpose». ⚠️ **Вердикт: нейро-грамматика как ядро не жизнеспособна в 2026** — retext-правила = реалистичный оффлайн-слой.
+
+## 15.3 ⚠️ Лицензии словарей + нативная угроза
+Матрица `wooorm/dictionaries` (файлы держат upstream-лицензию): EN-семья/**ru**/nl — **permissive ✅**; fr/pt/**et**/es — LGPL/MPL/GPL-фрикции ⚠️; **de — GPL, жёсткий блокер ❌** (permissive Hunspell-словаря немецкого нет). «Любой язык» не обещать. MV3: словари **бандлить**/`web_accessible_resources`, не фетчить. EN-пара ~1 MB → мульти-локаль раздувает пакет. ⚠️ **Экзистенциальная угроза:** Chrome уже ships **on-device Proofreader API (Gemini Nano)** — та же ценность «on-device, ничего не уходит», но Chrome-only + требует 22 GB диска/>4 GB VRAM. **Наш дифференциатор:** (a) кросс-браузер вкл. Firefox; (b) стиль/ясность; (c) мульти-локаль UI; (d) работает на слабом железе. Без (a)+(b)+(c) продукт избыточен нативу.
+
+## 15.4 MVP-если-когда
+nspell (Hunspell-совместимый, чистый JS) + EN/RU/NL permissive словари, **только `<textarea>`/`<input>`** (без rich-editors), opt-in per-site (`activeTab`), 2–3 retext-стиль-правила как «больше чем натив». Без нейро-модели, без немецкого.
+
+## Открытые вопросы волны 3 (проверить перед соответствующей фазой)
+- **convert:** живые CORS-заголовки Frankfurter+CoinGecko (решает host-free fetch); `supportedValuesOf('calendar')` целевого Firefox ESR; коммерческий ToS keyless-CoinGecko + размещение атрибуции; покрытие календарей в iOS-WebKit-ICU + бюджет Temporal-полифилла; покрывает ли таблица Frankfurter RUB.
+- **linksafe:** каденс/хостинг рефреша bundled PSL+confusables+shortener-данных (всё в бандле, MV3); оправдан ли ревью-вес `webRequest` ради hop-by-hop vs финальный-URL для MVP (склон: финальный-URL); бюджет размера confusables-таблицы; предлагать ли BYO-key Web Risk при ров-правиле «ничего не уходит».
+- **vision:** ⚠️ спайк `backdrop-filter: url(#cvd)` на `pointer-events:none` overlay — фильтрует фон **без** containing-block-поломки, но поддержка SVG-`url()` на `backdrop-filter` неровная (особ. Firefox) — может быть чище всего для whole-page; дефолт Machado-tritan vs Brettel; Firefox-ESR SVG-filter перф.
+- **sessions:** точный Chrome-билд, где `tabs.discard` надёжно берёт свежесозданную `active:false` (иначе placeholder-подход); актуален ли `tabGroups`-варнинг в текущем стабильном Chrome UI; дефолтная каденс авто-сейва vs батарея на мобиле; паритет контейнеров в Safari.
+- **proof:** может ли нативный `spellcheck` Firefox + свой suggestion-слой обойти overlay-CPU на плоских полях; честна ли область «только `<textarea>`/`<input>`»; приемлема ли грациозная дивергенция (Chrome Proofreader API + retext на Firefox); немецкий без permissive-словаря — опустить.

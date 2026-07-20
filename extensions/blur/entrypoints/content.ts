@@ -83,14 +83,28 @@ function rulesFromSettings(
   return rules;
 }
 
-/* ---- C7: pre-blur profile cache -------------------------------------- */
+/* ---- C7: pre-blur profile cache (FAIL-SAFE) -------------------------- */
 // The block-first sheet must land synchronously at document_start, before the
 // first `await`. Real settings live in async `storage.local`, which resolves
-// only AFTER first paint — too late to decide the sheet. So the last-resolved
-// effective profile for THIS origin is cached in page `localStorage`, the only
-// synchronous per-origin store available this early. On the next visit the sheet
-// is seeded from it, so an allowlisted/disabled site no longer flashes blurred
-// (reverse-FOUC) and a customised radius/category set is honoured from frame one.
+// only AFTER first paint — too late to decide the sheet. The only synchronous
+// per-origin store reachable this early is page `localStorage`, so the last
+// effective profile for THIS origin is cached there and used to honour a
+// customised radius / category set / mask from frame one.
+//
+// ⚠️ SECURITY: a content script's isolated world SHARES DOM storage with the
+// page, so this cache is page-READABLE and page-WRITABLE. A hostile origin could
+// write `{active:false}` (or zero every category, or `radius:0`) to make the
+// synchronous pre-blur skip the very content the user installed this extension to
+// hide — a brief but real reverse-FOUC of sensitive media before `reconcile()`'s
+// trusted async read re-blurs it. There is no forgery-proof channel here (any
+// static secret is extractable from the public package, and `crypto.subtle` is
+// async), so the cache is treated as UNTRUSTED and may only ever STRENGTHEN the
+// sheet, never skip or weaken it — see `effectivePreblurProfile()`. The worst a
+// page can now do is make us pre-blur MORE of its own content (harmless, self-
+// heals at reconcile); it can never make us pre-blur LESS. The legitimate
+// "allowlisted / disabled" case is honoured by `reconcile()` from trusted
+// `chrome.storage`, which clears the sheet a tick later — a brief over-blur that
+// always flashes toward MORE privacy, never less.
 const PREBLUR_KEY = 'bx:preblur-profile';
 
 interface PreblurProfile {
@@ -245,45 +259,62 @@ export default defineContentScript({
     let appliedMaskStyle: MaskStyle = 'blur';
     let removeRehideOnBlur: (() => void) | undefined;
 
-    // BLOCK-FIRST / FOUC (#6): the content script's async storage read resolves
-    // AFTER first paint, so a conservative pre-blur sheet is injected here,
-    // synchronously, before the first `await`. It is seeded from the cached
-    // per-origin profile (C7) when we have one — so an allowlisted/disabled site
-    // stays sharp and a customised radius/category set is honoured — and falls
-    // back to the shipped defaults on the very first visit. `reconcile()` removes
-    // it once real settings resolve.
-    function injectPreblur(): () => void {
+    // The effective pre-blur profile: the shipped default, STRENGTHENED (never
+    // weakened) by the untrusted per-origin cache (C7). Every dimension takes the
+    // more-hiding of the two — union of categories, max radius, solid over blur,
+    // higher opacity, more-restrictive reveal — so a page that tampered the cache
+    // can only ever add pre-blur, never remove it. An inactive/absent cache
+    // contributes nothing and we fall back to the shipped default, which blurs.
+    function effectivePreblurProfile(): PreblurProfile {
+      const d = DEFAULT_BLUR_SETTINGS.blur;
       const cached = readPreblurProfile();
-      if (cached) {
-        // Cache says this origin is allowlisted or the extension is off — skip
-        // pre-blur entirely rather than flashing content the user wants sharp.
-        if (!cached.active) return () => {};
-        const rules = rulesFromProfile(cached);
-        if (rules.length === 0) return () => {};
-        const css = buildStylesheet(rules, {
-          blurRadius: cached.radius,
-          reveal: cached.reveal,
-          hostname,
-          maskStyle: cached.maskStyle,
-          maskColor: cached.maskColor,
-          maskOpacity: cached.maskOpacity,
-        });
-        return css ? applyStylesheet(document, css, 'bx-preblur') : () => {};
-      }
-      // First visit to this origin: conservative default sheet.
+      // An inactive cache (allowlisted/disabled) must not SUBTRACT from the
+      // default — it simply adds nothing. reconcile() does the trusted reveal.
+      const add = cached && cached.active ? cached : null;
+      // never (2) hides more than click (1) hides more than hover (0): during the
+      // pre-blur window take whichever reveals least, so a page cannot downgrade a
+      // user's `never` to a hover-peek for those first frames.
+      const revealRank: Record<RevealMode, number> = { hover: 0, click: 1, never: 2 };
+      const reveal = add && revealRank[add.reveal] > revealRank[d.reveal] ? add.reveal : d.reveal;
+      return {
+        active: true,
+        radius: Math.max(d.radius, add?.radius ?? 0),
+        reveal,
+        images: d.images || (add?.images ?? false),
+        video: d.video || (add?.video ?? false),
+        posters: d.posters || (add?.posters ?? false),
+        // Solid is a strictly stronger mask than a translucent blur, and a higher
+        // opacity hides more — take the more-hiding of each.
+        maskStyle: d.maskStyle === 'solid' || add?.maskStyle === 'solid' ? 'solid' : 'blur',
+        maskColor: add?.maskColor ?? d.maskColor,
+        maskOpacity: Math.max(clampMaskOpacity(d.maskOpacity), add?.maskOpacity ?? 0),
+      };
+    }
+
+    // BLOCK-FIRST / FOUC (#6): the content script's async storage read resolves
+    // AFTER first paint, so the pre-blur sheet is injected here, synchronously,
+    // before the first `await`. It is the shipped default strengthened by the
+    // per-origin cache (see `effectivePreblurProfile` — fail-safe, C7), so a
+    // customised radius/category/mask is honoured from frame one while a hostile
+    // page can never suppress it. `reconcile()` removes it once real (trusted)
+    // settings resolve — which is also where an allowlisted/disabled origin is
+    // revealed.
+    function injectPreblur(): () => void {
+      // Compiled kill switch: a build that ships disabled pre-blurs nothing. This
+      // is the ONLY path that skips the sheet, and it is not page-controlled.
       if (!DEFAULT_BLUR_SETTINGS.enabled) return () => {};
-      const rules = rulesFromSettings(DEFAULT_BLUR_SETTINGS);
+      const profile = effectivePreblurProfile();
+      const rules = rulesFromProfile(profile);
       if (rules.length === 0) return () => {};
       const css = buildStylesheet(rules, {
-        blurRadius: DEFAULT_BLUR_SETTINGS.blur.radius,
-        reveal: DEFAULT_BLUR_SETTINGS.blur.reveal,
+        blurRadius: profile.radius,
+        reveal: profile.reveal,
         hostname,
-        maskStyle: DEFAULT_BLUR_SETTINGS.blur.maskStyle,
-        maskColor: DEFAULT_BLUR_SETTINGS.blur.maskColor,
-        maskOpacity: DEFAULT_BLUR_SETTINGS.blur.maskOpacity,
+        maskStyle: profile.maskStyle,
+        maskColor: profile.maskColor,
+        maskOpacity: profile.maskOpacity,
       });
-      if (!css) return () => {};
-      return applyStylesheet(document, css, 'bx-preblur');
+      return css ? applyStylesheet(document, css, 'bx-preblur') : () => {};
     }
 
     let removePreblur: (() => void) | undefined = injectPreblur();
@@ -499,7 +530,13 @@ export default defineContentScript({
       const active = settings.enabled && !isAllowlisted(settings.allowlist, hostname);
 
       // C7: persist the effective profile for THIS origin so the next visit's
-      // synchronous pre-blur sheet matches reality (skips blur when inactive).
+      // synchronous pre-blur sheet can be STRENGTHENED to the user's real config
+      // from frame one (larger radius, solid mask, extra categories). This value
+      // is untrusted on read-back — a page can rewrite it — so it can only ever
+      // add pre-blur, never skip it (see `effectivePreblurProfile`). `active` is
+      // recorded so an inactive origin contributes nothing rather than forcing the
+      // default; the trusted reveal for allowlisted/disabled origins is done below
+      // and by reconcile(), not by this cache.
       writePreblurProfile({
         active,
         radius: settings.blur.radius,

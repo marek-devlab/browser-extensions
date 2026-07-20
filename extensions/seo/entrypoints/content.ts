@@ -66,8 +66,31 @@ function makeNonce(): string {
 }
 
 // Inject the axe runner into the page and resolve with the report it posts back.
-// A one-time nonce ties the response to this request and rejects page-forged
-// messages. The runner is web-accessible (see wxt.config.ts).
+//
+// The runner runs in the page's MAIN world (axe needs the live document, and a
+// 550 kB engine must stay a lazily-fetched, web-accessible chunk rather than
+// bloat this always-on `<all_urls>` script — bundling it in-world adds ~0.6 MB to
+// every page load). A one-time 128-bit nonce ties the reply to THIS request so a
+// page cannot forge a result with a blind `postMessage`.
+//
+// ⚠️ DEFENCE-IN-DEPTH, NOT AIRTIGHT: a content script cannot hand a secret to a
+// MAIN-world script over any channel the page can't also observe — the nonce
+// rides the injected `<script>`'s dataset, and a page that synchronously hooks
+// DOM insertion (patched `appendChild`, legacy `DOMNodeInserted`) can read it
+// before we remove the element. So the nonce stops GENERIC/opportunistic forgery
+// (a page blindly spamming `blur-seo-a11y` messages), not a page purpose-built to
+// race this exact audit. We shrink that window as far as MAIN-world allows:
+//   - `use_dynamic_url` (wxt.config.ts) hides the runner URL, killing the fixed-
+//     URL fingerprint probe and a predictable pre-instrumentation target.
+//   - `keepInDom: false` removes the `<script>` the instant it finishes executing
+//     (the runner reads its nonce synchronously at line 1), so an ASYNC observer
+//     (MutationObserver) never sees it — only a synchronous hook can.
+// Fully closing it would mean running axe in the ISOLATED world, which with WXT's
+// single-IIFE content-script bundling forces axe onto every page (measured +0.6 MB
+// on content.js), or a `scripting`-based isolated inject (a permission this
+// deliberately reviewable auditor refuses). The residual — a hostile page faking
+// ITS OWN audit numbers, with no privilege or cross-origin gain — is not worth
+// either cost.
 async function runA11y(): Promise<A11yReport> {
   // Resolve the locale once so the two failure messages this owns (a forged/empty
   // reply, and the timeout) are surfaced in the user's language. axe's OWN result
@@ -76,8 +99,10 @@ async function runA11y(): Promise<A11yReport> {
   const t: TFn = (key, vars) => tAt(locale, key, vars);
   return new Promise<A11yReport>((resolve, reject) => {
     const nonce = makeNonce();
-    // Kept in the DOM so `document.currentScript` is reliably the axe runner
-    // while it executes; removed here once we have the result.
+    // Removed from the DOM the moment it finishes executing (`keepInDom: false`),
+    // so an async MutationObserver never gets to read the nonce off its dataset.
+    // `document.currentScript` is still valid during the runner's synchronous
+    // top-level read, which is all it needs.
     let injected: HTMLScriptElement | null = null;
 
     const cleanup = (): void => {
@@ -103,7 +128,7 @@ async function runA11y(): Promise<A11yReport> {
     window.addEventListener('message', onMessage);
 
     void injectScript('/axe-run.js', {
-      keepInDom: true,
+      keepInDom: false,
       modifyScript(script) {
         script.dataset.blurNonce = nonce;
         injected = script;

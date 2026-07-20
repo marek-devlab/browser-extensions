@@ -65,8 +65,17 @@ export default defineConfig({
       // the page by the content script only when an audit runs, so it must be
       // web-accessible. Declared in MV3 object form; WXT converts it to the MV2
       // shape for the Firefox build automatically.
+      //
+      // `use_dynamic_url: true` serves it from a per-session UNGUESSABLE URL
+      // instead of the fixed `chrome-extension://<id>/axe-run.js`. That fixed URL
+      // is otherwise a reliable INSTALL FINGERPRINT — any page can `fetch()` it
+      // and learn the auditor is installed — and a predictable target a page could
+      // pre-instrument. The rotating token closes the probe. (The runner still
+      // carries a one-time nonce so the content script only trusts ITS reply; see
+      // entrypoints/content.ts for why that boundary is defence-in-depth, not
+      // airtight, and why full isolation is a worse tradeoff.)
       web_accessible_resources: [
-        { resources: ['axe-run.js'], matches: ['<all_urls>'] },
+        { resources: ['axe-run.js'], matches: ['<all_urls>'], use_dynamic_url: true },
       ],
 
       // WXT emits the DevTools page from entrypoints/devtools.html; it registers

@@ -1,17 +1,17 @@
 # Store submission guide
 
-Submission checklist and per-extension listing copy for the ten extensions in
-this monorepo. Ground truth for names, descriptions, and permissions is each
+Submission checklist and per-extension listing copy for the fourteen extensions
+in this monorepo. Ground truth for names, descriptions, and permissions is each
 extension's **generated manifest**
 (`extensions/<name>/.output/{chrome-mv3,firefox-mv2}/manifest.json`), with the
 rationale in `extensions/<name>/wxt.config.ts`; this file must match them. The
 shared privacy policy is [`PRIVACY.md`](./PRIVACY.md) — host it and link it from
 every listing.
 
-All ten ship as **ten separate add-ons** at version **1.0.0**, `author:
-"Blockaly"`, `homepage_url: "https://blockaly.com"`, with permanent AMO ids
-`<name>@blockaly.com`. The first four are the original wave; the last six were
-added later:
+All ship as **separate add-ons**, `author: "Blockaly"`, `homepage_url:
+"https://blockaly.com"`, with permanent AMO ids `<name>@blockaly.com`. The first
+four are the original wave (**v1.0.0**); the next six the second wave; the last
+four the **third wave (in preparation — not yet published)**:
 
 | Package | Store name | Single purpose | Gecko id |
 |---|---|---|---|
@@ -25,6 +25,10 @@ added later:
 | `extensions/whoami` | Connection & Device Info | Show your connection and device | `whoami@blockaly.com` |
 | `extensions/capture` | Capture Studio | Record the current tab and export media | `capture@blockaly.com` |
 | `extensions/compose` | Markdown Workbench | Write and format Markdown | `compose@blockaly.com` |
+| `extensions/convert` | Universal Converter | Convert units, currencies, time and dates | `convert@blockaly.com` |
+| `extensions/linksafe` | Link Inspector | Reveal where a link really goes | `linksafe@blockaly.com` |
+| `extensions/vision` | Vision Simulator | Simulate colour-blindness and low vision | `vision@blockaly.com` |
+| `extensions/sessions` | Session Saver | Save and restore tab sessions locally | `sessions@blockaly.com` |
 
 ---
 
@@ -60,12 +64,17 @@ listing):
 The honest and defensible framing — use it verbatim in the Privacy-practices
 justification — is: **access is not collection.** The original four have
 permission to read every page; none of them take anything off the device. Across
-all ten extensions there are exactly **two** off-device data flows, both opt-in
-and click-gated: (1) `perf`'s PageSpeed Insights call, which sends the audited
-URL to Google; and (2) `whoami`'s IP/ISP lookup, which shows you your own IP via
-Cloudflare and, if you opt in, sends only that IP to ipinfo.io. The other eight —
-including `devdata`, `export`, `assets`, `capture`, and `compose` — make **zero
-network calls** (several enforce this with `connect-src 'none'`).
+all fourteen extensions there are exactly **four** off-device data flows, each
+opt-in / use-triggered, and **none sends the content you work with**: (1) `perf`'s
+PageSpeed Insights call, which sends the audited URL to Google; (2) `whoami`'s
+IP/ISP lookup, which shows you your own IP via Cloudflare and, if you opt in,
+sends only that IP to ipinfo.io; (3) `convert`'s currency/crypto feature, which
+fetches a **rate table** from Frankfurter (ECB) / CoinGecko and converts your
+amount **locally** (the amount is never sent); and (4) `linksafe`'s opt-in
+"Resolve destination", which sends one shortened link's URL to its own server when
+you ask. The rest — including `vision`, `sessions`, `devdata`, `export`, `assets`,
+`capture`, and `compose` — make **zero network calls** (several enforce this with
+`connect-src 'none'`).
 
 **Firefox data-collection consent (mandatory for new AMO submissions since
 2025-11-03).** Every Firefox build declares
@@ -400,10 +409,12 @@ thing.
 
 ## New-wave extensions — Privacy-practices & data-recipient checklist
 
-The six later extensions each need their own Privacy-practices tab filled in.
-Only `whoami` and `capture` have any store-review sensitivity; the other four are
-purely-local, zero-network tools. Ground truth is each generated manifest; the
-shared policy is [`PRIVACY.md`](./PRIVACY.md).
+The ten later extensions (second + third wave) each need their own
+Privacy-practices tab filled in. Review-sensitive ones: `whoami` and `capture`
+(second wave), and — in the third wave — `convert` (fetches rate tables),
+`linksafe` (opt-in link resolve), and `sessions` (the `tabs` "read your browsing
+history" warning). The rest are purely-local, zero-network tools. Ground truth is
+each generated manifest; the shared policy is [`PRIVACY.md`](./PRIVACY.md).
 
 ### Data Format Toolkit (`extensions/devdata`)
 
@@ -453,6 +464,38 @@ shared policy is [`PRIVACY.md`](./PRIVACY.md).
 - **Chrome permissions:** `storage`, `contextMenus`, `clipboardWrite`, `activeTab`, `sidePanel`. Firefox: same, with `sidebar_action` instead of `sidePanel`.
 - **CSP:** `connect-src 'none'`.
 - **Data collection:** none. `required: ["none"]`. **Zero network** — drafts live in `storage.local`; no cloud sync, no account, no AI. **Recipients: none.**
+
+### Universal Converter (`extensions/convert`) — REVIEW-SENSITIVE (network)
+
+- **Category:** Productivity / Utilities. **Single purpose:** convert units, currencies, time zones and calendars.
+- **Chrome permissions:** `storage`, `activeTab`, `scripting`, `contextMenus`; `omnibox` key; **optional host** `https://api.frankfurter.dev/*`, `https://api.coingecko.com/*`. Firefox: same (⚠️ MV2 optional origins under `optional_permissions`).
+- **Broad access:** none — no `host_permissions`, no static content script. Selection conversion injects via `activeTab` on the "Convert selection" gesture. Do **not** write an all-sites install warning; it is absent.
+- **Data collection:** none. `required: ["none"]`. Units/dates/calendars are **fully offline**. Currency/crypto fetch a **rate table** and convert the amount **locally** — the amount is **never sent**.
+- **REQUIRED — name the recipients:** **Frankfurter / European Central Bank** (`api.frankfurter.dev`, keyless — receives a request for the public rate table when you use currency) and **CoinGecko** (`api.coingecko.com`, keyless — receives the coin symbols you price). Neither receives your amount, selection, or any identifier. CoinGecko attribution ("Data provided by CoinGecko") is shown in-UI.
+- **Listing copy:** describe it as an on-device converter; do not imply it stores or transmits your data.
+
+### Link Inspector (`extensions/linksafe`) — REVIEW-SENSITIVE (opt-in network)
+
+- **Category:** Productivity / Developer Tools. **Single purpose:** reveal where a link really goes before you click.
+- **Chrome permissions:** `contextMenus`, `activeTab`, `scripting`, `storage`; **optional host** `<all_urls>`. Firefox: `<all_urls>` under `optional_permissions`.
+- **Broad access:** the hover/scan overlay injects via `activeTab` on a click; the hoisted `<all_urls>` is **stripped in a `build:manifestGenerated` hook**, so the baseline install shows **no** all-sites warning. Optional `<all_urls>` is requested by gesture only, for network resolve.
+- **Data collection:** none by default — every phishing/redirect heuristic is **local**. Only the opt-in **"Resolve destination"** sends **one link's URL** to that link's own server (with an on-screen warning that a tracking token would be sent). No blocklist/reputation API; **Safe Browsing is deliberately NOT used** (its API is non-commercial-only). `required: ["none"]`.
+- **REQUIRED — name the recipients:** only the **link's own host**, only when you resolve that specific link. No other recipient.
+
+### Vision Simulator (`extensions/vision`)
+
+- **Category:** Developer Tools / Accessibility. **Single purpose:** simulate colour-blindness and low vision on a page.
+- **Chrome & Firefox permissions:** `activeTab`, `scripting`, `storage`. No optional, no host.
+- **Broad access:** none — SVG filters are injected via `activeTab` on the toolbar click. No content script, no install warning.
+- **Data collection:** none. `required: ["none"]`. **Zero network** — pure local rendering; reads no page content. **Recipients: none.** Colour-vision matrices are Machado 2009 (the model Chrome uses); partial severity and tritanopia are labelled approximate.
+
+### Session Saver (`extensions/sessions`) — REVIEW-SENSITIVE (`tabs` warning)
+
+- **Category:** Productivity. **Single purpose:** save and restore tab sessions, stored only on this device.
+- **Chrome permissions:** `tabs`, `storage`, `alarms`; **optional** `tabGroups`, `sessions`, `unlimitedStorage`. Firefox: `tabs`, `storage`, `alarms`; **optional** `sessions`, `cookies`, `unlimitedStorage`.
+- **The one unavoidable warning:** `tabs` prints **"Read your browsing history"** — it reads tab URLs/titles to save them, which is the single purpose. Own it: the listing/Privacy-practices copy states "reads tab titles/URLs to save them; nothing leaves your browser." Every other permission is **optional and gesture-only**, so the baseline install shows exactly one warning.
+- **Data collection:** none. `required: ["none"]`. **Zero network, no cloud, no account, no sync** — sessions live in local storage; export/import is a local JSON file (no `downloads`). **Recipients: none.**
+- **Listing copy:** lead with **"local-only / nothing leaves your device"** — it is the differentiator vs cloud session managers.
 
 ---
 

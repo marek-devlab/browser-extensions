@@ -99,12 +99,12 @@
 
 ### 🔶 Долги/незакрытое волны 3 (перед стором)
 
-- [ ] **Реальные иконки:** сейчас плейсхолдеры (копия whoami). Добавить 4 бренда в `scripts/lib/draw.mjs` `BRAND` + глифы → `npm run icons`.
-- [ ] **Тесты волны 3:** пока только само-верификация сборкой; нет unit/e2e. Приоритетно покрыть чистую логику (convert `units.ts`/`datetime.ts`/`rates.ts`, linksafe `analyze.ts`, sessions `model.ts`/atomic-commit) — она уже вынесена browser-free.
+- [x] **Тесты волны 3 — ✅ закрыто (2026-07-20).** `npm run e2e:wave3` (вшит в общий `e2e`) — **29/29** node-логик-тестов на реальных `.ts`-модулях: convert `units.ts` (аффинная температура, US/Imperial, SI/IEC, инверсная топливная, BigInt-базы, identity+round-trip по всем юнитам) + `datetime.ts` (календари/зодиак/Unix), linksafe `analyze.ts` (схемы/креды/IP/mismatch/трекинг/шортенеры/badge), sessions `model.ts` (restorable/normalize/dedupe/meta). Тест поймал верхний регистр hex у `formatInBase` — выровнено.
+- [x] **convert live-CORS + Firefox fallback — ✅ (2026-07-20).** `api.frankfurter.dev` и `api.coingecko.com` оба отдают `access-control-allow-origin: *` → host-permission-free fetch валиден. Firefox MV2 optional-origins разведены под `optional_permissions` (Chrome — `optional_host_permissions`), проверено в собранных манифестах — CORS-fallback работает на обоих. Осталось: Temporal-полифилл для Safari (отдельная фаза, iOS).
+- [x] **PRIVACY.md — ✅ обновлён (2026-07-20)** на 14 расширений: 4 новых потока данных (perf/whoami/convert/linksafe), 4 новые пер-расширение секции, лицензии tldts/punycode. STORE.md — ещё нет (см. ниже).
+- [x] **Реальные иконки — ✅ закрыто (2026-07-20).** 4 бренда + 4 глифа в `scripts/lib/draw.mjs` (convert — ⇄ swap на lime; linksafe — ↳ redirect на slate; vision — очки на fuchsia; sessions — окно с вкладками на rose), `npm run icons` → 56 PNG. Визуально сверены. (Финальный глаз человека — как и у первых десяти, в общем «человеческом» списке.)
+- [x] **STORE.md — ✅ дополнен (2026-07-20).** Таблица расширений (+4), обновлён claim про off-device потоки (2→4: +convert rate-table, +linksafe opt-in resolve), 4 чеклист-записи Privacy-practices с получателями (convert REVIEW-SENSITIVE/network, linksafe REVIEW-SENSITIVE/opt-in, sessions REVIEW-SENSITIVE/`tabs`-варнинг, vision zero-network).
 - [ ] **Живой headed-смоук** каждого (инъекция vision/linksafe, omnibox/badge convert, реальный save/restore sessions) — как у perf, единственный человеческий гейт.
-- [ ] **convert:** ⚠️ проверить **живые CORS** Frankfurter+CoinGecko (host-free fetch); ⚠️ Firefox MV2 не эмитит `optional_host_permissions` для CORS-fallback (у convert; linksafe уже развёл per-browser) — доделать, если fallback понадобится; Temporal-полифилл для Safari.
-- [ ] **PRIVACY.md / STORE.md** дополнить четырьмя расширениями (получатели: convert → Frankfurter/ECB + CoinGecko при явном действии; linksafe → целевой хост при opt-in резолве; vision/sessions → никто).
-- [ ] **Firefox gecko-id** уже проставлены (`<name>@blockaly.com`); сверить `data_collection_permissions` (у всех `none`, кроме — по факту все `none`).
 - [ ] Кандидаты на вынос в пакеты: `@blur/picker` (linksafe/assets/export scan), SVG-filter общее ядро (vision/blur). Техдолг, не блокер.
 
 ## ❓ Открытые вопросы (проверить перед соответствующей фазой)

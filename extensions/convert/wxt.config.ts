@@ -52,9 +52,22 @@ export default defineConfig({
       omnibox: { keyword: 'cv' },
 
       // Opt-in whole-page auto-annotation of recognised quantities is requested at
-      // runtime; the currency/crypto hosts are listed too in case a provider drops
-      // CORS and the fetch must fall back to a granted origin.
-      optional_host_permissions: ['https://api.frankfurter.dev/*', 'https://api.coingecko.com/*'],
+      // runtime; the currency/crypto hosts are listed too as a fallback in case a
+      // provider ever drops permissive CORS and the fetch must run against a granted
+      // origin. (Verified 2026-07-20: both hosts send `Access-Control-Allow-Origin:
+      // *`, so the primary path needs no host permission.) Chrome MV3 uses
+      // `optional_host_permissions`; Firefox MV2 declares optional origins under
+      // `optional_permissions`, mirroring the whoami/linksafe house pattern — so
+      // `permissions.request()` has a pattern to grant on BOTH targets rather than
+      // failing silently on Firefox.
+      ...(isFirefox
+        ? { optional_permissions: ['https://api.frankfurter.dev/*', 'https://api.coingecko.com/*'] }
+        : {
+            optional_host_permissions: [
+              'https://api.frankfurter.dev/*',
+              'https://api.coingecko.com/*',
+            ],
+          }),
 
       ...(isFirefox
         ? {

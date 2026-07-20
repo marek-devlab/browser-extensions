@@ -43,7 +43,8 @@
     "e2e:blur": "playwright test -c e2e/blur/playwright.config.ts",
     "e2e:perf": "playwright test e2e/perf",
     "e2e:seo": "playwright test -c e2e/seo/playwright.config.ts",
-    "e2e": "npm run e2e:logic && npm run e2e:adblock && npm run e2e:blur && npm run e2e:perf && npm run e2e:seo"
+    "e2e:wave3": "node e2e/wave3/logic.test.mjs",
+    "e2e": "npm run e2e:logic && npm run e2e:adblock && npm run e2e:blur && npm run e2e:perf && npm run e2e:seo && npm run e2e:wave3"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

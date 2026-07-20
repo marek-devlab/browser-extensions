@@ -1,10 +1,10 @@
 # Privacy Policy
 
-_Last updated: 2026-07-15_
+_Last updated: 2026-07-20_
 
-This policy covers a suite of ten independent browser extensions that are built
-from one monorepo but ship as ten separate add-ons (all at version **1.0.0**,
-published by **Blockaly**, https://blockaly.com):
+This policy covers a suite of fourteen independent browser extensions that are
+built from one monorepo but ship as fourteen separate add-ons (published by
+**Blockaly**, https://blockaly.com):
 
 - **Content Blur** — hide images, video, thumbnails, and matched text on any page.
 - **Ad & Tracker Blocker** — block ads and trackers.
@@ -16,11 +16,16 @@ published by **Blockaly**, https://blockaly.com):
 - **Connection & Device Info** — show your device, browser, and (on request) your public IP and ISP.
 - **Capture Studio** — record the current tab or a chosen screen/window, plus optional microphone.
 - **Markdown Workbench** — write and format Markdown in a side panel.
+- **Universal Converter** — convert units, currencies, time zones, and calendars.
+- **Link Inspector** — reveal where a link really goes before you click.
+- **Vision Simulator** — see a page as people with colour-blindness and low vision do.
+- **Session Saver** — save and restore tab sessions, stored only on this device.
 
-The first four are the original wave; the last six were added later. The first
-part of this document is the **architectural invariant** that applies to all
-ten. The second part is a **per-extension section** with the exact permissions
-each one declares and what they are used for.
+The first four are the original wave (v1.0.0); the next six were the second wave;
+the last four are the third wave. The first part of this document is the
+**architectural invariant** that applies to all fourteen. The second part is a
+**per-extension section** with the exact permissions each one declares and what
+they are used for.
 
 If anything in this document conflicts with what an extension actually does,
 treat that as a bug and report it — the whole design of this suite is to be
@@ -35,9 +40,11 @@ extension reads from a page (images, text, meta tags, headings, DOM structure,
 timings, blocked-request counts), and your settings are all processed locally
 and stored only in your browser's local extension storage.
 
-Across all ten extensions there are only **two** features that ever transmit
-anything off your device, and **both are opt-in, click-gated, and disclosed in
-the UI before the first request**:
+Across all fourteen extensions there are only **four** features that ever
+transmit anything off your device, and **every one is opt-in / use-triggered and
+disclosed in the UI**. Crucially, none of them sends the *content* you are
+working with: the URL you audit, your own IP, currency **rate tables** (not your
+amount), and a link you explicitly ask to resolve.
 
 > **(a) PageSpeed Insights (Page Performance & Network only).** When you
 > explicitly run a "PageSpeed Insights" audit, the extension sends the **URL you
@@ -60,16 +67,36 @@ the UI before the first request**:
 > memory only, is **never stored, never forwarded, and never logged**, and no
 > fingerprint is ever computed. See the Connection & Device Info section below.
 
-> **(c) Nothing else phones home.** No extension in this suite contains
+> **(c) Currency & crypto rates (Universal Converter only).** All unit, date,
+> time-zone and calendar conversion runs **fully offline**. Only the currency and
+> crypto features touch the network: the extension fetches an **exchange-rate
+> table** — fiat from the European Central Bank via **Frankfurter**
+> (`api.frankfurter.dev`, no key), crypto prices from **CoinGecko**
+> (`api.coingecko.com`, no key) — and then converts **your amount locally**. 🔴
+> **Your amount is never transmitted.** The fiat request carries no specific pair
+> (it pulls the whole USD-based table); the crypto request names the coins you are
+> pricing. Those hosts therefore see your IP and that you requested rates; rates
+> are cached locally with their timestamp and source. No amount, no page content,
+> no identifier is ever sent.
+
+> **(d) Link resolution (Link Inspector only).** By default this extension is
+> **100% local** — every phishing/redirect heuristic runs in your browser with no
+> network. Only if you explicitly press **"Resolve destination"** on a shortened
+> link does it send **that one link's URL** to the link's own server to follow the
+> redirect, behind an on-screen warning (shown first) that any tracking token in
+> the link will be sent. There is no standing collection and no default network
+> access.
+
+> **(e) Nothing else phones home.** No extension in this suite contains
 > analytics, telemetry, crash reporting, advertising, or user tracking of any
-> kind. The other **eight** extensions — including all of Data Format Toolkit,
-> Page Content Exporter, Asset Inspector, Capture Studio, and Markdown Workbench
-> — make **zero network calls of any kind**; several enforce this at the platform
-> level with a `connect-src 'none'` content-security policy. Aside from the two
-> opt-in calls above, nothing in this suite makes any network request that
+> kind. **Vision Simulator** and **Session Saver** — like Data Format Toolkit,
+> Page Content Exporter, Asset Inspector, Capture Studio and Markdown Workbench —
+> make **zero network calls of any kind**; several enforce this at the platform
+> level with a `connect-src 'none'` content-security policy. Aside from the four
+> use-triggered calls above, nothing in this suite makes any network request that
 > carries data about you or the pages you visit.
 
-### Common guarantees (all ten extensions)
+### Common guarantees (all fourteen extensions)
 
 - **Local only.** Settings and any cached results live in your browser's
   extension storage (`storage.local` / `storage.sync`). They are not uploaded to
@@ -122,7 +149,7 @@ data stays where it was: in the page, and in your local extension storage. The
 only bytes that ever leave your machine are the two opt-in calls described above
 (the PageSpeed Insights URL, and Connection & Device Info's IP/ISP lookup).
 
-That is also what the ten add-ons tell Firefox. Every Firefox build declares
+That is also what the fourteen add-ons tell Firefox. Every Firefox build declares
 `browser_specific_settings.gecko.data_collection_permissions`, the key that
 drives the data-consent panel Firefox shows at install (mandatory for new AMO
 submissions since 2025-11-03):
@@ -507,6 +534,127 @@ policy is `connect-src 'none'`. Firefox declaration:
 
 ---
 
+## Universal Converter
+
+**Purpose:** convert the units, currencies, times and dates you see while
+browsing — length, mass, temperature, data sizes, time zones, and multiple
+calendar systems, plus live currency and crypto.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `storage` | Save your theme, locale, precision, pinned favourites, and the cached exchange-rate tables (with their timestamps) locally. |
+| `activeTab` + `scripting` | Only when you pick **"Convert selection"** does the extension read the text you selected on the current tab (on that click) and show a small conversion badge. No standing page access, no install warning. |
+| `contextMenus` | The right-click "Convert selection" entry. No warning. |
+| `omnibox` (manifest key, not a permission) | The address-bar `cv` keyword for quick conversions. Runs entirely locally. |
+| `optional_host_permissions` for `api.frankfurter.dev` / `api.coingecko.com` | Only used as a fallback if a rate host ever stops sending permissive CORS; requested on a gesture, never at install. |
+
+**How the data flows:**
+
+- **Units, dates, time zones, calendars — 100% offline.** All of this is computed
+  in your browser with **no network and no permissions**. Multi-calendar dates use
+  the browser's built-in `Intl` data; the Islamic (Umm al-Qura) calendar is a
+  tabular calculation and is labelled as such (religious dates may differ by ±1 day
+  from local moon-sighting).
+- **Currency & crypto (use-triggered).** When you use the currency or crypto
+  features, the extension fetches an **exchange-rate table** from **Frankfurter**
+  (European Central Bank data, `api.frankfurter.dev`, no key) and crypto prices
+  from **CoinGecko** (`api.coingecko.com`, no key), then converts **your amount
+  locally**. 🔴 **Your amount is never transmitted.** The fiat request pulls the
+  whole USD-based table (it does not reveal which pair you want); the crypto
+  request names the coins you are pricing. Rates are cached locally with their
+  timestamp and source, both shown in the UI; a stale cache is labelled, never
+  silently presented as current.
+- **Selection conversion.** The text you select is read only on the "Convert
+  selection" click, parsed locally, and never sent anywhere.
+
+**Recipients (named for store review):** **Frankfurter / the European Central
+Bank** (receive a request for the public rate table when you use currency) and
+**CoinGecko** (receives the coin symbols you price when you use crypto). Neither
+receives your amount, your selection, or any identifier. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
+## Link Inspector
+
+**Purpose:** reveal where a link really goes before you click it, and flag
+phishing tricks (look-alike/punycode domains, mismatched link text, trackers,
+unsafe schemes) — locally by default.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `contextMenus` | The right-click "Where does this link go?" and "Copy clean link" entries. No warning. |
+| `activeTab` + `scripting` | On a toolbar/menu click, injects the hover tooltip and page-scan overlay into the current tab. No standing page access, no install warning. |
+| `storage` | Your trusted-domain (auto-resolve) allowlist and UI preferences, locally. |
+| `optional_host_permissions` (`<all_urls>`) | Requested **only** when you press "Resolve destination" on a shortened link, to contact that link's server. Never requested at install; on Firefox it is declared under `optional_permissions`. |
+
+**How the data flows:**
+
+- **Local by default — zero network.** Punycode/homograph detection, link-text vs
+  destination-domain mismatch, unsafe-scheme and raw-IP checks, and tracking-
+  parameter stripping all run **entirely in your browser**. Nothing is sent.
+- **Destination resolution (opt-in, per action).** Only if you explicitly press
+  **"Resolve destination"** does the extension send **that one link's URL** to the
+  link's own server (one request, following the redirect to read the final URL),
+  behind an on-screen warning — shown first — that any one-time token in the link
+  will be sent to that server. It is disclosed as the *server-reported*
+  destination, not a guarantee. No blocklist, reputation service, or third-party
+  URL-checking API is contacted; nothing about you is collected.
+
+**Recipients (named for store review):** only the **link's own host**, and only
+when you choose to resolve that specific link. There is no other recipient.
+Firefox declaration: `data_collection_permissions.required = ["none"]`.
+
+---
+
+## Vision Simulator
+
+**Purpose:** see any page the way people with colour-vision deficiency and low
+vision see it — an on-demand visual simulation you apply to the current tab.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `activeTab` + `scripting` | On the toolbar click, injects SVG colour/blur filters into the current tab and removes them again. No standing page access, no install warning. |
+| `storage` | Your theme, locale, and last-used simulation settings, locally. |
+
+**Data:** the simulation is **pure local rendering** — the extension applies
+filters over the page's own pixels and reads no page content. It **makes no
+network requests of any kind**, stores nothing about the page, and transmits
+nothing off your device. There is no background service worker and no host
+permission. Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
+## Session Saver
+
+**Purpose:** save your open tabs as named sessions and restore them later, stored
+only on this device.
+
+**Permissions declared:**
+
+| Permission | Why |
+|---|---|
+| `tabs` | **This is what produces the "read your browsing history" install warning.** It is used to read the **URLs and titles of your open tabs** so they can be saved to, and restored from, a session — that is the extension's entire purpose. The tab list is stored in your local storage and never sent anywhere. |
+| `storage` | Hold your saved sessions locally (index + one record per session). |
+| `alarms` | A periodic heartbeat that re-saves the live session for crash recovery. |
+| `optional` — `tabGroups`, `sessions`, `unlimitedStorage` (Chrome) / `sessions`, `cookies`, `unlimitedStorage` (Firefox) | Requested on a gesture only: to restore tab-group names/colours, to offer "restore recently closed", to lift the storage cap for large collections, and (Firefox) to reopen a tab in its Multi-Account Container. Never requested at install. |
+
+**Data:** everything stays **on this device**. There is **no cloud, no account,
+no sync, and no network call of any kind** — nothing to sell, sync, breach, or
+subpoena. Sessions are stored locally; you can export a session to a local JSON
+file and import it back, both of which happen entirely on your machine (no
+`downloads` permission, no upload). Firefox declaration:
+`data_collection_permissions.required = ["none"]`.
+
+---
+
 ## Licensing
 
 Blockaly's own extension code is MIT-licensed (root `LICENSE`). The extensions
@@ -517,7 +665,8 @@ more notable licenses: **mediabunny** (MPL-2.0, Capture Studio's video/audio
 encoder), **DOMPurify** (MPL-2.0 OR Apache-2.0, Markdown Workbench), **yaml**
 (ISC, Data Format Toolkit), and a set of MIT libraries (papaparse, json5, jose,
 `@cfworker/json-schema`, jsonc-parser, markdown-it, write-excel-file, fflate,
-emojibase-data). Full notices are in `THIRD-PARTY-NOTICES.md` in the source
+emojibase-data, and — new in the third wave — **tldts** and **punycode**, both
+used by Link Inspector to decode and classify domains locally). Full notices are in `THIRD-PARTY-NOTICES.md` in the source
 repository, a copy ships inside every extension package
 (`THIRD-PARTY-NOTICES.md` at the package root), and the filter lists carry their
 own `rules/ATTRIBUTION.md`. None of this changes what the extensions do with your

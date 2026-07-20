@@ -489,6 +489,15 @@ export const BRAND = {
   whoami: { light: [129, 140, 248], base: [79, 70, 229], deep: [55, 48, 163], name: 'Connection & Device Info' },
   capture: { light: [251, 146, 60], base: [234, 88, 12], deep: [154, 52, 18], name: 'Capture Studio' },
   compose: { light: [103, 232, 249], base: [8, 145, 178], deep: [14, 116, 144], name: 'Markdown Workbench' },
+  // Third wave. Same rules: own hue, own silhouette, readable at 16x16.
+  //   convert   lime      swap arrows      (the only opposed ⇄ pair)
+  //   linksafe  slate     redirect arrow   (the only bent ↳ arrow)
+  //   vision    fuchsia   spectacles       (the only twin-lens)
+  //   sessions  rose      tabbed window    (the only window-with-tabs)
+  convert: { light: [163, 230, 53], base: [132, 204, 22], deep: [77, 124, 15], name: 'Universal Converter' },
+  linksafe: { light: [148, 163, 184], base: [100, 116, 139], deep: [51, 65, 85], name: 'Link Inspector' },
+  vision: { light: [232, 121, 249], base: [217, 70, 239], deep: [162, 28, 175], name: 'Vision Simulator' },
+  sessions: { light: [251, 113, 133], base: [244, 63, 94], deep: [159, 18, 57], name: 'Session Saver' },
 };
 
 /** The shared background plate: rounded square, brand diagonal gradient. */
@@ -679,6 +688,73 @@ function markCompose(c, x, y, S) {
   fillRect(c, left + S * 0.28, y + S * 0.66, S * 0.075, S * 0.13, WHITE, 1);
 }
 
+// convert -- opposed swap arrows (⇄). Silhouette: two horizontal arrows pointing
+// opposite ways. The only opposed arrow PAIR in the suite (devdata's chevrons are
+// static, export's arrow is a single downward stroke).
+function markConvert(c, x, y, S) {
+  const t = S * 0.09;
+  const left = x + S * 0.26;
+  const right = x + S * 0.74;
+  const yTop = y + S * 0.4;
+  const yBot = y + S * 0.6;
+  // Top arrow → right.
+  strokeLine(c, left, yTop, right - S * 0.13, yTop, t, WHITE, 1);
+  fillTriangle(c, right, yTop, right - S * 0.16, yTop - S * 0.12, right - S * 0.16, yTop + S * 0.12, WHITE, 1);
+  // Bottom arrow ← left.
+  strokeLine(c, right, yBot, left + S * 0.13, yBot, t, WHITE, 1);
+  fillTriangle(c, left, yBot, left + S * 0.16, yBot - S * 0.12, left + S * 0.16, yBot + S * 0.12, WHITE, 1);
+}
+
+// linksafe -- a redirect arrow (↳) from a source node. Silhouette: a dot, a down
+// stroke, then a right stroke into an arrowhead: "where this link actually goes".
+// The only bent arrow in the suite.
+function markLinksafe(c, x, y, S) {
+  const t = S * 0.09;
+  const sx = x + S * 0.33;
+  const sy = y + S * 0.24;
+  const cornerY = y + S * 0.64;
+  const ex = x + S * 0.68;
+  fillCircle(c, sx, sy, S * 0.075, WHITE, 1); // the source link node
+  strokeLine(c, sx, sy, sx, cornerY, t, WHITE, 1);
+  strokeLine(c, sx - t * 0.4, cornerY, ex, cornerY, t, WHITE, 1);
+  fillTriangle(c, ex + S * 0.03, cornerY, ex - S * 0.13, cornerY - S * 0.12, ex - S * 0.13, cornerY + S * 0.12, WHITE, 1);
+}
+
+// vision -- spectacles: two lenses, a bridge, temple arms. Silhouette: a twin-lens
+// pair (the only double-ring; seo is a single ring with a handle, assets a single
+// ring with a cross).
+function markVision(c, x, y, S) {
+  const cy = y + S * 0.54;
+  const r = S * 0.19;
+  const ri = S * 0.115;
+  const lx = x + S * 0.33;
+  const rx = x + S * 0.67;
+  strokeLine(c, lx - r + S * 0.02, cy - S * 0.04, x + S * 0.14, y + S * 0.34, S * 0.07, WHITE, 1); // left arm
+  strokeLine(c, rx + r - S * 0.02, cy - S * 0.04, x + S * 0.86, y + S * 0.34, S * 0.07, WHITE, 1); // right arm
+  strokeLine(c, lx + r - S * 0.02, cy - S * 0.02, rx - r + S * 0.02, cy - S * 0.02, S * 0.07, WHITE, 1); // bridge
+  fillCircle(c, lx, cy, ri, WHITE, 0.3); // glass
+  fillCircle(c, rx, cy, ri, WHITE, 0.3);
+  fillRing(c, lx, cy, r, ri, WHITE, 1);
+  fillRing(c, rx, cy, r, ri, WHITE, 1);
+}
+
+// sessions -- a browser window with three tabs. Silhouette: a solid body with a
+// tabbed top (the gaps between tabs show the plate). The only window-with-tabs.
+function markSessions(c, x, y, S) {
+  const wx = x + S * 0.22;
+  const ww = S * 0.56;
+  const wy = y + S * 0.44;
+  const wh = S * 0.32;
+  const tw = S * 0.155;
+  const th = S * 0.15;
+  const ty = y + S * 0.29;
+  const gap = S * 0.0475; // 3*tw + 2*gap === ww; tabs meet the window top (ty+th===wy)
+  fillRect(c, wx, ty, tw, th, WHITE, 1);
+  fillRect(c, wx + tw + gap, ty, tw, th, WHITE, 1);
+  fillRect(c, wx + 2 * (tw + gap), ty, tw, th, WHITE, 1);
+  fillRect(c, wx, wy, ww, wh, WHITE, 1);
+}
+
 export const MARKS = {
   blur: markBlur,
   adblock: markAdblock,
@@ -690,6 +766,10 @@ export const MARKS = {
   whoami: markWhoami,
   capture: markCapture,
   compose: markCompose,
+  convert: markConvert,
+  linksafe: markLinksafe,
+  vision: markVision,
+  sessions: markSessions,
 };
 
 /** Full icon = shared plate + product mark, drawn at (x, y) with side S. */

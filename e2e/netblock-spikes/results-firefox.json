@@ -1,0 +1,513 @@
+{
+  "when": "2026-09-15T07:58:33.242Z",
+  "firefox": "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
+  "result": {
+    "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0",
+    "cases": [
+      {
+        "label": "same fetch data",
+        "via": "fetch",
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "url": "data:application/json,%7B%22mock%22%3Atrue%2C%22from%22%3A%22data-url%22%7D",
+        "text": "{\"mock\":true,\"from\":\"data-url\"}",
+        "ms": 237
+      },
+      {
+        "label": "cross fetch data",
+        "via": "fetch",
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "url": "data:application/json,%7B%22mock%22%3Atrue%2C%22from%22%3A%22data-url%22%7D",
+        "text": "{\"mock\":true,\"from\":\"data-url\"}",
+        "ms": 35
+      },
+      {
+        "label": "same xhr data",
+        "via": "xhr",
+        "ok": true,
+        "status": 200,
+        "text": "{\"mock\":true,\"from\":\"data-url\"}",
+        "responseURL": "data:application/json,%7B%22mock%22%3Atrue%2C%22from%22%3A%22data-url%22%7D",
+        "ms": 23
+      },
+      {
+        "label": "cross xhr data",
+        "via": "xhr",
+        "ok": true,
+        "status": 200,
+        "text": "{\"mock\":true,\"from\":\"data-url\"}",
+        "responseURL": "data:application/json,%7B%22mock%22%3Atrue%2C%22from%22%3A%22data-url%22%7D",
+        "ms": 5
+      },
+      {
+        "label": "same fetch ext",
+        "via": "fetch",
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "url": "moz-extension://d948549d-3fe8-4ff9-9e2e-db247f51688b/mock.json",
+        "text": "{\"mock\":true,\"from\":\"moz-extension\"}\n",
+        "ms": 22
+      },
+      {
+        "label": "cross fetch ext",
+        "via": "fetch",
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "url": "moz-extension://d948549d-3fe8-4ff9-9e2e-db247f51688b/mock.json",
+        "text": "{\"mock\":true,\"from\":\"moz-extension\"}\n",
+        "ms": 15
+      },
+      {
+        "label": "same xhr ext",
+        "via": "xhr",
+        "ok": true,
+        "status": 200,
+        "text": "{\"mock\":true,\"from\":\"moz-extension\"}\n",
+        "responseURL": "moz-extension://d948549d-3fe8-4ff9-9e2e-db247f51688b/mock.json",
+        "ms": 13
+      },
+      {
+        "label": "cross xhr ext",
+        "via": "xhr",
+        "ok": true,
+        "status": 200,
+        "text": "{\"mock\":true,\"from\":\"moz-extension\"}\n",
+        "responseURL": "moz-extension://d948549d-3fe8-4ff9-9e2e-db247f51688b/mock.json",
+        "ms": 203
+      },
+      {
+        "label": "same fetch cancel",
+        "via": "fetch",
+        "ok": false,
+        "error": "TypeError",
+        "message": "NetworkError when attempting to fetch resource.",
+        "ms": 9
+      },
+      {
+        "label": "cross fetch cancel",
+        "via": "fetch",
+        "ok": false,
+        "error": "TypeError",
+        "message": "NetworkError when attempting to fetch resource.",
+        "ms": 6
+      },
+      {
+        "label": "same xhr cancel",
+        "via": "xhr",
+        "ok": false,
+        "status": 0,
+        "ms": 9
+      },
+      {
+        "label": "cross xhr cancel",
+        "via": "xhr",
+        "ok": false,
+        "status": 0,
+        "ms": 16
+      },
+      {
+        "label": "same fetch delay",
+        "via": "fetch",
+        "ok": true,
+        "status": 500,
+        "type": "basic",
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=delay",
+        "text": "{\"role\":\"A\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459110124.5166}",
+        "ms": 328
+      },
+      {
+        "label": "cross fetch delay",
+        "via": "fetch",
+        "ok": true,
+        "status": 500,
+        "type": "basic",
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=delay",
+        "text": "{\"role\":\"B\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459110477.651}",
+        "ms": 519
+      },
+      {
+        "label": "same xhr delay",
+        "via": "xhr",
+        "ok": true,
+        "status": 500,
+        "text": "{\"role\":\"A\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459110971.014}",
+        "responseURL": "http://127.0.0.1:52060/api/x?status=500&mode=delay",
+        "ms": 323
+      },
+      {
+        "label": "cross xhr delay",
+        "via": "xhr",
+        "ok": true,
+        "status": 500,
+        "text": "{\"role\":\"B\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459111293.8093}",
+        "responseURL": "http://127.0.0.1:52061/api/x?status=500&mode=delay",
+        "ms": 324
+      },
+      {
+        "label": "same fetch delaycancel",
+        "via": "fetch",
+        "ok": false,
+        "error": "TypeError",
+        "message": "NetworkError when attempting to fetch resource.",
+        "ms": 325
+      },
+      {
+        "label": "cross fetch delaycancel",
+        "via": "fetch",
+        "ok": false,
+        "error": "TypeError",
+        "message": "NetworkError when attempting to fetch resource.",
+        "ms": 328
+      },
+      {
+        "label": "same xhr delaycancel",
+        "via": "xhr",
+        "ok": false,
+        "status": 0,
+        "ms": 323
+      },
+      {
+        "label": "cross xhr delaycancel",
+        "via": "xhr",
+        "ok": false,
+        "status": 0,
+        "ms": 326
+      },
+      {
+        "label": "same fetch none",
+        "via": "fetch",
+        "ok": true,
+        "status": 500,
+        "type": "basic",
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=none",
+        "text": "{\"role\":\"A\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459112920.8416}",
+        "ms": 33
+      },
+      {
+        "label": "cross fetch none",
+        "via": "fetch",
+        "ok": true,
+        "status": 500,
+        "type": "basic",
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=none",
+        "text": "{\"role\":\"B\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459112952.891}",
+        "ms": 13
+      },
+      {
+        "label": "same xhr none",
+        "via": "xhr",
+        "ok": true,
+        "status": 500,
+        "text": "{\"role\":\"A\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459112966.7458}",
+        "responseURL": "http://127.0.0.1:52060/api/x?status=500&mode=none",
+        "ms": 15
+      },
+      {
+        "label": "cross xhr none",
+        "via": "xhr",
+        "ok": true,
+        "status": 500,
+        "text": "{\"role\":\"B\",\"path\":\"/api/x\",\"status\":500,\"t\":1789459112981.8103}",
+        "responseURL": "http://127.0.0.1:52061/api/x?status=500&mode=none",
+        "ms": 14
+      }
+    ],
+    "listenerSaw": [
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=data",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "data"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=data",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "data"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=data",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "data"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=data",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "data"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=ext",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "ext"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=ext",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "ext"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=ext",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "ext"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=ext",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "ext"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=cancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "cancel"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=cancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "cancel"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=cancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "cancel"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=cancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "cancel"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=delay",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delay"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=delay",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delay"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=delay",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delay"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=delay",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delay"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=delaycancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delaycancel"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=delaycancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delaycancel"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=delaycancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delaycancel"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=delaycancel",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "delaycancel"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=none",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "none"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=none",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "none"
+      },
+      {
+        "url": "http://127.0.0.1:52060/api/x?status=500&mode=none",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "none"
+      },
+      {
+        "url": "http://127.0.0.1:52061/api/x?status=500&mode=none",
+        "statusCode": 500,
+        "type": "xmlhttprequest",
+        "mode": "none"
+      }
+    ]
+  },
+  "journal": [
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=data",
+      "t": 1789459109569.8816
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=data",
+      "t": 1789459109769.3237
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=data",
+      "t": 1789459109810.0889
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=data",
+      "t": 1789459109826.3267
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=ext",
+      "t": 1789459109832.7285
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=ext",
+      "t": 1789459109853.4033
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=ext",
+      "t": 1789459109868.212
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=ext",
+      "t": 1789459109881.9553
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=cancel",
+      "t": 1789459110084.766
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=cancel",
+      "t": 1789459110093.622
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=cancel",
+      "t": 1789459110099.196
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=cancel",
+      "t": 1789459110108.4153
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delay",
+      "t": 1789459110124.5002
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delay",
+      "t": 1789459110477.6235
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delay",
+      "t": 1789459110970.9927
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delay",
+      "t": 1789459111293.7957
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delaycancel",
+      "t": 1789459111619.5527
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delaycancel",
+      "t": 1789459111944.5078
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delaycancel",
+      "t": 1789459112272.5237
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=delaycancel",
+      "t": 1789459112595.0242
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=none",
+      "t": 1789459112920.8254
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=none",
+      "t": 1789459112952.879
+    },
+    {
+      "role": "A",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=none",
+      "t": 1789459112966.7356
+    },
+    {
+      "role": "B",
+      "method": "GET",
+      "path": "/api/x?status=500&mode=none",
+      "t": 1789459112981.797
+    }
+  ]
+}

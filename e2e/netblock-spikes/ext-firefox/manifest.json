@@ -1,0 +1,10 @@
+{
+  "manifest_version": 2,
+  "name": "netblock spike (firefox)",
+  "version": "0.0.1",
+  "description": "Throwaway MV2 extension driven by e2e/netblock-spikes/firefox.spike.mjs. Not a product.",
+  "permissions": ["webRequest", "webRequestBlocking", "tabs", "<all_urls>"],
+  "background": { "scripts": ["background.js"] },
+  "web_accessible_resources": ["mock.json"],
+  "browser_specific_settings": { "gecko": { "id": "netblock-spike@marek-devlab.github.io" } }
+}

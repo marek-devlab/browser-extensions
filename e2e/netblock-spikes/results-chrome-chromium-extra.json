@@ -1,0 +1,30 @@
+{
+  "channel": "chromium",
+  "when": "2026-09-15T08:09:20.734Z",
+  "spikes": {
+    "S1c_attachThenDevTools": {
+      "attachInOnCreated": {
+        "ok": true
+      },
+      "fetchEnableAfterDevTools": {
+        "ok": true,
+        "result": {}
+      },
+      "pageFetch": {
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459765608.3047}",
+        "url": "http://127.0.0.1:61004/api/a?status=200&attachfirst=1"
+      },
+      "pausedSeen": 1,
+      "detachEvents": [],
+      "stillAttachedPerGetTargets": true,
+      "devtoolsTargetsSeen": []
+    },
+    "S3b_latencyParallel": {
+      "concurrent": "0/5 blocked",
+      "bAfterAHeadersOnly": "5/5 blocked"
+    }
+  }
+}

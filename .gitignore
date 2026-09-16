@@ -10,3 +10,8 @@ stats.html
 test-results/
 playwright-report/
 .claude/
+
+# netblock spikes: build artifact (npx esbuild …) and run log — results-*.json are kept as evidence
+e2e/netblock-spikes/ext-chrome/netcore.bundle.js
+e2e/netblock-spikes/*.log
+web-ext-artifacts/

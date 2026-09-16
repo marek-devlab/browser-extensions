@@ -1,0 +1,98 @@
+{
+  "channel": "chromium",
+  "when": "2026-09-15T08:11:03.154Z",
+  "spikes": {
+    "S1_devtools": {
+      "devtoolsOpenThenAttach": {
+        "devtoolsFrontendsOpen": 2,
+        "attach": {
+          "ok": true
+        },
+        "fetchEnable": {
+          "ok": true,
+          "result": {}
+        },
+        "pageFetch": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459866604.6174}",
+          "url": "http://127.0.0.1:57327/api/a?status=200"
+        },
+        "pausedSeen": 1,
+        "detachEvents": [],
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      },
+      "attachThenKeyboardDevTools": {
+        "attach": {
+          "ok": true
+        },
+        "fetchEnable": {
+          "ok": true,
+          "result": {}
+        },
+        "pageFetchBefore": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459868552.475}",
+          "url": "http://127.0.0.1:57327/api/a?status=200"
+        },
+        "pausedBefore": 1,
+        "pageFetchAfter": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459873093.9153}",
+          "url": "http://127.0.0.1:57327/api/a?status=200&second=1"
+        },
+        "pausedAfter": 2,
+        "detachEvents": [],
+        "stillAttachedPerGetTargets": true,
+        "sendCommandAfter": {
+          "ok": true,
+          "result": {
+            "result": {
+              "description": "2",
+              "type": "number",
+              "value": 2
+            }
+          }
+        },
+        "note": "Keyboard-opened DevTools is best-effort: Playwright key events go to the renderer; whether the browser UI honours F12 is part of the finding."
+      }
+    },
+    "S1c_attachThenDevTools": {
+      "attachInOnCreated": {
+        "ok": true
+      },
+      "devtoolsFrontendsOpen": 2,
+      "fetchEnableAfterDevTools": {
+        "ok": true,
+        "result": {}
+      },
+      "pageFetch": {
+        "ok": true,
+        "status": 200,
+        "type": "basic",
+        "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459879014.3916}",
+        "url": "http://127.0.0.1:57327/api/a?status=200&attachfirst=1"
+      },
+      "pausedSeen": 1,
+      "detachEvents": [],
+      "stillAttachedPerGetTargets": true,
+      "devtoolsTargetsSeen": [
+        {
+          "type": "page",
+          "url": "devtools://devtools/bundled/devtools_app.html?remoteBase=htt",
+          "attached": false
+        },
+        {
+          "type": "page",
+          "url": "devtools://devtools/bundled/devtools_app.html?remoteBase=htt",
+          "attached": false
+        }
+      ]
+    }
+  }
+}

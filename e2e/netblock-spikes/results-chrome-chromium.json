@@ -1,0 +1,594 @@
+{
+  "channel": "chromium",
+  "when": "2026-09-15T08:08:01.205Z",
+  "spikes": {
+    "S1_devtools": {
+      "devtoolsOpenThenAttach": {
+        "attach": {
+          "ok": true
+        },
+        "fetchEnable": {
+          "ok": true,
+          "result": {}
+        },
+        "pageFetch": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459684678.3289}",
+          "url": "http://127.0.0.1:53445/api/a?status=200"
+        },
+        "pausedSeen": 1,
+        "detachEvents": [],
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      },
+      "attachThenKeyboardDevTools": {
+        "attach": {
+          "ok": true
+        },
+        "fetchEnable": {
+          "ok": true,
+          "result": {}
+        },
+        "pageFetchBefore": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459686700.554}",
+          "url": "http://127.0.0.1:53445/api/a?status=200"
+        },
+        "pausedBefore": 1,
+        "pageFetchAfter": {
+          "ok": true,
+          "status": 200,
+          "type": "basic",
+          "text": "{\"role\":\"A\",\"path\":\"/api/a\",\"status\":200,\"t\":1789459691251.5483}",
+          "url": "http://127.0.0.1:53445/api/a?status=200&second=1"
+        },
+        "pausedAfter": 2,
+        "detachEvents": [],
+        "stillAttachedPerGetTargets": true,
+        "sendCommandAfter": {
+          "ok": true,
+          "result": {
+            "result": {
+              "description": "2",
+              "type": "number",
+              "value": 2
+            }
+          }
+        },
+        "note": "Keyboard-opened DevTools is best-effort: Playwright key events go to the renderer; whether the browser UI honours F12 is part of the finding."
+      }
+    },
+    "S4_websocket": {
+      "attach": {
+        "ok": true
+      },
+      "fetchEnable": {
+        "ok": true,
+        "result": {}
+      },
+      "cdpFetch": {
+        "pageResult": {
+          "result": "open"
+        },
+        "requestPausedForWs": [],
+        "handshakeReachedServer": true
+      },
+      "dnrBlockWebsocket": {
+        "pageResult": {
+          "result": "error"
+        },
+        "handshakeReachedServer": false,
+        "webRequestErrors": []
+      }
+    },
+    "S5_responseHeadersBlock": {
+      "ruleConditionKeys": {
+        "DOMAIN_TYPE": "domainType",
+        "DOMAINS": "domains",
+        "EXCLUDED_DOMAINS": "excludedDomains",
+        "EXCLUDED_INITIATOR_DOMAINS": "excludedInitiatorDomains",
+        "EXCLUDED_REQUEST_DOMAINS": "excludedRequestDomains",
+        "EXCLUDED_REQUEST_METHODS": "excludedRequestMethods",
+        "EXCLUDED_RESOURCE_TYPES": "excludedResourceTypes",
+        "EXCLUDED_RESPONSE_HEADERS": "excludedResponseHeaders",
+        "EXCLUDED_TAB_IDS": "excludedTabIds",
+        "EXCLUDED_TOP_DOMAINS": "excludedTopDomains",
+        "INITIATOR_DOMAINS": "initiatorDomains",
+        "IS_URL_FILTER_CASE_SENSITIVE": "isUrlFilterCaseSensitive",
+        "REGEX_FILTER": "regexFilter",
+        "REQUEST_DOMAINS": "requestDomains",
+        "REQUEST_METHODS": "requestMethods",
+        "RESOURCE_TYPES": "resourceTypes",
+        "RESPONSE_HEADERS": "responseHeaders",
+        "TAB_IDS": "tabIds",
+        "TOP_DOMAINS": "topDomains",
+        "URL_FILTER": "urlFilter"
+      },
+      "addRule": {
+        "ok": true
+      },
+      "pageFetch": {
+        "ok": false,
+        "error": "TypeError",
+        "message": "Failed to fetch"
+      },
+      "pageXhr": {
+        "ok": false,
+        "error": "error",
+        "status": 0
+      },
+      "requestsReachedServer": 2,
+      "webRequestErrors": [
+        {
+          "where": "onErrorOccurred",
+          "url": "http://127.0.0.1:53445/api/c?status=200",
+          "error": "net::ERR_BLOCKED_BY_CLIENT",
+          "t": 1789459695678
+        },
+        {
+          "where": "onErrorOccurred",
+          "url": "http://127.0.0.1:53445/api/c?status=200&x=1",
+          "error": "net::ERR_BLOCKED_BY_CLIENT",
+          "t": 1789459695691
+        }
+      ]
+    },
+    "S3_latency": {
+      "trials": [
+        {
+          "delayMs": 0,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 0,
+          "swUpdateSessionRulesMs": 0.7,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 0,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 0,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 0,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 0.1,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 0,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 0,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 0,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 0,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 1,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 1.6,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 1,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 2.1,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 1,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 1.2,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 1,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 1.2,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 1,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 2.3,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 5,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 5,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 5,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 5.9,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 5,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 5.8,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 5,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 5.3,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 5,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 5.2,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 10,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 10.1,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 10,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 10.2,
+          "swUpdateSessionRulesMs": 0.6,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 10,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 10.6,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 10,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 10.7,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 10,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 10.6,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 20,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 21.1,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 20,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 20.6,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 20,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 20.8,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 20,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 20.2,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 20,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 20.2,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 50,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 57.9,
+          "swUpdateSessionRulesMs": 0.5,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 50,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 63.3,
+          "swUpdateSessionRulesMs": 0.2,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 50,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 61.1,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 50,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 62.8,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 50,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 60.4,
+          "swUpdateSessionRulesMs": 0.2,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 100,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 106.3,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 100,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 111.1,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 100,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 113.9,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 100,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 101.8,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 100,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 110.4,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 200,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 213.9,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 200,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 210.5,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 200,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 211.4,
+          "swUpdateSessionRulesMs": 0.3,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 200,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 212.8,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        },
+        {
+          "delayMs": 200,
+          "blocked": true,
+          "bReachedServer": false,
+          "pageGapMs": 206.2,
+          "swUpdateSessionRulesMs": 0.4,
+          "onCompletedSeen": 1,
+          "error": "TypeError: Failed to fetch"
+        }
+      ],
+      "summary": [
+        {
+          "delayMs": 0,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.7,
+            0.5,
+            0.4,
+            0.5,
+            0.3
+          ]
+        },
+        {
+          "delayMs": 1,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.3,
+            0.4,
+            0.3,
+            0.5,
+            0.4
+          ]
+        },
+        {
+          "delayMs": 5,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.4,
+            0.3,
+            0.3,
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "delayMs": 10,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.4,
+            0.6,
+            0.4,
+            0.5,
+            0.4
+          ]
+        },
+        {
+          "delayMs": 20,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.3,
+            0.4,
+            0.3,
+            0.3,
+            0.4
+          ]
+        },
+        {
+          "delayMs": 50,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.5,
+            0.2,
+            0.3,
+            0.3,
+            0.2
+          ]
+        },
+        {
+          "delayMs": 100,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.4,
+            0.4,
+            0.4,
+            0.3,
+            0.3
+          ]
+        },
+        {
+          "delayMs": 200,
+          "blocked": "5/5",
+          "updateSessionRulesMs": [
+            0.4,
+            0.4,
+            0.3,
+            0.4,
+            0.4
+          ]
+        }
+      ]
+    }
+  }
+}

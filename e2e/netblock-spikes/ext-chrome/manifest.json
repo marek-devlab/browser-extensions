@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "netblock spike (chrome)",
+  "version": "0.0.1",
+  "description": "Throwaway MV3 extension driven by e2e/netblock-spikes/chrome.spike.mjs. Not a product.",
+  "permissions": [
+    "storage",
+    "webRequest",
+    "declarativeNetRequest",
+    "debugger",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  }
+}

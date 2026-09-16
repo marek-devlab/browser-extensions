@@ -1,5 +1,6 @@
 import { browser } from '#imports';
 import type { NetworkEntry, PageInsight, ResourceKind } from '@blur/core';
+import { attachCdp, errorMessage } from '@blur/netcore';
 import { buildInsight } from './resource-timing';
 import { isThirdParty } from './registrable-domain';
 import type { MeasureResult } from './protocol';
@@ -7,9 +8,13 @@ import type { MeasureResult } from './protocol';
 // Opt-in exact wire bytes (PLAN.md §8), Chrome only.
 //   - Chrome: chrome.debugger + CDP `Network.loadingFinished.encodedDataLength`,
 //     the only way to get true bytes for cross-origin resources with no
-//     Timing-Allow-Origin. Shows a non-dismissable banner; only one debugger
-//     client per tab, so the trigger lives in the POPUP (which needs no DevTools),
-//     never the DevTools panel (whose own attach would conflict).
+//     Timing-Allow-Origin. Shows a non-dismissable banner. The trigger lives in
+//     the POPUP (which needs no DevTools) — verified on Chromium 153 that an open
+//     DevTools window does NOT block or detach an extension session
+//     (e2e/netblock-spikes/REPORT.md S1), but the popup is still the right home:
+//     it is the user gesture that grants the optional `debugger` permission.
+//     Session plumbing (attach, per-tab event routing, detach-in-finally, error
+//     text) is the shared `@blur/netcore` `attachCdp`.
 //   - Firefox: has no chrome.debugger (bugzilla 1323098), and — verified against
 //     MDN — `webRequest.onCompleted` exposes no response-size field. There is
 //     therefore NO banner-free exact path on Firefox; it honestly falls back to
@@ -39,12 +44,6 @@ function toExactInsight(entries: NetworkEntry[], hostname: string): PageInsight 
   };
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 export function measureExactBytes(
   tabId: number,
   hostname: string,
@@ -68,57 +67,47 @@ async function measureWithCdp(
   tabId: number,
   hostname: string,
 ): Promise<MeasureResult> {
-  const target = { tabId };
-  try {
-    await browser.debugger.attach(target, '1.3');
-  } catch (err) {
-    // The most common failure: DevTools is already attached to this tab. Running
-    // from the popup avoids that, but the user may still have DevTools open.
-    return {
-      ok: false,
-      error:
-        errorMessage(err) ||
-        'Could not attach the debugger. Close the DevTools window for this tab (only one debugger may attach at a time) and try again.',
-    };
-  }
-
   const meta = new Map<string, { url: string; type: string }>();
   const bytes = new Map<string, number>();
   let resolveLoad: (() => void) | null = null;
 
-  const onEvent = (
-    source: { tabId?: number },
-    method: string,
-    params?: object,
-  ): void => {
-    if (source.tabId !== tabId) return;
-    const p = asRecord(params);
-    if (!p) return;
-    if (method === 'Network.responseReceived') {
-      const response = asRecord(p.response);
-      meta.set(String(p.requestId), {
-        url: response && typeof response.url === 'string' ? response.url : '',
-        type: typeof p.type === 'string' ? p.type : 'Other',
-      });
-    } else if (method === 'Network.loadingFinished') {
-      const id = String(p.requestId);
-      const len = typeof p.encodedDataLength === 'number' ? p.encodedDataLength : 0;
-      bytes.set(id, (bytes.get(id) ?? 0) + len);
-    } else if (method === 'Page.loadEventFired') {
-      resolveLoad?.();
-    }
-  };
-
-  const onDetach = (source: { tabId?: number }): void => {
-    if (source.tabId === tabId) resolveLoad?.();
-  };
-
-  browser.debugger.onEvent.addListener(onEvent);
-  browser.debugger.onDetach.addListener(onDetach);
+  const attached = await attachCdp(browser.debugger, tabId, {
+    onEvent: (method, p) => {
+      if (method === 'Network.responseReceived') {
+        const response =
+          typeof p.response === 'object' && p.response !== null
+            ? (p.response as Record<string, unknown>)
+            : null;
+        meta.set(String(p.requestId), {
+          url: response && typeof response.url === 'string' ? response.url : '',
+          type: typeof p.type === 'string' ? p.type : 'Other',
+        });
+      } else if (method === 'Network.loadingFinished') {
+        const id = String(p.requestId);
+        const len = typeof p.encodedDataLength === 'number' ? p.encodedDataLength : 0;
+        bytes.set(id, (bytes.get(id) ?? 0) + len);
+      } else if (method === 'Page.loadEventFired') {
+        resolveLoad?.();
+      }
+    },
+    // The user pressed Cancel on the infobar, the tab closed, or policy cut us
+    // off: stop waiting and report what was captured so far (or the honest
+    // "nothing captured" below), never a fabricated total.
+    onDetach: () => resolveLoad?.(),
+  });
+  if (!attached.ok) {
+    return {
+      ok: false,
+      error:
+        attached.error ||
+        'Could not attach the debugger to this tab. Close other debugging tools attached to it and try again.',
+    };
+  }
+  const session = attached.session;
 
   try {
-    await browser.debugger.sendCommand(target, 'Network.enable');
-    await browser.debugger.sendCommand(target, 'Page.enable');
+    await session.send('Network.enable');
+    await session.send('Page.enable');
 
     // Arm the load signal BEFORE issuing the reload (bug 1b). A fast or cached
     // load can fire Page.loadEventFired during the awaits below; if resolveLoad
@@ -134,7 +123,7 @@ async function measureWithCdp(
     // cache (bug 1c) so every resource is re-fetched and its real wire size is
     // counted — otherwise cache-served resources report ~0 encodedDataLength and
     // the "exact page weight" total would silently omit them.
-    await browser.debugger.sendCommand(target, 'Page.reload', { ignoreCache: true });
+    await session.send('Page.reload', { ignoreCache: true });
 
     await Promise.race([
       loadPromise,
@@ -173,16 +162,6 @@ async function measureWithCdp(
   } catch (err) {
     return { ok: false, error: errorMessage(err) || 'CDP measurement failed.' };
   } finally {
-    browser.debugger.onEvent.removeListener(onEvent);
-    browser.debugger.onDetach.removeListener(onDetach);
-    await browser.debugger.detach(target).catch(() => undefined);
+    await session.detach();
   }
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  const rec = asRecord(err);
-  if (rec && typeof rec.message === 'string') return rec.message;
-  return '';
 }

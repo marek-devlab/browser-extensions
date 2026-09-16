@@ -1,0 +1,26 @@
+{
+  "channel": "chromium",
+  "when": "2026-09-15T08:20:51.497Z",
+  "spikes": {
+    "S6_netcore": {
+      "attach": {
+        "ok": true
+      },
+      "eventsSeen": 1,
+      "attachedMid": true,
+      "afterTabClose": {
+        "attached": false,
+        "events": [
+          "http://127.0.0.1:56824/api/a?status=200&netcore=1"
+        ],
+        "detachReason": "target_closed"
+      },
+      "detachAfterBrowserDetachIsNoop": true,
+      "attach2": {
+        "ok": true
+      },
+      "attachedAfterOwnDetach": false,
+      "detachReasonAfterOwnDetach": null
+    }
+  }
+}

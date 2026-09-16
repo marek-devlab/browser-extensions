@@ -41,7 +41,7 @@ const {
   stageOfEvent,
   patternsCover,
   cdpGlobMatches,
-  ruleMatches,
+  pausedRuleMatches,
   commandFor,
   fulfillHeaders,
   toBase64,
@@ -251,21 +251,21 @@ await check('cdpGlobMatches / patternsCover: CDP glob semantics with escapes, ca
 /* ------------------------------ pure: matching ------------------------------ */
 console.log('debugger-eval: matching + actions');
 
-await check('ruleMatches: url/method/type/pageDomains/activeTab at Request; status + headers at Response', () => {
+await check('pausedRuleMatches: url/method/type/pageDomains/activeTab at Request; status + headers at Response', () => {
   const r = rule({ scope: 'activeTab', condition: { methods: ['GET'], pageDomains: ['example.com'] } });
-  assert.equal(ruleMatches(r, paused(), 'Request', ctx()), true);
-  assert.equal(ruleMatches(r, paused({ request: { url: 'https://x/other', method: 'GET' } }), 'Request', ctx()), false, 'url');
-  assert.equal(ruleMatches(r, paused({ request: { url: 'https://x/api/', method: 'POST' } }), 'Request', ctx()), false, 'method');
-  assert.equal(ruleMatches(r, paused({ resourceType: 'Script' }), 'Request', ctx()), false, 'type');
-  assert.equal(ruleMatches(r, paused(), 'Request', ctx({ tabHost: 'evil.test' })), false, 'pageDomains');
-  assert.equal(ruleMatches(r, paused(), 'Request', ctx({ tabHost: '' })), false, 'unknown host never matches a domain condition');
-  assert.equal(ruleMatches(r, paused(), 'Request', ctx({ isActiveTab: false })), false, 'activeTab scope');
+  assert.equal(pausedRuleMatches(r, paused(), 'Request', ctx()), true);
+  assert.equal(pausedRuleMatches(r, paused({ request: { url: 'https://x/other', method: 'GET' } }), 'Request', ctx()), false, 'url');
+  assert.equal(pausedRuleMatches(r, paused({ request: { url: 'https://x/api/', method: 'POST' } }), 'Request', ctx()), false, 'method');
+  assert.equal(pausedRuleMatches(r, paused({ resourceType: 'Script' }), 'Request', ctx()), false, 'type');
+  assert.equal(pausedRuleMatches(r, paused(), 'Request', ctx({ tabHost: 'evil.test' })), false, 'pageDomains');
+  assert.equal(pausedRuleMatches(r, paused(), 'Request', ctx({ tabHost: '' })), false, 'unknown host never matches a domain condition');
+  assert.equal(pausedRuleMatches(r, paused(), 'Request', ctx({ isActiveTab: false })), false, 'activeTab scope');
   const rs = rule({ condition: { responseStatus: '5xx', responseHeaders: [{ name: 'X-Err', op: 'contains', value: 'DOWN' }] } });
-  assert.equal(ruleMatches(rs, paused(), 'Request', ctx()), false, 'response rule is silent at Request stage');
+  assert.equal(pausedRuleMatches(rs, paused(), 'Request', ctx()), false, 'response rule is silent at Request stage');
   const ev = paused({ responseStatusCode: 503, responseHeaders: [{ name: 'x-err', value: 'service down' }] });
-  assert.equal(ruleMatches(rs, ev, 'Response', ctx()), true);
-  assert.equal(ruleMatches(rs, paused({ responseStatusCode: 200, responseHeaders: ev.responseHeaders }), 'Response', ctx()), false, 'status');
-  assert.equal(ruleMatches(rs, paused({ responseStatusCode: 503 }), 'Response', ctx()), false, 'header missing');
+  assert.equal(pausedRuleMatches(rs, ev, 'Response', ctx()), true);
+  assert.equal(pausedRuleMatches(rs, paused({ responseStatusCode: 200, responseHeaders: ev.responseHeaders }), 'Response', ctx()), false, 'status');
+  assert.equal(pausedRuleMatches(rs, paused({ responseStatusCode: 503 }), 'Response', ctx()), false, 'header missing');
 });
 
 await check('commandFor: block → BlockedByClient; fail → reason verbatim; delay → continue after ms; status → fulfill with nosniff/CT/CORS + base64 body', () => {

@@ -17,7 +17,7 @@
   "dependencies": {
     "@blur/core": "*",
     "@blur/ui": "*",
-    "axe-core": "^4.12.1",
+    "axe-core": "^4.13.0",
     "react": "^19",
     "react-dom": "^19"
   },
@@ -26,6 +26,6 @@
     "@types/react-dom": "^19",
     "@wxt-dev/module-react": "^1",
     "typescript": "^7.0.2",
-    "wxt": "^0.20.27"
+    "wxt": "^0.21.4"
   }
 }

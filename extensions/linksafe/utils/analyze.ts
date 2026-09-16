@@ -251,7 +251,7 @@ export function analyzeHost(displayHost: string, publicSuffix: string | null): H
     return {
       confusable: {
         lookalike: mapConfusables(displayHost),
-        script: nonLatin[0],
+        script: nonLatin[0] ?? '',
       },
     };
   }
@@ -281,7 +281,7 @@ export function anchorMismatch(
   if (!anchorText || !hrefRegistrable) return null;
   const m = anchorText.match(DOMAIN_IN_TEXT);
   if (!m) return null;
-  const textReg = parseHost(m[1]).domain;
+  const textReg = parseHost(m[1] ?? '').domain;
   if (!textReg || textReg === hrefRegistrable) return null;
   return { textDomain: textReg, hrefDomain: hrefRegistrable };
 }

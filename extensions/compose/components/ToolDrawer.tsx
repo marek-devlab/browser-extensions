@@ -65,8 +65,10 @@ export function ToolDrawer(props: DrawerProps) {
 
   const onKeyNav = (e: React.KeyboardEvent) => {
     const i = TABS.findIndex((tb) => tb.id === tab);
-    if (e.key === 'ArrowRight') onTab(TABS[(i + 1) % TABS.length].id);
-    if (e.key === 'ArrowLeft') onTab(TABS[(i - 1 + TABS.length) % TABS.length].id);
+    const next = e.key === 'ArrowRight' ? TABS[(i + 1) % TABS.length]
+      : e.key === 'ArrowLeft' ? TABS[(i - 1 + TABS.length) % TABS.length]
+      : undefined;
+    if (next) onTab(next.id);
   };
 
   return (
@@ -163,7 +165,8 @@ function FindReplace({
     const next = (current + delta + matches.length) % matches.length;
     setCurrent(next);
     onMatches(matches, next);
-    onScrollTo(matches[next].start);
+    const m = matches[next];
+    if (m) onScrollTo(m.start);
   };
 
   const replaceOne = () => {

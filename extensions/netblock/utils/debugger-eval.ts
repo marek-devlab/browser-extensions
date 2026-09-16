@@ -211,7 +211,7 @@ function headerMatches(cond: HeaderCondition, headers: readonly CdpHeaderEntry[]
 }
 
 /** Does the rule's condition match this paused request at this stage? Pure, never throws. */
-export function ruleMatches(rule: Rule, p: RequestPausedParams, stage: CdpStage, ctx: DbgContext): boolean {
+export function pausedRuleMatches(rule: Rule, p: RequestPausedParams, stage: CdpStage, ctx: DbgContext): boolean {
   if (stageOfRule(rule) !== stage) return false;
   if (rule.scope === 'activeTab' && !ctx.isActiveTab) return false;
   const c = rule.condition;
@@ -333,7 +333,7 @@ export function evaluatePaused(
   const dctx = { tabId: ctx.tabId, url: p.request.url, now: ctx.now };
   for (const compiled of rules) {
     const rule = compiled.rule;
-    if (!ruleMatches(rule, p, stage, ctx)) continue;
+    if (!pausedRuleMatches(rule, p, stage, ctx)) continue;
     const d = decide(rule, cur, dctx);
     cur = d.next;
     deltas.push({ key: d.key, counter: d.counter, ruleId: rule.id, now: ctx.now });

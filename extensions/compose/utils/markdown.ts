@@ -1,5 +1,4 @@
-import MarkdownIt from 'markdown-it';
-import type Token from 'markdown-it/lib/token.mjs';
+import MarkdownIt, { type MarkdownIt as MarkdownItInstance, type StateCore, type Token } from 'markdown-it';
 import { sanitizeToFragment, serializeFragment, type SanitizeResult } from './sanitize';
 import type { MsgKey } from './i18n';
 
@@ -20,7 +19,7 @@ type Translate = (key: MsgKey, vars?: Record<string, string | number>) => string
 // [t](u). `typographer: false` because we must not silently rewrite the user's
 // characters.
 
-const md: MarkdownIt = new MarkdownIt('default', {
+const md: MarkdownItInstance = MarkdownIt('default', {
   html: true,
   linkify: false,
   typographer: false,
@@ -37,11 +36,11 @@ const md: MarkdownIt = new MarkdownIt('default', {
  */
 const TASK_RE = /^\[([ xX])\]\s+/;
 
-md.core.ruler.after('inline', 'cw_task_lists', (state) => {
+md.core.ruler.after('inline', 'cw_task_lists', (state: StateCore) => {
   const tokens = state.tokens;
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
-    if (tok.type !== 'inline') continue;
+    if (!tok || tok.type !== 'inline') continue;
     const m = TASK_RE.exec(tok.content);
     if (!m) continue;
 
@@ -63,9 +62,10 @@ md.core.ruler.after('inline', 'cw_task_lists', (state) => {
     itemOpen.attrJoin('class', 'cw-task-item');
     for (let j = i - 3; j >= 0; j--) {
       const t = tokens[j];
+      if (!t) break;
       if (t.type === 'bullet_list_open' || t.type === 'ordered_list_open') {
         // attrJoin would append the class once per task item in the list.
-        if (!(t.attrGet('class') ?? '').includes('cw-task-list')) {
+        if (!String(t.attrGet('class') ?? '').includes('cw-task-list')) {
           t.attrJoin('class', 'cw-task-list');
         }
         break;

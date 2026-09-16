@@ -10,7 +10,7 @@
     "compile": "tsc --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.63.0",
     "typescript": "^7.0.2"
   }
 }

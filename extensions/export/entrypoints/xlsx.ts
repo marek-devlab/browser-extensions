@@ -1,5 +1,7 @@
 import { defineUnlistedScript } from '#imports';
-import writeXlsxFile from 'write-excel-file';
+// v4 has no root export: the browser build is the `/browser` subpath and the
+// result is a handle with `toBlob()` instead of an options-driven return type.
+import writeXlsxFile from 'write-excel-file/browser';
 import { setXlsxWriter, type XlsxSheet } from '../utils/xlsx-bridge';
 
 // `xlsx.js` — injected as a SECOND file, and ONLY when the user picks .xlsx
@@ -31,13 +33,13 @@ export default defineUnlistedScript(() => {
 
       // Multi-sheet form when >1 table was picked (design §4.4); single otherwise.
       if (data.length > 1) {
-        return (await writeXlsxFile(data as never, {
-          sheets: sheets.map((s) => s.name),
-        })) as Blob;
+        return writeXlsxFile(
+          sheets.map((s, i) => ({ data: data[i] as never, sheet: s.name })),
+        ).toBlob();
       }
-      return (await writeXlsxFile(data[0] as never, {
+      return writeXlsxFile(data[0] as never, {
         sheet: sheets[0]?.name ?? 'Table',
-      })) as Blob;
+      }).toBlob();
     },
   });
 });

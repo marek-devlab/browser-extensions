@@ -25,7 +25,7 @@ export const TARGETS: TargetInfo[] = [
 ];
 
 export function targetInfo(id: Target): TargetInfo {
-  return TARGETS.find((t) => t.id === id) ?? TARGETS[0];
+  return TARGETS.find((t) => t.id === id) ?? (TARGETS[0] as TargetInfo);
 }
 
 /** Character/byte limits shown as progress bars in the Stats tab (design §2.7).

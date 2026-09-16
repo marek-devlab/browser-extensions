@@ -151,6 +151,7 @@ async function restoreWindow(
     // Open the window on its first tab. For a lazy restore we point the first tab at
     // the placeholder so even the new window opens with nothing loaded.
     const first = win.tabs[0];
+    if (!first) return;
     const createData: Parameters<typeof browser.windows.create>[0] = {
       url: opts.lazy && !import.meta.env.FIREFOX ? placeholderUrl(first) : first.url,
       focused: false,

@@ -566,7 +566,8 @@ function identityLine(m: ResourceCardModel, t: TFn): string {
     image: 'kindImage', video: 'kindVideo', audio: 'kindAudio', iframe: 'kindFrame',
     'css-background': 'kindCssBg', none: 'kindNone',
   };
-  parts.push(kindKey[m.kind] ? t(kindKey[m.kind]) : m.kind);
+  const kk = kindKey[m.kind];
+  parts.push(kk ? t(kk) : m.kind);
   if (m.mime.value !== '—') {
     parts.push(
       m.mime.certainty === 'guessed-extension'

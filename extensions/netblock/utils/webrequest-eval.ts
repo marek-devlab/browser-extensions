@@ -163,7 +163,7 @@ function headerMatches(cond: HeaderCondition, headers: readonly WrHeader[] | und
 }
 
 /** Does the rule's condition match this request at this stage? Pure, never throws. */
-export function ruleMatches(rule: Rule, details: WrRequestDetails, stage: WrStage, ctx: EvalContext): boolean {
+export function requestRuleMatches(rule: Rule, details: WrRequestDetails, stage: WrStage, ctx: EvalContext): boolean {
   if (stageOf(rule) !== stage) return false;
   if (rule.scope === 'activeTab' && !ctx.activeTabs.has(details.tabId)) return false;
   const c = rule.condition;
@@ -224,7 +224,7 @@ export function evaluateRequest(
   const dctx = { tabId: details.tabId >= 0 ? details.tabId : undefined, url: details.url, now: ctx.now };
   for (const compiled of rules) {
     const rule = compiled.rule;
-    if (!ruleMatches(rule, details, stage, ctx)) continue;
+    if (!requestRuleMatches(rule, details, stage, ctx)) continue;
     const d = decide(rule, cur, dctx);
     cur = d.next;
     deltas.push({ key: d.key, counter: d.counter, ruleId: rule.id, now: ctx.now });

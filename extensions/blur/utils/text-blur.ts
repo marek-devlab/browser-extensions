@@ -467,7 +467,7 @@ class HighlightTextBlurrer extends BaseTextBlurrer {
     this.#ranges = [];
   }
 
-  protected revealHook(): void {
+  protected override revealHook(): void {
     // No ancestor attribute reaches a highlight, so revealing means dropping it.
     this.#registry.delete(HIGHLIGHT_NAME);
   }

@@ -132,7 +132,10 @@ export function Workbench({
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
+    const ro = new ResizeObserver((entries) => {
+      const first = entries[0];
+      if (first) setWidth(first.contentRect.width);
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -494,7 +497,10 @@ export function Workbench({
                   <div className="cw-actions">
                     <Button
                       variant="primary"
-                      onClick={() => onTemplate(templates[0] ?? BUILTIN_TEMPLATES[0], 'append')}
+                      onClick={() => {
+                        const tpl = templates[0] ?? BUILTIN_TEMPLATES[0];
+                        if (tpl) onTemplate(tpl, 'append');
+                      }}
                     >
                       {t('empty_take_template')}
                     </Button>

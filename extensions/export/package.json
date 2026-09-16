@@ -17,16 +17,16 @@
   "dependencies": {
     "@blur/core": "*",
     "@blur/ui": "*",
-    "fflate": "^0.8.2",
+    "fflate": "^0.8.3",
     "react": "^19",
     "react-dom": "^19",
-    "write-excel-file": "^2.3.2"
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@wxt-dev/module-react": "^1",
     "typescript": "^7.0.2",
-    "wxt": "^0.20.27"
+    "wxt": "^0.21.4"
   }
 }

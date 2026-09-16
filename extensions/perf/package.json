@@ -20,13 +20,13 @@
     "@blur/ui": "*",
     "react": "^19",
     "react-dom": "^19",
-    "web-vitals": "^5.3.0"
+    "web-vitals": "^6.2.2"
   },
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@wxt-dev/module-react": "^1",
     "typescript": "^7.0.2",
-    "wxt": "^0.20.27"
+    "wxt": "^0.21.4"
   }
 }

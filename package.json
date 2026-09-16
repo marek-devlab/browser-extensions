@@ -64,7 +64,8 @@
     "e2e": "npm run e2e:logic && npm run e2e:netcore && npm run e2e:netblock-logic && npm run e2e:netblock-dnr && npm run e2e:netblock-webrequest && npm run e2e:netblock-page && npm run e2e:netblock-debugger && npm run e2e:adblock && npm run e2e:blur && npm run e2e:perf && npm run e2e:seo && npm run e2e:netblock && npm run e2e:wave3"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "web-ext": "^10.6.0"
   },
   "engines": {
     "node": ">=20"

@@ -49,7 +49,7 @@ export interface VitalDetail {
   };
   /** INP: which part of the interaction was slow. */
   inp?: {
-    interactionType: 'pointer' | 'keyboard';
+    interactionType?: 'pointer' | 'keyboard';
     /** Waiting for the main thread before the handler could run. */
     inputDelay: number;
     /** The event handlers themselves. */

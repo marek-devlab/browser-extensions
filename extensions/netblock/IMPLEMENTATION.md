@@ -286,7 +286,7 @@ only (desktop + Android), the ONE engine there — every rule resolves to it.
   headers stage, degradation table, pause, tabId −1, cold-read timeout with
   fake timers, overlay/echo, engine glue against a fake `browser`);
   `npm run e2e:netblock-webrequest-live` (19 checks: real `.output/firefox-mv2`
-  in the installed Firefox via `web-ext-run` + Marionette, offline fixture
+  in the installed Firefox via `web-ext` + Marionette, offline fixture
   server; a–e of the brief plus log rows and written-through counters). The
   live harness drives the extension through its own tool page —
   `importRules`/`pauseTab`/`getLogPage` — opened with `gBrowser.addTab` from
@@ -483,7 +483,7 @@ npm run e2e:netblock-page-live             # page engine, Chromium via Playwrigh
 npm run e2e:netblock-debugger              # debugger engine: patterns/decisions/glue against a fake CDP (Node)
 npm run e2e:netblock-debugger-live         # debugger engine (NL mode), Chromium via Playwright (after build:netblock)
 npm run e2e:netblock-webrequest            # Firefox engine: matching/state/glue (Node)
-npm run e2e:netblock-webrequest-live       # Firefox engine, installed Firefox via web-ext-run + Marionette (after build:firefox)
+npm run e2e:netblock-webrequest-live       # Firefox engine, installed Firefox via web-ext + Marionette (after build:firefox)
 npm run e2e:netblock-ui                    # popup + tool page, Chromium via Playwright (after build:netblock)
 npm run e2e:netblock-integration           # design §4 flows + §8 end-to-end (real popup, fixture server; after build:netblock)
 npm run e2e:netblock                       # both Playwright specs (this is what the root `e2e` chain runs)

@@ -68,6 +68,7 @@ function toTree(tokens: Token[]): Node[] {
   const stack: Node[][] = [root];
   for (const token of tokens) {
     const bucket = stack[stack.length - 1];
+    if (!bucket) continue;
     if (token.nesting === 1) {
       const node: Node = { type: token.type.replace(/_open$/, ''), token, children: [] };
       bucket.push(node);
@@ -149,10 +150,10 @@ function renderInline(nodes: Node[], ctx: Ctx): string {
         out += inlineCode(ctx, t.content);
         break;
       case 'link':
-        out += link(ctx, t.attrGet('href') ?? '', renderInline(n.children, ctx));
+        out += link(ctx, String(t.attrGet('href') ?? ''), renderInline(n.children, ctx));
         break;
       case 'image':
-        out += image(ctx, t.attrGet('src') ?? '', t.content);
+        out += image(ctx, String(t.attrGet('src') ?? ''), t.content);
         break;
       case 'softbreak':
       case 'hardbreak':
@@ -325,7 +326,7 @@ function renderBlock(n: Node, ctx: Ctx): string | null {
       let i = 1;
       for (const item of n.children) {
         if (item.type !== 'list_item') continue;
-        const isTask = (item.token.attrGet('class') ?? '').includes('cw-task-item');
+        const isTask = String(item.token.attrGet('class') ?? '').includes('cw-task-item');
         const checked = isTaskChecked(item);
         const body = renderBlocks(item.children, ctx).join('\n\n');
         const marker = listMarker(ctx, { ordered, index: i, isTask, checked });
@@ -421,7 +422,7 @@ function renderTable(n: Node, ctx: Ctx): string {
 
   // Slack / Telegram / Plain have NO tables. Degrade to an aligned monospace
   // block — the text survives (§6.3), only the grid does not.
-  const width = rows[0].cells.map((_, i) =>
+  const width = (rows[0]?.cells ?? []).map((_, i) =>
     Math.max(...rows.map((r) => [...(r.cells[i] ?? '')].length)),
   );
   const ascii = rows

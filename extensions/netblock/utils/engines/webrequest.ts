@@ -324,7 +324,7 @@ export function createWebRequestEngine(caps: EngineCaps, hasApi: boolean): Engin
       marks: over.marks,
     };
     if (over.status !== undefined) entry.status = over.status;
-    // Same source `ruleMatches` uses for `pageDomains` (originUrl, then documentUrl).
+    // Same source `requestRuleMatches` uses for `pageDomains` (originUrl, then documentUrl).
     const initiatorHost = hostOf(details.originUrl ?? details.documentUrl);
     if (initiatorHost) entry.initiatorHost = initiatorHost;
     if (over.ruleId !== undefined) {

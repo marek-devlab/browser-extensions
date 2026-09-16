@@ -160,7 +160,7 @@ export function transliterate(
   let out = '';
 
   for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
+    const ch = chars[i] ?? '';
     if (!isCyrillic(ch)) {
       out += ch;
       continue;

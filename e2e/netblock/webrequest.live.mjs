@@ -5,7 +5,7 @@
 // --workspace @blur/netblock`. Run:  npm run e2e:netblock-webrequest-live
 //
 // How the harness talks to the extension (plan 02-webrequest.md §2): Firefox
-// is launched through `web-ext-run` (WXT's dependency) with `--marionette`;
+// is launched through `web-ext` (WXT's optional runner dependency) with `--marionette`;
 // the add-on's internal UUID is read from `WebExtensionPolicy` in Marionette's
 // chrome context (pinning it through the `extensions.webextensions.uuids`
 // pref does not survive web-ext's temporary install). WebDriver's own navigate command
@@ -215,7 +215,7 @@ function check(name, ok, info) {
 }
 
 const srv = await startServers();
-const { default: webExt } = await import('web-ext-run');
+const { default: webExt } = await import('web-ext');
 console.log('[live] launching Firefox with the built extension…');
 const runner = await webExt.cmd.run(
   {

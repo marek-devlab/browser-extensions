@@ -70,7 +70,7 @@ export function computeModelWinner(
 
   const firstAtOrAbove = withDensity.find((x) => x.d >= dpr);
   const winner = firstAtOrAbove ?? withDensity[withDensity.length - 1];
-  return winner.c.url;
+  return winner?.c.url ?? null;
 }
 
 /** Build the full analysis. `chosen` is the fact; the reasons are computed. */

@@ -1,10 +1,10 @@
 # Browser extension suite
 
-Десять независимых расширений с общим ядром и общим дизайн-пакетом. Монорепо на npm workspaces, сборка — [WXT](https://wxt.dev).
+Пятнадцать независимых расширений с общим ядром и общим дизайн-пакетом (№15 `proof` отложен, поэтому в дереве — четырнадцать плюс №16 Request Blocker). Монорепо на npm workspaces, сборка — [WXT](https://wxt.dev).
 
-> **Стадия:** первые четыре (blur, adblock, perf, seo) — код готов, версия 1.0.0, проверены вживую. Вторая волна из шести (devdata, export, assets, whoami, capture, compose) — предметная логика реализована из моков, typecheck 11/11 воркспейсов чист, сборка Chrome+Firefox для всех шести проходит, независимый аудит по каждому — в [`docs/audit/`](./docs/audit/). Осталось то, что скриптом не сделать: **скриншоты для листингов** — их должен снять человек из настоящего браузера (см. [`STORE.md`](./STORE.md)).
+> **Стадия:** первые четыре (blur, adblock, perf, seo) — код готов, версия 1.0.0, проверены вживую. Вторая волна из шести (devdata, export, assets, whoami, capture, compose) — предметная логика реализована из моков, typecheck 11/11 воркспейсов чист, сборка Chrome+Firefox для всех шести проходит, независимый аудит по каждому — в [`docs/audit/`](./docs/audit/). Третья волна (convert, linksafe, vision, sessions) — MVP, зелёная сборка. **№16 Request Blocker (`netblock`) построен 2026-09-15**: четыре движка, popup + tool page, Node- и live-тесты зелёные; пре-сабмит аудит — [`docs/audit/2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md). Осталось то, что скриптом не сделать: **скриншоты для листингов** — их должен снять человек из настоящего браузера (см. [`STORE.md`](./STORE.md)).
 >
-> Издатель — Blockaly (`<name>@blockaly.com`). Мобильный таргет — **Firefox for Android** (Chrome на Android расширения не поддерживает вообще); `capture` десктоп-only и честно об этом заявляет.
+> Издатель — marek-devlab (`<name>@marek-devlab.github.io`). Мобильный таргет — **Firefox for Android** (Chrome на Android расширения не поддерживает вообще); `capture` десктоп-only и честно об этом заявляет.
 
 ## Документы
 
@@ -15,11 +15,14 @@
 | [`STORE.md`](./STORE.md) | Чеклист публикации, тексты листингов, обоснования разрешений |
 | [`PRIVACY.md`](./PRIVACY.md) | Privacy policy |
 | [`docs/design/`](./docs/design/) | Полные UX/UI-макеты шести новых расширений (по файлу на каждое) |
-| [`docs/audit/`](./docs/audit/) | Аудит всех десяти (2026-07-14): безопасность, отказоустойчивость, готовность к стору |
+| [`e2e/netblock-spikes/`](./e2e/netblock-spikes/REPORT.md) | Живые спайки платформы для №16 (Chromium 153 / Firefox 155): `debugger` ↔ DevTools, Firefox `redirectUrl`, латентность `updateSessionRules`, CDP Fetch ↔ WebSocket, `responseHeaders`+`block`, `@blur/netcore` вживую |
+| [`docs/research/`](./docs/research/) | Deep-research по новым расширениям с первоисточниками 2024–2026 (сейчас: №16 [`netblock`](./docs/research/2026-09-15-netblock.md) — Request Blocker; дизайн — [`docs/design/netblock.md`](./docs/design/netblock.md)) |
+| [`docs/audit/`](./docs/audit/) | Аудит всех десяти (2026-07-14): безопасность, отказоустойчивость, готовность к стору; пре-сабмит аудит №16 ([`2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md)) |
+| [`docs/plans/netblock/`](./docs/plans/netblock/) | Планы фаз №16 с проверенными источниками (фундамент, четыре движка, UI, [store-compliance](./docs/plans/netblock/03-compliance.md)) |
 
 ## Почему десять, а не одно
 
-Chrome Web Store требует «a single purpose that is narrow and easy to understand» и прямо запрещает «bundles of unrelated functionality». Тест ревьюера: помещается ли цель в одну фразу. Каждое расширение — отдельный продукт с отдельным манифестом; общий у них только код-фундамент (`@blur/core`, `@blur/ui`), не точка входа.
+Chrome Web Store требует «a single purpose that is narrow and easy to understand» и прямо запрещает «bundles of unrelated functionality». Тест ревьюера: помещается ли цель в одну фразу. Каждое расширение — отдельный продукт с отдельным манифестом; общий у них только код-фундамент (`@blur/core`, `@blur/ui`, `@blur/netcore` — сетевые кирпичи без browser-импортов: URL-матчер с семантикой DNR `urlFilter` и обёртка `chrome.debugger`, см. [`packages/netcore/README.md`](./packages/netcore/README.md)), не точка входа.
 
 **Первая волна (v1.0.0, все с контент-скриптом `<all_urls>` → install-time доступ ко всем сайтам):**
 
@@ -41,11 +44,17 @@ Chrome Web Store требует «a single purpose that is narrow and easy to un
 | [`extensions/capture`](./extensions/capture) | Записать вкладку и экспортировать медиа | `storage`, `unlimitedStorage`, `downloads`, `activeTab`, `tabCapture`, `offscreen`; `optional: desktopCapture` (Chrome). Firefox — без `tabCapture`/`offscreen`. CSP `connect-src 'none'`. Десктоп-only |
 | [`extensions/compose`](./extensions/compose) | Написать и отформатировать текст перед вставкой | `storage`, `contextMenus`, `clipboardWrite`, `activeTab` + `sidePanel` (Chrome) / `sidebar_action` (Firefox). CSP `connect-src 'none'`. Превью: markdown-it → DOMPurify → closed Shadow DOM |
 
+**№16 — построен 2026-09-15 (движки `dnr`/`page`/`debugger` для Chrome, `webrequest` для Firefox, popup + tool page; дизайн — [`docs/design/netblock.md`](./docs/design/netblock.md), планы — [`docs/plans/netblock/`](./docs/plans/netblock/), заметки по реализации — [`extensions/netblock/IMPLEMENTATION.md`](./extensions/netblock/IMPLEMENTATION.md)):**
+
+| Расширение | Цель | Ключевые разрешения (из собранного манифеста) |
+|---|---|---|
+| [`extensions/netblock`](./extensions/netblock) | Блокировать, фейлить и задерживать сетевые запросы для тестирования отказоустойчивости фронтенда | Chrome: `storage`, `activeTab`, `alarms`, `scripting`, `webRequest` (только наблюдение), `declarativeNetRequest`, **`debugger`** (install-time — Chromium не позволяет объявить его optional, `kFlagCannotBeOptional`; Network-level mode **opt-in на вкладку** через диалог согласия в popup, ничего не attach'ится само; решение владельца 2026-09-15); `optional_host: <all_urls>` (по кнопке «Включить на этом сайте», per-site). Предупреждения при установке: «Read and change all your data on all websites» + «Access the page debugger backend» (от `debugger`) + «Block content on any page» (от DNR). Firefox: `storage`, `activeTab`, `alarms`, `webRequest`, `webRequestBlocking`, `<all_urls>` install-time (как у `adblock`), без `debugger`. CSP `connect-src 'none'`, ноль сети. Гварды: нет `declarativeNetRequestFeedback`, `debugger` в baseline только по allowlist (`netblock`), нет сетевого `connect-src` |
+
 **Важно и без прикрас: все четыре объявляют статический контент-скрипт с `matches: ["<all_urls>"]`**, то есть у всех четырёх при установке появляется предупреждение «читать и изменять все ваши данные на всех сайтах» — постоянный доступ, а не запрашиваемый на лету. Каждому он нужен по делу: `blur` обязан размыть контент **до первой отрисовки** (`document_start`), `adblock` прячет рекламные элементы (`display: none`) там, где сеть уже не поможет, `perf` регистрирует `PerformanceObserver` до старта отрисовки (иначе LCP/FCP уже упущены), `seo` читает разметку страницы. Но **доступ — это не сбор данных**: наружу ничего не уходит, единственное исключение — opt-in PageSpeed Insights в `perf` (см. ниже). Firefox-сборки объявляют `data_collection_permissions`: `none` у `blur`/`adblock`/`seo`, у `perf` — `required: none`, `optional: websiteActivity`.
 
 `optional_host_permissions` есть только у `adblock` и только на Chrome: DNR считает `redirect`/`modifyHeaders` «unsafe»-действиями и применяет их лишь к origin'ам с **выданным** host-разрешением — паттерн `matches` контент-скрипта эту проверку не проходит, поэтому без него не сработала бы вырезка трекинг-параметров из URL. У `blur` этот ключ **удалён** (был мёртвым: `permissions.request()` никогда не вызывался). WXT не переносит этот MV3-ключ в MV2-сборку, поэтому на Firefox `adblock` берёт `<all_urls>` install-time.
 
-`debugger` живёт только в `perf` — там точное измерение переданных байтов через CDP и есть основная работа. Он даёт полный доступ к трафику и показывает пользователю неубираемый баннер «расширение отлаживает этот браузер», поэтому в остальных расширениях его быть не может. Он opt-in и запрашивается по жесту пользователя.
+`debugger` живёт в двух расширениях, и в обоих он — часть основной работы: `perf` (точные переданные байты через CDP) и `netblock` (Network-level mode: реальный код ответа / реальный тип сетевой ошибки через CDP `Fetch` — ни один другой API этого не умеет). Он даёт полный доступ к трафику и показывает пользователю неубираемый баннер «расширение отлаживает этот браузер», поэтому в остальных расширениях его быть не может. ⚠️ `perf` объявляет его в `optional_permissions` — Chromium такое **молча вырезает** (`kFlagCannotBeOptional`), так что exact-bytes-путь `perf` в текущем виде не работает (см. `TODO.md`); `netblock` держит его install-time и включает только по явному переключателю на вкладке.
 
 ## Структура
 
@@ -62,6 +71,12 @@ extensions/assets/   №8   │ вторая волна
 extensions/whoami/   №9   │
 extensions/capture/  №5   │
 extensions/compose/  №10 ─┘
+extensions/convert/  №11 ─┐
+extensions/linksafe/ №12  │ третья волна
+extensions/vision/   №13  │
+extensions/sessions/ №14 ─┘
+extensions/netblock/ №16  — Request Blocker (№15 proof отложен)
+packages/netcore/    URL-матчер с семантикой DNR + обёртка CDP-сессии (без browser-импортов)
 ```
 
 `@blur/core` не импортирует браузерные API — он остаётся чистым, чтобы его можно было использовать одинаково из background, контент-скриптов, popup и DevTools-панелей. `DomRuleEngine` переиспользуется расширениями `blur` и `adblock`: механизм поиска элементов один, действие разное (`filter: blur()` против `display: none`). `@blur/ui` — канонические дизайн-токены, тема (`useThemeController`/`ThemeToggle`) и примитивы; вторая волна собрана на нём (первые четыре пока держат свою копию токенов — миграция в бэклоге).
@@ -90,6 +105,8 @@ npm run dev:assets
 npm run dev:whoami
 npm run dev:capture
 npm run dev:compose
+
+npm run dev:netblock # №16 Request Blocker (и dev:netblock:firefox)
 
 npm run dev:blur:firefox   # то же под Firefox (у каждого есть :firefox-вариант)
 ```
@@ -124,4 +141,4 @@ Chrome гарантирует расширению только **30 000** вк�
 
 ## Лицензии
 
-Код Blockaly — MIT ([`LICENSE`](./LICENSE)). Стороннее — под своими лицензиями: React (MIT), `web-vitals` (Apache-2.0), axe-core (MPL-2.0), фильтр-листы `adblock` — это **данные** под GPL-3.0 / CC-BY-SA 3.0. Полные тексты: [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md); копия едет внутри каждого пакета (`extensions/<name>/public/THIRD-PARTY-NOTICES.md`), атрибуция фильтров — `extensions/adblock/public/rules/ATTRIBUTION.md`.
+Код marek-devlab — MIT ([`LICENSE`](./LICENSE)). Стороннее — под своими лицензиями: React (MIT), `web-vitals` (Apache-2.0), axe-core (MPL-2.0), фильтр-листы `adblock` — это **данные** под GPL-3.0 / CC-BY-SA 3.0. Полные тексты: [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md); копия едет внутри каждого пакета (`extensions/<name>/public/THIRD-PARTY-NOTICES.md`), атрибуция фильтров — `extensions/adblock/public/rules/ATTRIBUTION.md`.

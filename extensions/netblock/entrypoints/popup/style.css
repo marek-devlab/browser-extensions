@@ -1,0 +1,259 @@
+/* Popup (design §2.1–§2.3, §2.7): 320 px wide. Tokens + primitives come from
+   @blur/ui (imported in main.tsx BEFORE this file); this file adds only the
+   popup layout. Status is never colour-only: inactive rules get ○ + italics +
+   the reason text, active ones ● (§9.2). */
+
+.popup {
+  width: 320px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.head__host {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.host {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host__on {
+  font-size: 11px;
+  color: var(--good-fg);
+  white-space: nowrap;
+}
+
+.fine {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.enable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.enable__title {
+  margin: 0;
+  font-size: 12px;
+}
+
+.enable .ui-btn {
+  width: 100%;
+}
+
+.rules {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.rules__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.plist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.prow--inactive .prow__name {
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+.prow__glyph {
+  font-size: 9px;
+}
+
+.prow__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prow__count {
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.prow__reset {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--accent-fg);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.prow__why {
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* Engine badge — text + glyph, shared classes with the tool page. */
+.ebadge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ebadge--dnr,
+.ebadge--webrequest {
+  border-color: var(--good);
+  color: var(--good-fg);
+}
+.ebadge--page {
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.ebadge--debugger {
+  border-color: var(--warn);
+  color: var(--warn-fg);
+}
+.ebadge--inactive,
+.ebadge--none {
+  border-style: dashed;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.nl {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nl__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.consent {
+  width: 296px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.consent::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.consent h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.consent p {
+  margin: 6px 0;
+}
+
+.consent ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.consent__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions .ui-btn {
+  flex: 1;
+}
+
+.live:empty {
+  display: none;
+}
+
+.footer {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+/* The inactive reason gets its own line under the name — never truncated. */
+.prow__why {
+  grid-column: 2 / -1;
+  white-space: normal;
+  max-width: none;
+}

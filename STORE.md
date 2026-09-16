@@ -1,6 +1,6 @@
 # Store submission guide
 
-Submission checklist and per-extension listing copy for the fourteen extensions
+Submission checklist and per-extension listing copy for the fifteen extensions
 in this monorepo. Ground truth for names, descriptions, and permissions is each
 extension's **generated manifest**
 (`extensions/<name>/.output/{chrome-mv3,firefox-mv2}/manifest.json`), with the
@@ -8,27 +8,31 @@ rationale in `extensions/<name>/wxt.config.ts`; this file must match them. The
 shared privacy policy is [`PRIVACY.md`](./PRIVACY.md) — host it and link it from
 every listing.
 
-All ship as **separate add-ons**, `author: "Blockaly"`, `homepage_url:
-"https://blockaly.com"`, with permanent AMO ids `<name>@blockaly.com`. The first
-four are the original wave (**v1.0.0**); the next six the second wave; the last
-four the **third wave (in preparation — not yet published)**:
+All ship as **separate add-ons**, `author: "marek-devlab"`, `homepage_url:
+"https://github.com/marek-devlab/browser-extensions"`, with permanent AMO ids `<name>@marek-devlab.github.io`. The first
+four are the original wave (**v1.0.0**); the next six the second wave; the next
+four the **third wave (in preparation — not yet published)**; the fifteenth,
+**Request Blocker**, was built on 2026-09-15 and is the one listing that carries
+the `debugger` permission at install (its section explains why and how it is
+gated):
 
 | Package | Store name | Single purpose | Gecko id |
 |---|---|---|---|
-| `extensions/blur` | Content Blur | Hide unwanted content on web pages | `blur@blockaly.com` |
-| `extensions/adblock` | Ad & Tracker Blocker | Block ads and trackers | `adblock@blockaly.com` |
-| `extensions/perf` | Page Performance & Network | Measure page performance | `perf@blockaly.com` |
-| `extensions/seo` | SEO & Accessibility Auditor | Audit page markup and accessibility | `seo@blockaly.com` |
-| `extensions/devdata` | Data Format Toolkit | Parse and convert structured data locally | `devdata@blockaly.com` |
-| `extensions/export` | Page Content Exporter | Export page content to a file | `export@blockaly.com` |
-| `extensions/assets` | Asset Inspector | Inspect where page assets came from | `assets@blockaly.com` |
-| `extensions/whoami` | Connection & Device Info | Show your connection and device | `whoami@blockaly.com` |
-| `extensions/capture` | Capture Studio | Record the current tab and export media | `capture@blockaly.com` |
-| `extensions/compose` | Markdown Workbench | Write and format Markdown | `compose@blockaly.com` |
-| `extensions/convert` | Universal Converter | Convert units, currencies, time and dates | `convert@blockaly.com` |
-| `extensions/linksafe` | Link Inspector | Reveal where a link really goes | `linksafe@blockaly.com` |
-| `extensions/vision` | Vision Simulator | Simulate colour-blindness and low vision | `vision@blockaly.com` |
-| `extensions/sessions` | Session Saver | Save and restore tab sessions locally | `sessions@blockaly.com` |
+| `extensions/blur` | Content Blur | Hide unwanted content on web pages | `blur@marek-devlab.github.io` |
+| `extensions/adblock` | Ad & Tracker Blocker | Block ads and trackers | `adblock@marek-devlab.github.io` |
+| `extensions/perf` | Page Performance & Network | Measure page performance | `perf@marek-devlab.github.io` |
+| `extensions/seo` | SEO & Accessibility Auditor | Audit page markup and accessibility | `seo@marek-devlab.github.io` |
+| `extensions/devdata` | Data Format Toolkit | Parse and convert structured data locally | `devdata@marek-devlab.github.io` |
+| `extensions/export` | Page Content Exporter | Export page content to a file | `export@marek-devlab.github.io` |
+| `extensions/assets` | Asset Inspector | Inspect where page assets came from | `assets@marek-devlab.github.io` |
+| `extensions/whoami` | Connection & Device Info | Show your connection and device | `whoami@marek-devlab.github.io` |
+| `extensions/capture` | Capture Studio | Record the current tab and export media | `capture@marek-devlab.github.io` |
+| `extensions/compose` | Markdown Workbench | Write and format Markdown | `compose@marek-devlab.github.io` |
+| `extensions/convert` | Universal Converter | Convert units, currencies, time and dates | `convert@marek-devlab.github.io` |
+| `extensions/linksafe` | Link Inspector | Reveal where a link really goes | `linksafe@marek-devlab.github.io` |
+| `extensions/vision` | Vision Simulator | Simulate colour-blindness and low vision | `vision@marek-devlab.github.io` |
+| `extensions/sessions` | Session Saver | Save and restore tab sessions locally | `sessions@marek-devlab.github.io` |
+| `extensions/netblock` | Request Blocker | Block, fail and delay network requests for frontend resilience testing | `netblock@marek-devlab.github.io` |
 
 ---
 
@@ -64,7 +68,7 @@ listing):
 The honest and defensible framing — use it verbatim in the Privacy-practices
 justification — is: **access is not collection.** The original four have
 permission to read every page; none of them take anything off the device. Across
-all fourteen extensions there are exactly **four** off-device data flows, each
+all fifteen extensions there are exactly **four** off-device data flows, each
 opt-in / use-triggered, and **none sends the content you work with**: (1) `perf`'s
 PageSpeed Insights call, which sends the audited URL to Google; (2) `whoami`'s
 IP/ISP lookup, which shows you your own IP via Cloudflare and, if you opt in,
@@ -73,8 +77,16 @@ fetches a **rate table** from Frankfurter (ECB) / CoinGecko and converts your
 amount **locally** (the amount is never sent); and (4) `linksafe`'s opt-in
 "Resolve destination", which sends one shortened link's URL to its own server when
 you ask. The rest — including `vision`, `sessions`, `devdata`, `export`, `assets`,
-`capture`, and `compose` — make **zero network calls** (several enforce this with
-`connect-src 'none'`).
+`capture`, `compose` and `netblock` — make **zero network calls** (several enforce this with
+`connect-src 'none'`; `netblock` does).
+
+**Request Blocker is the one newer extension with a broad-access warning at
+install, and it is not from a content script:** Chrome prints "Read and change
+all your data on all websites" + "Access the page debugger backend" because of
+the `debugger` permission (which Chromium refuses to make optional) and "Block
+content on any page" because of `declarativeNetRequest`. Its host access is
+still per-site and gesture-only (`optional_host_permissions`). Say exactly
+that; see its section.
 
 **Firefox data-collection consent (mandatory for new AMO submissions since
 2025-11-03).** Every Firefox build declares
@@ -86,13 +98,14 @@ you ask. The rest — including `vision`, `sessions`, `devdata`, `export`, `asse
 | perf | `required: ["none"]`, `optional: ["websiteActivity"]` — nothing by default; the audited page URL is shared with Google only if the user opts into a PageSpeed Insights audit. |
 | devdata, export, assets, capture, compose | `required: ["none"]` — Firefox renders "does not collect data". |
 | whoami | `required: ["none"]`, `optional: ["locationInfo"]` — nothing by default; the user's IP is shared with ipinfo.io only if the user opts into the ISP/ASN lookup. |
+| convert, linksafe, vision, sessions, netblock | `required: ["none"]` — Firefox renders "does not collect data". |
 
 These must stay consistent with `PRIVACY.md` and with the Chrome data-usage
 disclosures. They currently are.
 
 ---
 
-## Why four separate extensions (Chrome Web Store single-purpose policy)
+## Why separate extensions (Chrome Web Store single-purpose policy)
 
 The Chrome Web Store **Single Purpose policy** requires that "an extension must
 have a single purpose that is narrow and easy to understand" and explicitly
@@ -104,11 +117,22 @@ performance, and auditing markup — are unrelated functionality that would be
 rejected if bundled. Splitting them also keeps each **permission set** matched to
 its purpose. Most importantly, the `debugger` permission (full DevTools Protocol
 access, with a non-dismissable "extension is debugging this browser" banner) is
-**only** defensible in the one extension whose stated purpose is measuring real
-transferred bytes (Page Performance & Network) — and even there it is optional
-and opt-in. A meta-tag inspector or ad blocker requesting `debugger` is the
-textbook permission/purpose mismatch that gets rejected, so that capability is
-quarantined in `perf` alone.
+only defensible where the DevTools Protocol *is* the stated purpose: measuring
+real transferred bytes (Page Performance & Network) and failing requests with a
+real status / real network error (Request Blocker, since 2026-09-15). In both it
+is opt-in behind a user action. A meta-tag inspector or ad blocker requesting
+`debugger` is the textbook permission/purpose mismatch that gets rejected, so
+the capability stays quarantined in those two. The same logic keeps **Ad &
+Tracker Blocker** and **Request Blocker** apart even though both "block
+requests": one is a consumer ad/tracker filter driven by bundled lists, the other
+a developer/QA tool driven by the user's own failure rules (block, fail, delay,
+error status) — different audience, conditions and promises, and neither
+listing may borrow the other's vocabulary. ⚠️ Note the platform fact found
+while building Request Blocker: Chromium marks `debugger`
+`kFlagCannotBeOptional`, so `perf`'s `optional_permissions: ["debugger"]` is
+silently dropped at load — its exact-bytes path cannot currently work and its
+listing copy below ("optional, opt-in") describes an intent, not the built
+manifest. Tracked in `TODO.md`; fix before submitting `perf`.
 
 Reference: Chrome Web Store Developer Program Policies → "Single Purpose"
 (developer.chrome.com/docs/webstore/program-policies/single-purpose).
@@ -132,7 +156,8 @@ documentation. The steps below are the release runbook for whoever ships.
       of what the listing says. Use the table above.
 - [ ] `adblock` only: justify `optional_host_permissions: <all_urls>` (Chrome
       DNR "unsafe" actions need a *granted host permission*; see below).
-- [ ] `perf` only: disclose the PageSpeed Insights data transmission (audited URL sent to Google) and justify the opt-in `debugger` permission.
+- [ ] `perf` only: disclose the PageSpeed Insights data transmission (audited URL sent to Google) and justify the opt-in `debugger` permission (⚠️ resolve the non-optional `debugger` finding first — see "Why separate extensions").
+- [ ] `netblock` only: paste the eight justification texts from its section (incl. the install-time `debugger` and the optional `<all_urls>`), answer "No" to remote code, tick no data category, link the privacy policy; screenshots must include the Network-level consent dialog so the reviewer sees the gate.
 - [ ] Confirm no remote code (MV3 requirement) — all code is bundled.
 
 ### Firefox Add-ons (AMO) — desktop + Firefox for Android
@@ -145,14 +170,17 @@ documentation. The steps below are the release runbook for whoever ships.
       `gecko_android`, and `data_collection_permissions` (already in each
       `wxt.config.ts`) so AMO marks it Android-compatible and renders the
       data-consent panel.
-- [ ] Note the Firefox permission differences (below): `adblock` requires
-      install-time `<all_urls>` **host permission** on Firefox and has **no**
-      `optional_host_permissions` there (WXT drops the MV3-only key for the MV2
-      build); `perf` has no `debugger` on Firefox.
+- [ ] Note the Firefox permission differences (below): `adblock` and `netblock`
+      require install-time `<all_urls>` **host permission** on Firefox (blocking
+      `webRequest`) and have **no** `optional_host_permissions` there (WXT drops
+      the MV3-only key for the MV2 build); `perf` and `netblock` have no
+      `debugger` on Firefox.
 - [ ] Provide the privacy-policy URL in the listing.
 - [ ] Have the **Reviewer notes** (below) ready to paste — `addons-linter` warns
       on all four, every warning is a vendor/data false positive, and the
-      reviewer will likely ask.
+      reviewer will likely ask. For `netblock` add its AMO notes (the
+      `webRequestBlocking` + `<all_urls>` text, and the inert Chrome-only files
+      in the Firefox package).
 
 ### Safari (out of scope here)
 - [ ] Safari requires **macOS + Xcode** (`safari-web-extension-converter`) and a
@@ -166,7 +194,8 @@ documentation. The steps below are the release runbook for whoever ships.
 - [x] **Icons** 16/32/48/128 px per extension — `npm run icons` →
       `extensions/<name>/public/icon/*.png`. The 128 px is the store icon.
 - [x] **Small promo tiles** 440×280 per extension — `npm run store-assets` →
-      `store-assets/<name>/promo-tile-440x280.png`.
+      `store-assets/<name>/promo-tile-440x280.png` (all fifteen, incl.
+      `netblock`, regenerated 2026-09-15).
 
 **Still MISSING — a human must produce these; a script cannot:**
 - [ ] **Screenshots — BLOCKING. Not done. Chrome requires at least one, at
@@ -446,7 +475,7 @@ each generated manifest; the shared policy is [`PRIVACY.md`](./PRIVACY.md).
 - **REQUIRED — name the data recipients (this is the store-review requirement):**
   - **Cloudflare** — pressing "Show my IP" makes a keyless request to `https://one.one.one.one/cdn-cgi/trace`; Cloudflare receives your IP (your own request to them) and returns it, with country/PoP, back to you. Disclosed in-UI, above the button, before the first request.
   - **ipinfo.io (operated in the USA)** — opting into the ISP/ASN lookup sends **only your public IP** to ipinfo.io, gated behind a modal disclosure **and** the browser's own `ipinfo.io` permission prompt.
-- **State plainly:** the IP lives in page memory only, is **never stored, never forwarded to Blockaly (no server exists), never logged**; **no fingerprint hash is ever computed**. No `ip-api.com`, no `ipapi.co` in the shipped build.
+- **State plainly:** the IP lives in page memory only, is **never stored, never forwarded to marek-devlab (no server exists), never logged**; **no fingerprint hash is ever computed**. No `ip-api.com`, no `ipapi.co` in the shipped build.
 - **Listing copy — do NOT use** "anonymous", "hide your IP", "protect", or "VPN": those pull the extension into the adjacent adware category and invite manual review.
 
 ### Capture Studio (`extensions/capture`) — PRIVACY POLICY REQUIRED
@@ -499,6 +528,288 @@ each generated manifest; the shared policy is [`PRIVACY.md`](./PRIVACY.md).
 
 ---
 
+## Request Blocker (`extensions/netblock`) — REVIEW-SENSITIVE (`debugger` baseline)
+
+Ground truth: `extensions/netblock/.output/chrome-mv3/manifest.json` and
+`.output/firefox-mv2/manifest.json`; rationale in the header of
+`extensions/netblock/wxt.config.ts`; pre-submission audit in
+[`docs/audit/2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md);
+policy matrix with sources in
+[`docs/plans/netblock/03-compliance.md`](./docs/plans/netblock/03-compliance.md).
+
+- **Store name:** Request Blocker
+- **Category:** Developer Tools
+- **Short description (≤132 chars):** Block, fail and delay network requests by rule to test how your frontend copes when the network breaks. Local only. (115 chars)
+- **Chrome permissions (install):** `storage`, `activeTab`, `alarms`, `scripting`, `webRequest`, `declarativeNetRequest`, `debugger`; **optional host** `<all_urls>` (per site, by gesture). CSP `connect-src 'none'`.
+- **Firefox permissions (install):** `storage`, `activeTab`, `alarms`, `webRequest`, `webRequestBlocking`, `<all_urls>`. No `debugger`, no DNR. `data_collection_permissions.required: ["none"]`, `gecko_android: {}`.
+- **Install warnings the user sees (Chrome, from the permissions-list reference 2026-09-09):** "Read and change all your data on all websites" + "Access the page debugger backend" (both from `debugger`, which Chromium flags `kFlagImpliesFullURLAccess`), and "Block content on any page" (from `declarativeNetRequest`). `storage`, `activeTab`, `alarms`, `scripting`, `webRequest` print nothing. The optional `<all_urls>` host grant is prompted per site at runtime ("Read and change your data on *host*"). **Firefox:** exactly one warning, "Access your data for all websites", plus the line "The developer says this extension doesn't require data collection".
+- **Data collection:** none. **Zero network** (mechanically: `connect-src 'none'`). **Recipients: none.**
+
+### Single-purpose statement (paste verbatim)
+
+> Request Blocker: block, fail and delay network requests for frontend
+> resilience testing. Developers and QA write rules (URL pattern, method,
+> resource type, response status, sequence such as "every 3rd call" or "30%
+> of calls") and the extension makes the matching requests fail the way a
+> broken network would — blocked, a chosen network error, a delay, or an
+> error status code. Every feature answers one question: what does the
+> frontend see when the network breaks? It does not redirect, rewrite headers,
+> mock successful responses, or ship filter lists; rules are configuration,
+> never code.
+
+### Per-permission justification (Chrome dashboard — each ≤ 1000 chars)
+
+- `storage` — Stores the user's rules (storage.local), UI preferences such as
+  theme, language and log size (storage.sync), and — only in storage.session,
+  i.e. memory the browser discards when it closes — the per-rule hit counters
+  and the request log. The log is never written to disk. Nothing is
+  transmitted: the extension has no server and its pages carry
+  `connect-src 'none'`.
+- `activeTab` — When the user clicks the toolbar icon, the popup reads the
+  host of that tab so it can (1) name the site in the "Enable on <host>"
+  button, which requests the optional host permission for that origin only,
+  and (2) show which rules are active on this tab and scope the request log
+  to it. It adds no install warning and no standing access.
+- `alarms` — A 30-second periodic alarm runs a watchdog that releases any
+  request the extension might have left paused — a "delay" rule whose timer
+  was lost when the service worker was suspended, or a Network-level-mode
+  request whose handler failed. The tool must fail open (a request must never
+  hang because of us), and in Manifest V3 an alarm is the only timer that
+  survives service-worker suspension.
+- `scripting` — Used only for `scripting.registerContentScripts` /
+  `unregisterContentScripts`: the in-page fetch/XMLHttpRequest interceptor
+  ("page" engine — a static file bundled in the package, no remote code, no
+  eval) is registered exclusively on origins the user granted through "Enable
+  on <host>", and unregistered when the user removes the site in Settings.
+  Nothing is injected at install and `executeScript` is never called.
+- `webRequest` — Observation only; the Chrome build registers no blocking
+  listener. `onCompleted` / `onErrorOccurred` on granted origins give (1) the
+  response status shown in the extension's own request log, (2) the
+  `net::ERR_BLOCKED_BY_CLIENT` signal behind the approximate hit counter of
+  declarativeNetRequest rules (DNR itself reports nothing without
+  `declarativeNetRequestFeedback`, which we deliberately do not request
+  because it adds a "read your browsing history" warning), and (3) the
+  "request A finished" trigger for sequence rules ("fail B after A"). It only
+  fires on sites the user enabled.
+- `declarativeNetRequest` — The stateless block engine. Each "Block" rule the
+  user writes becomes one session-scoped DNR rule (URL filter, method,
+  resource type, initiator domain, tab id); the browser evaluates it and the
+  extension never sees the request. It is the only engine that can block
+  without host access, which is why it is install-time — a request blocker
+  that blocked nothing until a site was granted would not do what its name
+  says. No static rulesets are bundled; rules are the user's own
+  configuration (data, not code) and die with the browser session.
+  `declarativeNetRequestFeedback` is not requested.
+- `debugger` — Network-level mode: the one feature that can fail a request
+  with its REAL server status or a REAL network error type
+  (`net::ERR_TIMED_OUT`, `ERR_CONNECTION_RESET`, …) for every resource type
+  the debugging protocol can pause (documents, scripts, images, fonts,
+  fetch/XHR — not WebSocket), so the frontend under test sees what it would
+  see live. No other
+  API can: declarativeNetRequest cannot match a response status or return a
+  chosen status/error; blocking webRequest is enterprise-only in MV3; an
+  in-page fetch/XHR patch cannot see images, scripts, fonts or navigations.
+  Only CDP Fetch (`failRequest` with a `Network.ErrorReason`,
+  `fulfillRequest` with a status) can. Install-time because Chrome does not
+  allow "debugger" in optional_permissions. Opt-in per tab: nothing
+  attaches until the user turns the mode on for ONE tab in the popup after a
+  consent dialog naming Chrome's banner; it detaches on toggle-off, tab
+  close, the banner's Cancel, policy or errors. Commands sent:
+  Fetch.enable/disable/continueRequest/failRequest/fulfillRequest,
+  Page.getFrameTree/enable; bodies are never read. A substituted response is
+  served with `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: sandbox`, so a user-written body can never run
+  script under the site's origin.
+- **Host permission `<all_urls>` (optional only)** — Declared under
+  `optional_host_permissions`; never granted at install. The popup's "Enable
+  on <host>" button calls `permissions.request` for that one origin
+  (`https://host/*` and `http://host/*`) from the user's click. The grant is
+  needed for the in-page interceptor and for webRequest observation
+  (log/counters) on that site. Sites can be removed in Settings → Access.
+  Plain Block rules work without any grant.
+
+### Privacy-practices tab answers
+
+- **Single purpose:** the statement above.
+- **Remote code:** *No, I am not using remote code.* All code is bundled; the
+  Debugger API is used only to fail/answer requests, never to evaluate script
+  (`Runtime.evaluate` does not appear in the package); user rules are JSON
+  data validated against a strict schema.
+- **Data usage:** tick **nothing** — the extension does not collect or
+  transmit any category of user data. (Web history / website content are
+  *accessed* locally to apply rules and shown in a session-only log that is
+  never stored on disk or transmitted; per the CWS definition, collection is
+  transfer off the device, and there is none.)
+- **Certifications:** tick all three (no sale, use only for the single
+  purpose, no creditworthiness use).
+- **Privacy policy URL:** the hosted `PRIVACY.md` (required even for
+  local-only handling — user-data FAQ Q14), section "Request Blocker".
+
+### Listing description (detailed, EN)
+
+> Request Blocker breaks the network on purpose so you can test how your
+> frontend copes. Write a rule — a URL pattern, optionally a method, resource
+> type, page domain, response status or header — and choose what happens to
+> the matching requests: block them, fail them with a specific network error,
+> delay them, or answer with an error status such as 503 (with an optional
+> body). Rules can be stateful: fire once, the first N times, every N-th
+> request, skip the first N, with a probability and a reproducible seed, in a
+> time window after a navigation or a click, or only after another rule has
+> fired — "make the checkout fail on the third call" is one rule.
+>
+> The extension picks the cheapest engine that can honour each rule and says
+> so with a badge: a browser-level declarative rule (works without site
+> access; approximate counter), the in-page fetch/XHR interceptor (exact
+> counters, delays and status codes on sites you enabled), or Network-level
+> mode (Chrome), which attaches the browser's debugging protocol to one tab
+> you choose so the page receives real status codes and real network errors
+> for documents, scripts, images, fonts and fetch/XHR alike (not WebSocket).
+> Network-level mode is opt-in per tab, behind a
+> consent dialog, and shows Chrome's yellow "started debugging this browser"
+> banner while it is on; the banner's Cancel button turns it off.
+>
+> A built-in request log (this browser session only, kept in memory, never
+> written to disk, credentials always masked) shows what each engine saw and
+> lets you create a rule from any row; export it as HAR without bodies.
+> Rules export and import as JSON with validation.
+>
+> Because the extension must be able to block requests, Chrome warns at
+> install that it can block content on any page and, because of the
+> debugging permission it cannot request later, that it can read and change
+> data on all websites. Host access is still granted per site from the
+> popup. Everything stays in your browser: no server, no analytics, no
+> remote code — the extension's pages are built with a policy that forbids
+> network connections. It is a testing tool for developers and QA; it does
+> not redirect or rewrite requests, does not mock successful responses, and
+> ships no filter lists.
+>
+> On Firefox (desktop and Android) a single per-request engine covers every
+> condition; a chosen error type or status code becomes a plain cancel there,
+> and the rule badge says so.
+
+(Words deliberately absent, per design §11: "adblock", "ad", "tracker",
+"privacy", "anonymous", "VPN", "protect".)
+
+### Screenshots (1280×800 or 640×400; a human must capture these)
+
+1. Tool page → Rules, split view: a saved "Every 3rd call → 503" rule with the
+   `page` badge and its honesty line, editor open on the right.
+2. Tool page → Rules: a `dnr` "Block images from CDN" rule with the ≈ counter
+   line under the badge.
+3. Popup on an enabled site: active rules with badges and `2/3 ↻` counters,
+   Network-level switch OFF, pause button.
+4. Popup with the Network-level consent `<dialog>` open (shows the banner
+   text and the slowdown line — the reviewer sees the gate).
+5. Tool page → Log with rows marked `✱` / `≈` and the row menu "Create rule
+   from request"; the legend line visible ("never written to disk").
+6. (optional) Tool page → Settings with the "Sites with access" list and the
+   "Rules are configuration, not code" callout; or the Firefox editor showing
+   a `wr↓` degradation.
+
+### What a reviewer will ask (answers ready)
+
+- **Why is `debugger` install-time and not optional?** Chrome refuses it:
+  the permissions reference lists `debugger` among the permissions that
+  "cannot be specified as optional" and Chromium marks it
+  `kFlagCannotBeOptional`; an optional declaration is silently dropped with an
+  install warning and `permissions.request` rejects. Every currently listed
+  CDP-based developer tool (Netify, Network Overrides API, Playwright
+  Extension, axe DevTools, Automa) declares it in baseline `permissions` and
+  gates attach behind a user action — this extension does the same
+  (audit §b / plan `03-compliance.md` list the CRX-verified manifests).
+- **Why both `webRequest` and `declarativeNetRequest`?** Different jobs: DNR
+  blocks (without seeing the request); `webRequest` only *observes*
+  completions/errors on granted sites so the log and counters are honest.
+  There is no `webRequestBlocking` in the Chrome build.
+- **Why `scripting` if there is no content script in the manifest?** The
+  interceptor is registered at runtime with `registerContentScripts`, only
+  for origins the user granted, and removed when the grant goes. Declaring it
+  statically would force `<all_urls>` at install.
+- **What does the MAIN-world script do?** `content-scripts/netblock-page.js`
+  is a static file from the package that wraps `window.fetch` and
+  `XMLHttpRequest` on enabled sites; rules arrive as JSON over a nonce-checked
+  `postMessage` bridge and are matched by pure functions. No `eval`, no
+  `new Function`, no rule text is executed. It does not fake `toString`.
+  Reports coming back from the page are treated as untrusted input: the
+  background keeps only well-formed events about rules it gave that tab
+  (`sanitizePageEvents`), and privileged messages (rules, log, Network-level
+  mode) are accepted only from the extension's own pages.
+- **Does the debugger read page content?** No. Commands are limited to
+  `Fetch.enable/disable/continueRequest/failRequest/fulfillRequest`,
+  `Page.getFrameTree`, `Page.enable`. `Fetch.getResponseBody`,
+  `Runtime.*`, `DOM.*` and `Network.enable` do not appear in the package
+  (`grep` the built `background.js`). `handleAuthRequests` is `false`. A
+  substituted response carries `nosniff` + `Content-Security-Policy: sandbox`,
+  so even a `text/html` body on a navigation renders script-less and
+  origin-less.
+- **Proof of zero network?** `content_security_policy` carries
+  `connect-src 'none'` on both targets (a `fetch` from any extension page or
+  the worker is refused by the browser); `npm run guards` fails the build if
+  any other `connect-src` appears; the only marek-devlab URL in the package is
+  the manifest's `homepage_url` (`https://github.com/marek-devlab/browser-extensions`), which the browser
+  shows as a link and nothing ever fetches.
+- **Is the request log "browsing activity"?** It is shown to the user who
+  created it, only for sites they enabled or tabs they attached, only in
+  `storage.session` (memory), never persisted, never transmitted, with
+  credentials masked. The Limited Use policy allows web-browsing activity
+  "to the extent required for a user-facing feature described prominently"
+  — the log is that feature and is described in the listing and in-product.
+- **Why `alarms`?** Fail-open watchdog (30 s) for paused requests; MV3
+  workers lose `setTimeout` on suspension.
+- **Why is the page engine detectable?** Honesty: we do not fake
+  `Function.prototype.toString`; a page can tell the interceptor is present.
+  The listing says so.
+
+### Firefox (AMO) — notes and reviewer text
+
+- **`webRequestBlocking` + `<all_urls>` justification (paste):** "Request
+  Blocker cancels or delays network requests that match the user's rules.
+  On Firefox the only API that can cancel a request is blocking
+  `webRequest`, and it can only cancel requests it is allowed to see, so
+  host access to all sites is required at install (the MV2 build has no
+  optional-host mechanism to request a site later). Blocking listeners are
+  registered only while the user has rules; a non-blocking observer
+  (`onCompleted`/`onErrorOccurred`) feeds the extension's own session-only
+  request log. Nothing is redirected and no header is modified — `redirectUrl`
+  and `responseHeaders` mutation are not used; the only `BlockingResponse`
+  values are `{cancel: true}` and an empty object after a delay. The
+  extension makes no network requests of its own (`connect-src 'none'`)."
+- **`data_collection_permissions: none` consistency:** the manifest says
+  `required: ["none"]`; `PRIVACY.md` and the Chrome data-usage tab say the
+  same. Under Mozilla's taxonomy, "collection" is transmission off the
+  browser — locally applied rules and a session-only log are not collection.
+- **Source-code submission (mandatory — WXT + Vite bundle):** upload the
+  repo source ZIP (include `package-lock.json`, exclude `node_modules` and
+  `.output`) with a README stating: reviewer environment assumed Ubuntu
+  24.04.4 LTS ARM64, Node 24.14.0, npm 11.9.0 (AMO default); steps
+  `npm ci` → `npm run build:firefox --workspace @blur/netblock` → compare
+  `extensions/netblock/.output/firefox-mv2/` with the uploaded XPI (identical
+  bytes; the build is deterministic). Same procedure as the other add-ons.
+- **Android:** `gecko_android: {}` marks it compatible; blocking webRequest
+  and `tabs.onActivated` work there; the popup renders as an overlay from the
+  Add-ons menu, the tool page opens in a tab. Not yet smoke-tested on a
+  device (TODO). The background is a persistent page (no `persistent: false`
+  in the MV2 build) — Mozilla recommends event pages on Android; listed as a
+  v2 item.
+- **Reviewer-visible honesty:** on Firefox the actions "network error (type)"
+  and "response status" degrade to a cancel and the UI badge reads `wr↓`
+  with the text "Firefox cannot choose the network error type" / "cannot
+  change a response status code". This is intentional and disclosed, not a
+  broken feature.
+- **Unused files a reviewer may notice:** the Firefox package also ships
+  `content-scripts/netblock-page.js` and `relay.js` (the Chrome-only page
+  engine; never registered on Firefox — `scripting` is not in the manifest)
+  and the Chrome debugger engine's code inside `background.js` (dead on
+  Firefox: the API is injected only under the Chrome build flag). They are
+  inert; removing them from the Firefox bundle is a build-hygiene TODO.
+- **Expected `addons-linter` warnings:** `UNSAFE_VAR_ASSIGNMENT` from React's
+  bundled runtime (same as every add-on in the suite — Reviewer note 1). The
+  custom CSP passes the linter (`script-src 'self'`; `connect-src` is not
+  inspected). No `DANGEROUS_EVAL`: the package contains no `eval` /
+  `new Function`.
+
+---
+
 ## Reviewer notes (paste these when asked)
 
 We ran the official AMO validator (`addons-linter`) on all four Firefox zips:
@@ -539,11 +850,36 @@ paste into a reviewer note.
 > The list is an unmodified subset of AdGuard's pre-converted rulesets
 > (GPL-3.0 / CC-BY-SA 3.0); see `rules/ATTRIBUTION.md` in the package.
 
+### 4. `netblock` — `debugger` permission and CDP `Fetch` strings in `background.js` (Chrome build; AMO does not see this)
+
+> The Chrome package declares `debugger` at install because Chromium does not
+> permit it as an optional permission (permissions API reference: "cannot be
+> specified as optional"). It is used for one feature, Network-level mode,
+> which the user turns on per tab from the popup after a consent dialog; the
+> service worker attaches with `chrome.debugger.attach({tabId}, "1.3")` and
+> sends only `Fetch.enable/disable/continueRequest/failRequest/fulfillRequest`
+> and `Page.getFrameTree/enable`. `Fetch.getResponseBody`, `Runtime.*`,
+> `DOM.*` and `Network.enable` do not occur in the package. Detach happens on
+> toggle-off, tab close, the banner's Cancel, policy, or after three handler
+> errors, and in `dispose()`.
+
+### 5. `netblock` — `window.fetch` / `XMLHttpRequest` replaced by `content-scripts/netblock-page.js` (both stores)
+
+> The file is a static, bundled MAIN-world content script registered at runtime
+> (`scripting.registerContentScripts`) only for origins the user granted from
+> the popup; it is not in the manifest's `content_scripts` and is never injected
+> at install. It wraps `fetch` and `XMLHttpRequest` so that rules the user wrote
+> (block / network error / delay / status) apply to the page's own calls. Rules
+> reach it as JSON over a nonce-checked `postMessage` bridge and are matched by
+> pure functions; there is no `eval`, no `new Function`, and no rule text is
+> ever executed. In the Firefox package the file is present but inert
+> (`scripting` is not declared and nothing registers it).
+
 ---
 
 ## Licensing (for both stores)
 
-- Root [`LICENSE`](./LICENSE) — MIT, covering **Blockaly's own code only**.
+- Root [`LICENSE`](./LICENSE) — MIT, covering **marek-devlab's own code only**.
 - Root [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md) — full notices for
   everything redistributed (React MIT, `web-vitals` Apache-2.0, axe-core MPL-2.0,
   filter-list data GPL-3.0 / CC-BY-SA 3.0; and for the new wave: `mediabunny`

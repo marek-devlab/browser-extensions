@@ -19,6 +19,16 @@
 //      websites". Two extensions strip it in a build:manifestGenerated hook --
 //      this check fails the build if such a hook is ever dropped.
 //
+//   4. Three more built-manifest checks added with netblock (design §7.5):
+//      `declarativeNetRequestFeedback` anywhere (ignored for CWS installs,
+//      adds a "read your browsing history" warning -- pure downside);
+//      `debugger` in install-time `permissions` (full CDP access + the
+//      permanent "debugging this browser" surface -- only ever opt-in, and
+//      only with an explicit allowlist entry here); and a `connect-src` in any
+//      CSP that allows a host (the zero-network extensions carry no
+//      `connect-src` or `connect-src 'none'`; the one extension whose purpose
+//      IS network is allowlisted with its hosts).
+//
 // Exit code is nonzero on any violation, so this belongs in CI.
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
@@ -88,11 +98,51 @@ for (const root of ['extensions', 'packages']) {
 // <all_urls>, and there is no optional path for it.
 // ---------------------------------------------------------------------------
 
+// A string allows both targets; an object allows only the named targets --
+// netblock's Chrome build must stay clean (host access is per-site, opt-in)
+// while its Firefox build needs `<all_urls>` for the same reason adblock does.
 const BASELINE_ALL_URLS_ALLOWED = {
   adblock: 'MV2 webRequestBlocking cannot function without it; Chrome build keeps it optional',
+  netblock: {
+    'firefox-mv2': 'MV2 webRequestBlocking cannot cancel without it; Chrome build asks per site (optional_host_permissions)',
+  },
 };
 
+function allUrlsAllowed(name, target) {
+  const entry = BASELINE_ALL_URLS_ALLOWED[name];
+  if (!entry) return false;
+  return typeof entry === 'string' || Boolean(entry[target]);
+}
+
 const ALL_URLS = /^(<all_urls>|\*:\/\/\*\/\*|https?:\/\/\*\/\*)$/;
+
+// `debugger` at install time. An entry here is a product decision with a
+// reason, never a convenience. Chromium marks `debugger` kFlagCannotBeOptional
+// (an `optional_permissions` entry is dropped with an install warning), so an
+// extension whose purpose needs it can only carry it install-time. netblock:
+// owner-approved 2026-09-15 -- its "Network-level mode" fails requests with
+// their REAL response status / network error type via CDP Fetch, which no
+// other API can do; it is opt-in per tab at runtime (nothing attaches until
+// the user toggles it in the popup) -- see extensions/netblock/wxt.config.ts.
+// perf still lists it as optional (same latent problem, separate decision).
+const BASELINE_DEBUGGER_ALLOWED = {
+  netblock: 'CDP Fetch is the only API that can fail a request with a real status/error type; opt-in per tab, never optional in Chromium',
+};
+
+// `connect-src` that names a host. whoami's single purpose is "show my
+// connection" and it fetches exactly these two endpoints, disclosed in the
+// listing and PRIVACY.md. Everything else is zero-network.
+const CONNECT_SRC_ALLOWED = {
+  whoami: "connect-src 'self' https://one.one.one.one https://ipinfo.io",
+};
+
+/** Every CSP string in a manifest, MV2 (bare string) or MV3 (object of strings). */
+function cspStrings(m) {
+  const csp = m.content_security_policy;
+  if (!csp) return [];
+  if (typeof csp === 'string') return [csp];
+  return Object.values(csp).filter((v) => typeof v === 'string');
+}
 
 const extDir = join(repoRoot, 'extensions');
 let manifestsChecked = 0;
@@ -102,14 +152,38 @@ for (const name of readdirSync(extDir)) {
     if (!existsSync(p)) continue;
     manifestsChecked++;
     const m = JSON.parse(readFileSync(p, 'utf8'));
+    const where = `extensions/${name}/.output/${target}/manifest.json`;
     // Firefox MV2 mixes host permissions into `permissions`; MV3 separates them.
     const baseline = [...(m.permissions ?? []), ...(m.host_permissions ?? [])];
     const offending = baseline.filter((perm) => ALL_URLS.test(perm));
-    if (offending.length && !BASELINE_ALL_URLS_ALLOWED[name]) {
+    if (offending.length && !allUrlsAllowed(name, target)) {
       violations.push(
-        `extensions/${name}/.output/${target}/manifest.json  baseline host permission ${offending.join(', ')} ` +
+        `${where}  baseline host permission ${offending.join(', ')} ` +
           `-- WXT hoisted a runtime content script's matches; strip it in build:manifestGenerated`,
       );
+    }
+
+    // 4a. declarativeNetRequestFeedback -- never, in any list.
+    const everyPerm = [...baseline, ...(m.optional_permissions ?? [])];
+    if (everyPerm.includes('declarativeNetRequestFeedback')) {
+      violations.push(`${where}  declarativeNetRequestFeedback requested -- ignored for CWS installs, adds a browsing-history warning`);
+    }
+
+    // 4b. debugger -- only ever optional (and note: Chromium ignores it there too).
+    if ((m.permissions ?? []).includes('debugger') && !BASELINE_DEBUGGER_ALLOWED[name]) {
+      violations.push(`${where}  debugger in install-time permissions -- opt-in only; add a reasoned allowlist entry if this is intended`);
+    }
+
+    // 4c. connect-src that allows a host.
+    for (const csp of cspStrings(m)) {
+      const directive = csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => /^connect-src\b/.test(d));
+      if (!directive) continue;
+      if (directive === "connect-src 'none'") continue;
+      if (CONNECT_SRC_ALLOWED[name] === directive) continue;
+      violations.push(`${where}  CSP "${directive}" allows network -- zero-network extensions carry no connect-src or 'none'`);
     }
   }
 }
@@ -122,4 +196,4 @@ if (violations.length) {
   console.error('');
   process.exit(1);
 }
-console.log(`Guards clean: no XSS sinks, no remote code, no smuggled <all_urls> (${manifestsChecked} built manifests checked).`);
+console.log(`Guards clean: no XSS sinks, no remote code, no smuggled <all_urls>, no DNR feedback, no unlisted baseline debugger, no network CSP (${manifestsChecked} built manifests checked).`);

@@ -1622,3 +1622,17 @@ nspell (Hunspell-совместимый, чистый JS) + EN/RU/NL permissive 
 - **vision:** ⚠️ спайк `backdrop-filter: url(#cvd)` на `pointer-events:none` overlay — фильтрует фон **без** containing-block-поломки, но поддержка SVG-`url()` на `backdrop-filter` неровная (особ. Firefox) — может быть чище всего для whole-page; дефолт Machado-tritan vs Brettel; Firefox-ESR SVG-filter перф.
 - **sessions:** точный Chrome-билд, где `tabs.discard` надёжно берёт свежесозданную `active:false` (иначе placeholder-подход); актуален ли `tabGroups`-варнинг в текущем стабильном Chrome UI; дефолтная каденс авто-сейва vs батарея на мобиле; паритет контейнеров в Safari.
 - **proof:** может ли нативный `spellcheck` Firefox + свой suggestion-слой обойти overlay-CPU на плоских полях; честна ли область «только `<textarea>`/`<input>`»; приемлема ли грациозная дивергенция (Chrome Proofreader API + retext на Firefox); немецкий без permissive-словаря — опустить.
+
+---
+
+# ЧАСТЬ IV — №16 Request Blocker (`extensions/netblock`) — исследован, спроектирован и **построен (2026-09-15)**
+
+> ✅ **Статус: построен 2026-09-15** (фазы 1–2: фундамент, четыре движка, UI; зелёные typecheck/build/guards/Node- и live-тесты). Что именно сделано и чем реализация отклонилась от спеки — [`extensions/netblock/IMPLEMENTATION.md`](./extensions/netblock/IMPLEMENTATION.md); планы фаз с проверенными источниками — [`docs/plans/netblock/`](./docs/plans/netblock/) (`01-foundation`, `02-dnr`, `02-page`, `02-debugger`, `02-webrequest`, `02-ui`, `03-compliance`); пре-сабмит аудит по политикам CWS/AMO — [`docs/audit/2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md); тексты листинга и обоснования разрешений — [`STORE.md`](./STORE.md), политика — [`PRIVACY.md`](./PRIVACY.md). ⚠️ Главное отклонение от дизайна §0: `debugger` в Chrome-манифесте **install-time** (Chromium: `kFlagCannotBeOptional`, optional-объявление вырезается молча) — решение владельца; Network-level mode остаётся opt-in на вкладку через диалог согласия. Живой статус и остаток — [`TODO.md`](./TODO.md) «🧪 №16». Текст ниже — исторический указатель на исследование и дизайн, он не переписывался.
+
+
+> 🧪 **2026-09-15.** Слой исследования вынесен в отдельный документ — [`docs/research/2026-09-15-netblock.md`](./docs/research/2026-09-15-netblock.md) (четыре раунда deep-research: Chrome MV3 · Firefox/Android · обзор 14 инструментов · политики сторов + stateful-архитектура; источники 2024–2026, исходники Chromium/mozilla-central, скачанные CRX реальных расширений). Дизайн — [`docs/design/netblock.md`](./docs/design/netblock.md). Статус и блокеры старта — [`TODO.md`](./TODO.md) «🧪 №16».
+>
+> Цель одной фразой: **«Блокировать и фейлить сетевые запросы по правилам — для тестирования отказоустойчивости фронтенда»** (dev/QA). Отдельный продукт от `adblock` (другая аудитория и условия) и от Requestly/ModHeader-класса (мы ломаем запросы, а не «улучшаем» их).
+>
+> ⚠️ Два факта, ломающие «очевидную» архитектуру: (1) **условия по коду ответа нет ни в DNR Chrome, ни в DNR Firefox** — только `chrome.debugger`+CDP Fetch, MAIN-world патч `fetch`/XHR или blocking `onHeadersReceived` в Firefox; (2) **stateful-правил нет ни в одном существующем расширении** — модель взята из MSW/Playwright/Dev Proxy/MockServer/WireMock. Отсюда: один формат правила — движки `dnr` → `page` → `debugger` (Chrome, opt-in на вкладку, прецедент — `perf`) / blocking `webRequest` (Firefox, прецедент — `adblock`).
+

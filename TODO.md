@@ -1,17 +1,19 @@
 # TODO — живой статус и бэклог
 
-> Актуально на **2026-07-20**. **Единственный документ со статусом**: сюда смотрят, когда спрашивают «что сделано, что нет, какие проблемы, что дальше».
+> Актуально на **2026-09-15** (вечер: №16 построен). **Единственный документ со статусом**: сюда смотрят, когда спрашивают «что сделано, что нет, какие проблемы, что дальше».
 >
-> - [`PLAN.md`](./PLAN.md) — архитектура и обоснования (слой «почему/как»): Часть I — волна 1, Часть II — волна 2, **Часть III — волна 3 (спроектирована, не построена)**. Обоснования живут там, статус — здесь. Не дублировать.
+> - [`PLAN.md`](./PLAN.md) — архитектура и обоснования (слой «почему/как»): Часть I — волна 1, Часть II — волна 2, **Часть III — волна 3**, **Часть IV — №16 (построен 2026-09-15)**. Обоснования живут там, статус — здесь. Не дублировать.
 > - [`STORE.md`](./STORE.md) — чеклист публикации и тексты листингов.
-> - [`docs/design/`](./docs/design/) — UX/UI-макеты шести новых расширений.
-> - [`docs/audit/`](./docs/audit/) — аудит всех десяти от 2026-07-14.
+> - [`docs/design/`](./docs/design/) — UX/UI-макеты шести расширений волны 2 + [`netblock.md`](./docs/design/netblock.md) (№16).
+> - [`docs/research/`](./docs/research/) — deep-research по новым расширениям (пока: [`2026-09-15-netblock.md`](./docs/research/2026-09-15-netblock.md)).
+> - [`docs/plans/netblock/`](./docs/plans/netblock/) — планы фаз №16 с проверенными источниками (в т.ч. [`03-compliance.md`](./docs/plans/netblock/03-compliance.md) — матрица политик стора).
+> - [`docs/audit/`](./docs/audit/) — аудит всех десяти от 2026-07-14 + пре-сабмит аудит №16 ([`2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md)).
 
 ---
 
 ## 📦 Общий статус
 
-**Четырнадцать расширений реализованы** (десять волн 1–2 + четыре волны 3; №15 proof отложен). Монорепо WXT, общие `@blur/core` + `@blur/ui`.
+**Пятнадцать расширений реализованы** (десять волн 1–2 + четыре волны 3 + **№16 netblock — построен 2026-09-15**; №15 proof отложен, см. «🧪 №16» ниже). Монорепо WXT, общие `@blur/core` + `@blur/ui` + `@blur/netcore`.
 
 - **Волна 1 (v1.0.0):** blur, adblock, perf, seo. Код готов; **все блокеры аудита §0 закрыты** (см. ниже).
 - **Волна 2:** capture, devdata, export, assets, whoami, compose. Реальная логика + store-хардненинг закоммичены; privacy policy покрывает все десять.
@@ -60,9 +62,9 @@
 - [ ] **Скриншоты листингов** в реальном браузере. Chrome требует ≥1 (1280×800 или 640×400), рекомендует 5. Нужен человек с браузером.
 - [ ] **Живой просмотр сгенерированных иконок** глазами (их нарисовал `scripts/gen-icons.mjs`).
 - [ ] **perf — headed-смоук PSI-панели и CDP/`debugger`-пути** в реальном браузере по чеклисту [`docs/perf-headed-smoke.md`](./docs/perf-headed-smoke.md). Единственный шаг, который не автоматизируется (Playwright сам CDP-клиент; devtools-панель не обычная вкладка). Код и headless e2e 14/14 зелёные.
-- [ ] **Реальные gecko-id домены** вместо placeholder `@blur.example` в Firefox-манифестах **волны 1** (волна 2 уже на `<name>@blockaly.com`). Бизнес-решение.
+- [ ] **Реальные gecko-id домены** вместо placeholder `@blur.example` в Firefox-манифестах **волны 1** (волна 2 уже на `<name>@marek-devlab.github.io`). Бизнес-решение.
 - [ ] **Аккаунты разработчика:** Chrome Web Store (разовый взнос), AMO, Edge Add-ons, Opera.
-- [ ] **Публикация privacy policy** по ссылке `blockaly.com/privacy` (текст готов в `PRIVACY.md`).
+- [ ] **Публикация privacy policy** по ссылке `https://github.com/marek-devlab/browser-extensions/blob/main/PRIVACY.md` (текст готов в `PRIVACY.md`).
 - [ ] ⚠️ Перепроверить `data_collection_permissions` во **всех** Firefox-манифестах против [актуальной таксономии](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/) (обязателен с 2025-11-03; значения проставлены).
 - [ ] Промо-тайл 1400×560 (опц., Chrome), промо-видео (опц.).
 - [ ] По волне 2: `wxt zip` + sources ZIP для AMO/Opera, обоснование каждого разрешения в дашборде, сверка с политикой CWS от 2026-08-01.
@@ -107,10 +109,50 @@
 - [ ] **Живой headed-смоук** каждого (инъекция vision/linksafe, omnibox/badge convert, реальный save/restore sessions) — как у perf, единственный человеческий гейт.
 - [ ] Кандидаты на вынос в пакеты: `@blur/picker` (linksafe/assets/export scan), SVG-filter общее ядро (vision/blur). Техдолг, не блокер.
 
+## 🧪 №16 Request Blocker (`extensions/netblock`) — ПОСТРОЕН (2026-09-15), до стора — ручной смоук + ассеты + сабмит
+
+Цель одной фразой: «Блокировать и фейлить сетевые запросы по правилам — для тестирования отказоустойчивости фронтенда». Листинг — ровно одна фраза (дизайн §11): **«Request Blocker: block, fail and delay network requests for frontend resilience testing»**.
+
+- Research: [`docs/research/2026-09-15-netblock.md`](./docs/research/2026-09-15-netblock.md) · дизайн v1.1: [`docs/design/netblock.md`](./docs/design/netblock.md) · спайки: [`e2e/netblock-spikes/REPORT.md`](./e2e/netblock-spikes/REPORT.md) · планы фаз (с источниками 2024+): [`docs/plans/netblock/`](./docs/plans/netblock/) · **что построено и чем отклонились от спеки:** [`extensions/netblock/IMPLEMENTATION.md`](./extensions/netblock/IMPLEMENTATION.md) · пре-сабмит аудит по политикам: [`docs/audit/2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md) · тексты для дашбордов CWS/AMO: [`STORE.md`](./STORE.md) «Request Blocker» · политика: [`PRIVACY.md`](./PRIVACY.md) «Request Blocker».
+
+### ✅ Реализовано (фазы 1–2, все зелёные на 2026-09-15)
+
+- **Фундамент** (`utils/*`, чистый TS): модель правила + строгий валидатор импорта (`__proto__`/`constructor` — отказ, лимиты §5.8/§7.1, ReDoS-гейт из `@blur/netcore`), таблица выбора движка с ключами честности §6, счётчики `decide()` (once/times/nth/skipFirst/probability+seed/window/afterRule), кольцевой лог (`session` + RAM, маска `Authorization`/`Cookie`/… всегда, HAR без тел), протокол UI↔background, `defineItem`-хранилища + Web Lock RMW.
+- **Движки**: `dnr` (Chrome; только session-правила, позиционные id, атомарный reconcile, реактивные `afterRule`/`window`/`skipFirst`, пауза = `allow` priority 1 000 000, ≈-счётчики через наблюдающий `webRequest`), `page` (Chrome; MAIN-world патч fetch/XHR — статический файл, nonce-релей, регистрация **только** на выданных origin'ах), `debugger` (Chrome; CDP `Fetch` — `enable/disable/continueRequest/failRequest/fulfillRequest` + `Page.getFrameTree/enable`, `getResponseBody` не вызывается, watchdog 30 с, detach в `finally`, 3 ошибки подряд → detach), `webrequest` (Firefox desktop + Android; blocking `onBeforeRequest`/`onHeadersReceived`, `status`/`fail` → cancel + `wr↓`, кэш состояния с overlay).
+- **UI**: popup (Enable on host → `permissions.request` синхронно в клике; NL-тумблер + `<dialog>` согласия §2.7; пауза; счётчики `2/3 ↻`/`≈`/`—`), tool page (`#/rules` split view с редактором и live-бейджем, `#/log` grid с «правило из запроса»/HAR, `#/settings`), EN/RU/ET (эстонский — настоящий перевод), все 12 пунктов честности §6 на экране.
+- **Манифесты** (собраны, `npm run guards` чисто): Chrome `storage, activeTab, alarms, scripting, webRequest, declarativeNetRequest, debugger` + `optional_host_permissions: <all_urls>` (hoist `<all_urls>` вырезан хуком), CSP `connect-src 'none'`; Firefox `storage, activeTab, alarms, webRequest, webRequestBlocking, <all_urls>`, `gecko.id netblock@marek-devlab.github.io`, `strict_min_version 140.0`, `data_collection_permissions.required: ['none']`, `gecko_android: {}`.
+- ⚠️ **Отклонение от дизайна §0/§11 — решение владельца 2026-09-15:** `debugger` **install-time** в Chrome. Причина — проверенный факт: Chromium помечает `debugger` `kFlagCannotBeOptional`, `optional_permissions: ['debugger']` вырезается с install-warning, `permissions.request` отклоняется. Network-level mode остаётся **opt-in на вкладку** (ничего не attach'ится без диалога согласия в popup; detach при выключении/закрытии вкладки/Cancel в баннере/политике/3 ошибках). Цена: предупреждения «Read and change all your data on all websites» + «Access the page debugger backend» при установке.
+- **Тесты** (после фазы 4, 2026-09-15): Node на реальных `.ts` — logic **46**, dnr **24**, page **27**, debugger **25**, webrequest **20**, netcore **17** (все в цепочке `npm run e2e`); Playwright UI + integration **21**; live офлайн — dnr **15**, page **28**, debugger **34** (Chromium), webrequest **20** (установленный Firefox через `web-ext` + Marionette). Итого 277 проверок.
+- **Store-ассеты (скрипт):** иконки 16/32/48/128 (`npm run icons`, бренд `BRAND.netblock` — графит, «разорванная линия»), промо-тайл 440×280 — `store-assets/netblock/promo-tile-440x280.png` (сгенерирован 2026-09-15, `npm run store-assets`).
+- **Документы стора:** PRIVACY.md (секция + «fifteen»), STORE.md (полная секция REVIEW-SENSITIVE с текстами обоснований для каждого разрешения, Q&A ревьюера, AMO-заметки), аудит `docs/audit/2026-09-15-netblock.md`, план `docs/plans/netblock/03-compliance.md`.
+
+### 🔶 Осталось до сабмита (по порядку)
+
+- [x] **Дефекты из аудита — закрыты фазой 4** (2026-09-15, [`docs/plans/netblock/04-audit.md`](./docs/plans/netblock/04-audit.md), «Post-fix status» в [`docs/audit/2026-09-15-netblock.md`](./docs/audit/2026-09-15-netblock.md)): три 🟡 копии/UI пре-сабмит аудита + восемь находок adversarial-прохода: единый валидируемый путь записи правил (`utils/rules-commit.ts` — правила больше не «исчезают» после рестарта SW при удалённой цели `afterRule`/лишних regex; `saveGroup` валидируется; отказ удаления с зависимыми), санитизация отчётов страницы (`sanitizePageEvents`), проверка отправителя привилегированных сообщений, `Content-Security-Policy: sandbox` на подменённых ответах NL, сброс `resetOn: navigation` без host-доступа, `.catch` на всех fire-and-forget путях, честная копия (workers/Revoke/«не просим при установке»/«fall back»/«every resource type») в EN/RU/ET, STORE/PRIVACY («idle install», `homepage_url`).
+- **Остаток фазы 4 (🟢, не блокеры):** (1) Firefox `browser_action` без `default_icon` — WXT не переносит `action.default_icon` в MV2 (так у всех расширений монорепо; Firefox подставляет `icons`, `ext-browserAction.js`) — проверить глазами в тулбаре, при желании добавить `browser_action.default_icon` в конфиг; (2) `matchesUrlCondition` компилирует `RegExp` + гоняет `checkRegexSafety` на каждый запрос в blocking-листенере Firefox — кэш скомпилированных regex в `@blur/netcore` (перф, не корректность); (3) `relay:click`/MAIN-`click` без `isTrusted` — программный клик страницы открывает её `window(click)`-окна (осознанно: автотесты кликают программно; остаток документирован в `04-audit.md`); (4) мёртвый Chrome-код в Firefox-пакете и persistent background на Firefox — как раньше (v2).
+- [ ] **Ручной headed-смоук** по [`docs/netblock-headed-smoke.md`](./docs/netblock-headed-smoke.md) (единственное, что не автоматизируется: реальный промпт `permissions.request({origins})`, реальный жёлтый баннер `debugger` и его Cancel, DevTools «Request conditions» ∥ наш `Fetch.enable`, Firefox for Android на устройстве).
+- [ ] **Скриншоты листинга** (1280×800 или 640×400; список состояний — STORE.md «Request Blocker → Screenshots»), человеческий взгляд на иконку в тулбаре и промо-тайл.
+- [ ] **Сабмит CWS** по чеклисту STORE.md: Privacy practices (single purpose, обоснования всех 8 полей — тексты готовы, remote code = No, data usage = none, privacy policy URL), category Developer Tools. ⚠️ Главный риск ревью — `debugger` в baseline (оценка и митигации — аудит §b, план `03-compliance.md`); апелляция одна на нарушение — тексты обоснований не сокращать.
+- [ ] **Сабмит AMO**: `wxt zip -b firefox` + sources ZIP (README с окружением ревьюера Ubuntu 24.04.4 ARM64 / Node 24.14.0 / npm 11.9.0 и командами воспроизведения), notes to reviewers из STORE.md (`webRequestBlocking` + `<all_urls>`, React `innerHTML`, неиспользуемые Chrome-only файлы в бандле).
+- [ ] **Edge Add-ons / Opera** — тот же Chrome-zip; в Edge «Notes for certification» — демо-страница с реальными 500/задержками.
+
+### 🔜 v2 (из дизайна, не блокеры v1)
+
+- DevTools-панель как третья проекция того же React-приложения (§1.2; после ручного прогона с «Request conditions»), side panel.
+- Воркеры и WebSocket в NL-режиме (`Target.setAutoAttach`; спайк S4 — `Fetch` хендшейк не видит).
+- `scenario` (state machine WireMock-стиля), `mockBody`/условие по телу ответа (с отдельным согласием — `getResponseBody`), `throttle` как действие только в NL, breakpoint.
+- Контекстное меню «Заблокировать этот ресурс» (desktop-only), текстовый импорт `~c 500 & ~u /api`.
+- Батчинг `log:append` (на Android строка лога = один RMW `session:log`); event page вместо persistent background на Firefox (рекомендация Mozilla для Android).
+
+### ⚠️ Побочные находки для других расширений (из этой работы)
+
+- [ ] **`perf`: `optional_permissions: ['debugger']` — Chrome молча вырезает** (`kFlagCannotBeOptional`, `permissions_parser.cc`: «Permission 'debugger' cannot be listed as optional. This permission will be omitted.»). Следствие: `permissions.request({permissions:['debugger']})` в popup `perf` **отклоняется**, exact-bytes-путь не может работать вообще; headed-смоук B из [`docs/perf-headed-smoke.md`](./docs/perf-headed-smoke.md) не пройден именно поэтому. Нужно решение владельца: `debugger` install-time (как в `netblock`, с opt-in по кнопке) или убрать фичу и ключ; в любом случае поправить STORE.md/PRIVACY.md `perf` («optional, opt-in» — сейчас неправда о собранном манифесте `extensions/perf/.output/chrome-mv3/manifest.json`).
+- [ ] **`adblock`: `ALLOWLIST_PRIORITY = 2_000_000_000`** (`extensions/adblock/utils/backends/dnr.ts:46`) сидит в зоне, где DNR-приоритеты ведут себя немонотонно: замер `testMatchOutcome` на Chromium 153 (`e2e/netblock/dnr.live.mjs` (d), `extensions/netblock/utils/engines/dnr-translate.ts:34-41`) — `allow` с priority `2^29` и `2^30` **проигрывает** `block` с priority 1, тогда как `2^20` и `2·10⁹` выигрывают (индексированный priority пакуется с битами действия). Значение `2·10⁹` в одном замере сработало, но гарантии на границе int32 нет и поведение необъяснимо; `1_000_000` (как `PAUSE_PRIORITY` в netblock) проверено. Перевести allowlist на «скромный» priority и добавить живую проверку.
+
 ## ❓ Открытые вопросы (проверить перед соответствующей фазой)
 
-- [ ] Точная версия Chrome для `topDomains`/`excludedTopDomains` (референс говорит 145+, на What's New не подтвердилось).
-- [ ] Численные лимиты DNR в Firefox (MDN документирует имена констант, не значения).
+- [ ] Точная версия Chrome для `topDomains`/`excludedTopDomains` (референс говорит 145+, на What's New не подтвердилось). Research netblock 2026-09-15: в `declarative_net_request.webidl` (main) ключ есть вместе с enum `RuleConditionKeys` (WECG #762) — дата стабильного релиза по-прежнему не подтверждена; feature-detect через `RuleConditionKeys`.
+- [x] Численные лимиты DNR в Firefox — **закрыто 2026-09-15** (Research netblock §2.6, `ExtensionDNRLimits.sys.mjs` tip): dynamic 5 000 · session 5 000 · regex 1 000 · guaranteed static 30 000 · rulesets 100 / enabled **20** · disabled static 5 000. Переопределяемы префами `extensions.dnr.*`; `responseHeaders`-условия в Firefox нет (bug 1877486 NEW).
 - [ ] **Лицензия Peter Lowe's list для коммерческого использования** — запросить разрешение или исключить (блокер, если попадёт в бандл).
 - [ ] Поведение `text-shadow` в `::highlight()` в Firefox — тестировать вживую.
 - [ ] `captureVisibleTab` на Firefox Android при DPR > 1 — [Bugzilla 1751961](https://bugzilla.mozilla.org/show_bug.cgi?id=1751961).

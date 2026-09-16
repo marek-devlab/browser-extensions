@@ -42,7 +42,7 @@ const SS = 4;
 const FIELD_TOP = [23, 30, 46];
 const FIELD_BOTTOM = [12, 17, 28];
 
-const PUBLISHER = 'Blockaly';
+const PUBLISHER = 'marek-devlab';
 
 /** Balanced greedy word wrap into exactly `n` lines (null if impossible). */
 function wrapInto(words, n) {

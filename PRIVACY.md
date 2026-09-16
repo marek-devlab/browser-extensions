@@ -1,10 +1,10 @@
 # Privacy Policy
 
-_Last updated: 2026-07-20_
+_Last updated: 2026-09-15_
 
-This policy covers a suite of fourteen independent browser extensions that are
-built from one monorepo but ship as fourteen separate add-ons (published by
-**Blockaly**, https://blockaly.com):
+This policy covers a suite of fifteen independent browser extensions that are
+built from one monorepo but ship as fifteen separate add-ons (published by
+**marek-devlab**, https://github.com/marek-devlab/browser-extensions):
 
 - **Content Blur** — hide images, video, thumbnails, and matched text on any page.
 - **Ad & Tracker Blocker** — block ads and trackers.
@@ -20,10 +20,11 @@ built from one monorepo but ship as fourteen separate add-ons (published by
 - **Link Inspector** — reveal where a link really goes before you click.
 - **Vision Simulator** — see a page as people with colour-blindness and low vision do.
 - **Session Saver** — save and restore tab sessions, stored only on this device.
+- **Request Blocker** — block, fail and delay network requests by rule, for testing how a frontend behaves when the network breaks.
 
 The first four are the original wave (v1.0.0); the next six were the second wave;
-the last four are the third wave. The first part of this document is the
-**architectural invariant** that applies to all fourteen. The second part is a
+the next four are the third wave; Request Blocker is the fifteenth. The first part of this document is the
+**architectural invariant** that applies to all fifteen. The second part is a
 **per-extension section** with the exact permissions each one declares and what
 they are used for.
 
@@ -40,7 +41,7 @@ extension reads from a page (images, text, meta tags, headings, DOM structure,
 timings, blocked-request counts), and your settings are all processed locally
 and stored only in your browser's local extension storage.
 
-Across all fourteen extensions there are only **four** features that ever
+Across all fifteen extensions there are only **four** features that ever
 transmit anything off your device, and **every one is opt-in / use-triggered and
 disclosed in the UI**. Crucially, none of them sends the *content* you are
 working with: the URL you audit, your own IP, currency **rate tables** (not your
@@ -89,14 +90,15 @@ amount), and a link you explicitly ask to resolve.
 
 > **(e) Nothing else phones home.** No extension in this suite contains
 > analytics, telemetry, crash reporting, advertising, or user tracking of any
-> kind. **Vision Simulator** and **Session Saver** — like Data Format Toolkit,
-> Page Content Exporter, Asset Inspector, Capture Studio and Markdown Workbench —
-> make **zero network calls of any kind**; several enforce this at the platform
-> level with a `connect-src 'none'` content-security policy. Aside from the four
+> kind. **Vision Simulator**, **Session Saver** and **Request Blocker** — like
+> Data Format Toolkit, Page Content Exporter, Asset Inspector, Capture Studio
+> and Markdown Workbench — make **zero network calls of any kind**; several
+> enforce this at the platform level with a `connect-src 'none'`
+> content-security policy (Request Blocker among them). Aside from the four
 > use-triggered calls above, nothing in this suite makes any network request that
 > carries data about you or the pages you visit.
 
-### Common guarantees (all fourteen extensions)
+### Common guarantees (all fifteen extensions)
 
 - **Local only.** Settings and any cached results live in your browser's
   extension storage (`storage.local` / `storage.sync`). They are not uploaded to
@@ -112,7 +114,11 @@ amount), and a link you explicitly ask to resolve.
   EasyList / EasyPrivacy). These are **data** the blocking engine reads —
   matching patterns — not executable code. They are bundled with the extension
   and remain under their own licenses (GPL-3.0 / CC-BY-SA 3.0); see
-  `public/rules/ATTRIBUTION.md` inside the add-on package.
+  `public/rules/ATTRIBUTION.md` inside the add-on package. The same holds for
+  Request Blocker's rules: they are JSON configuration you write or import
+  (URL pattern, method, status, counters, action), validated against a strict
+  schema and matched by bundled code — the extension never executes anything
+  you type.
 - **Your data is your data.** You can clear everything at any time by removing
   the extension or clearing its storage from your browser's extension settings.
 
@@ -146,10 +152,13 @@ your device are two different things. These extensions read pages in order to ac
 on them locally — blur them, hide ad elements, time them, audit their markup,
 convert their data, export their contents, inspect their assets — and then the
 data stays where it was: in the page, and in your local extension storage. The
-only bytes that ever leave your machine are the two opt-in calls described above
-(the PageSpeed Insights URL, and Connection & Device Info's IP/ISP lookup).
+only bytes that ever leave your machine are the four opt-in calls described
+above (the PageSpeed Insights URL, Connection & Device Info's IP/ISP lookup,
+Universal Converter's rate tables, and Link Inspector's explicit link resolve).
+Request Blocker, the fifteenth extension, sees requests in order to break them
+on purpose — and keeps its request log in session memory only (see its section).
 
-That is also what the fourteen add-ons tell Firefox. Every Firefox build declares
+That is also what the fifteen add-ons tell Firefox. Every Firefox build declares
 `browser_specific_settings.gecko.data_collection_permissions`, the key that
 drives the data-consent panel Firefox shows at install (mandatory for new AMO
 submissions since 2025-11-03):
@@ -166,6 +175,11 @@ submissions since 2025-11-03):
 | Connection & Device Info | `required: ["none"]`, `optional: ["locationInfo"]` | Collects nothing by default; may share your IP with ipinfo.io for an ISP lookup only if you opt in |
 | Capture Studio | `required: ["none"]` | Does not collect data |
 | Markdown Workbench | `required: ["none"]` | Does not collect data |
+| Universal Converter | `required: ["none"]` | Does not collect data (rate tables are fetched; your amount is never sent) |
+| Link Inspector | `required: ["none"]` | Does not collect data (only the opt-in resolve contacts the link's own host) |
+| Vision Simulator | `required: ["none"]` | Does not collect data |
+| Session Saver | `required: ["none"]` | Does not collect data |
+| Request Blocker | `required: ["none"]` | Does not collect data |
 
 Those declarations and this policy say the same thing on purpose.
 
@@ -174,13 +188,17 @@ Those declarations and this policy say the same thing on purpose.
 Each extension asks for the **minimum** API permissions its single purpose needs.
 Where a permission is genuinely optional (the Chrome-only `debugger` permission
 and the PageSpeed Insights host in Page Performance & Network; the `<all_urls>`
-host *permission* in the Chrome build of Ad & Tracker Blocker; the optional
-`<all_urls>` and `scripting` in Data Format Toolkit; the optional `downloads` in
-Page Content Exporter; the `https://ipinfo.io/*` origin in Connection & Device
-Info; the optional `desktopCapture` in Capture Studio), it is declared as an
-optional permission and requested at the moment you use the feature, not at
-install. Broad **page access via the content script**, however, is standing for
-the original four — see above. The exact list per extension is below.
+host *permission* in the Chrome build of Ad & Tracker Blocker and of Request
+Blocker; the optional `<all_urls>` and `scripting` in Data Format Toolkit; the
+optional `downloads` in Page Content Exporter; the `https://ipinfo.io/*` origin
+in Connection & Device Info; the optional `desktopCapture` in Capture Studio),
+it is declared as an optional permission and requested at the moment you use
+the feature, not at install. Broad **page access via the content script**,
+however, is standing for the original four — see above. One permission cannot
+be optional even though it is used only on demand: Chrome refuses to list
+`debugger` as an optional permission, so Request Blocker declares it at
+install and gates its use behind an explicit per-tab switch and a consent
+dialog (see its section). The exact list per extension is below.
 
 ---
 
@@ -655,9 +673,106 @@ file and import it back, both of which happen entirely on your machine (no
 
 ---
 
+## Request Blocker
+
+**Purpose:** block, fail and delay network requests by rule, so developers and
+QA can see how a frontend behaves when the network breaks — a request is
+blocked, fails with a network error, is slow, or returns a 503. That is the
+whole product. It is **not** an ad blocker (it ships no filter lists and knows
+nothing about ads or trackers), and it does **not** rewrite, redirect or "fix"
+requests — every action makes a request *worse*, never different-and-successful.
+
+**What it accesses vs. what it collects.** To apply a rule the extension must
+see requests. Every rule, every counter and every log row is processed and
+stored **in your browser only**. Nothing is transmitted anywhere: the extension
+pages' content-security policy is `connect-src 'none'`, so a network call from
+the extension is impossible by construction, and the packaged code contains no
+telemetry, no crash reporting and no update-from-server logic. Rules are
+**configuration, not code**: JSON that you write in the editor or import from a
+file, validated against a strict schema (unknown fields are rejected) and
+matched by bundled code. The extension never executes anything you type.
+
+**Chrome / Chromium — permissions at install:**
+
+| Permission | Why |
+|---|---|
+| `storage` | Rules in `storage.local`; theme/language/log-size preferences in `storage.sync`; **counters and the request log in `storage.session`** — memory that the browser discards when it closes. The log is never written to disk. |
+| `activeTab` | When you click the toolbar icon, the popup learns the host of the tab you are on, so it can offer "Enable on *host*" and scope the log to that tab. No warning. |
+| `alarms` | A 30-second watchdog that releases any request a broken handler could leave hanging — the tool must fail *open*. |
+| `scripting` | Registers the in-page fetch/XHR interceptor ("page" engine) — **only on sites you enabled** from the popup, never at install, and it is unregistered when you remove a site. |
+| `webRequest` | **Observation only** (never blocking on Chrome): it reads the response status and the browser's `ERR_BLOCKED_BY_CLIENT` error so the log and the approximate hit counter of declarative rules can be shown. It only fires on sites you granted. |
+| `declarativeNetRequest` | The stateless block engine. Your block rules become session rules that the browser evaluates itself; the extension never sees those requests. This is the one engine that works **without** site access, and it is the source of Chrome's "Block content on any page" warning. `declarativeNetRequestFeedback` is deliberately **not** requested. |
+| `debugger` | **"Network-level mode".** This is the source of Chrome's "Access the page debugger backend" and "Read and change all your data on all websites" install warnings, and it deserves a full explanation: see below. |
+| `optional_host_permissions: <all_urls>` | **Optional, per site, requested at runtime from the popup's "Enable on *host*" button.** Grants access to that site only (`https://host/*` and `http://host/*`), so the page engine can run there and the log can show that site's requests. You can remove a site again from Settings → Access. A plain block rule works without any site access. |
+
+**About `debugger` (Chrome only).** Chrome refuses to list `debugger` as an
+*optional* permission (Chromium marks it "cannot be optional"), so an extension
+that needs it at all must declare it at install — there is no runtime-request
+form. We use it for exactly one feature, **Network-level mode**, and it is gated
+as strictly as the platform allows:
+
+- **Nothing attaches at install or on its own.** The mode is off for every tab
+  until you switch it on for **one tab** in the popup, after a consent dialog
+  that names the browser's own yellow banner ("Request Blocker started
+  debugging this browser"), the slowdown it causes, and what can turn it off.
+- **What it does while on:** it asks the browser to pause the requests that your
+  rules describe and either lets them continue, fails them with a real network
+  error type, or answers them with the status code (and optional body) you
+  configured — served with `nosniff` and a `sandbox` content-security policy,
+  so a body you wrote can never run as script on the site. The commands it
+  sends are limited to `Fetch.enable`,
+  `Fetch.disable`, `Fetch.continueRequest`, `Fetch.failRequest`,
+  `Fetch.fulfillRequest`, `Page.enable` and `Page.getFrameTree` (the last two
+  only to know which site the tab is showing).
+- **What it never does:** it never reads response bodies (`Fetch.getResponseBody`
+  is not in the code), never reads request bodies, never evaluates script in
+  the page, never handles authentication challenges (`handleAuthRequests:
+  false`), and never touches a tab you did not switch it on for.
+- **What ends it:** switching the mode off, closing the tab, the banner's own
+  Cancel button, an organisation policy, three consecutive handler errors, or
+  the extension shutting down — in every case the debugger is detached.
+- **Cost, stated in the UI:** while attached, every request of the matching
+  types pauses briefly; large uploads become noticeably slower.
+
+**The request log.** Once a site is enabled (or Network-level mode is on for a
+tab), the tool page shows the requests the engines saw: time, method, URL,
+type, status, outcome and the rule involved. Because a URL list is browsing
+activity, the log is handled as sensitive data:
+
+- it lives **only in `storage.session` and memory** — never in `storage.local`,
+  never on disk, gone when the browser closes;
+- `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`
+  and `X-Auth-Token` headers are **always** replaced with `•••`, with no option
+  to show them;
+- request bodies and response bodies are never captured;
+- response headers are attached to a row only when one of your rules has a
+  header condition;
+- a setting hides query strings (where secrets often ride);
+- the HAR export contains no bodies and no cookies, and is saved through the
+  browser's normal download dialog to a file you choose.
+
+**Firefox (desktop and Android) — permissions at install:**
+
+| Permission | Why |
+|---|---|
+| `storage`, `activeTab`, `alarms` | Same roles as above. |
+| `webRequest` + `webRequestBlocking` | Firefox kept blocking `webRequest`, so on Firefox this is the **one** engine: it cancels or delays requests in `onBeforeRequest` / `onHeadersReceived` and matches on the real response status and headers. Nothing is redirected and no header is ever modified. Blocking listeners are registered only while you have rules; a non-blocking observer feeds the session-only request log described below. |
+| `<all_urls>` (host access, install-time) | **Required at install on Firefox** — this is the "Access your data for all websites" warning. Blocking `webRequest` can only cancel a request the extension can see, and the Firefox MV2 build has no optional-host mechanism to request a site later. The extension reads requests in order to apply your rules to them, and keeps none of them beyond the session-only log described above. |
+
+Firefox has no `debugger` API; the Firefox build does not declare the
+permission and never calls a debugger API (the mode is simply absent there). Two actions degrade honestly
+on Firefox — a chosen network-error type and a substituted status code both
+become a plain cancel — and the rule shows a `wr↓` badge saying so.
+
+**Data:** everything stays on this device. Rules and preferences are yours to
+export as a JSON file and delete at any time (Settings → Data). Firefox
+declaration: `data_collection_permissions.required = ["none"]`.
+
+---
+
 ## Licensing
 
-Blockaly's own extension code is MIT-licensed (root `LICENSE`). The extensions
+marek-devlab's own extension code is MIT-licensed (root `LICENSE`). The extensions
 also redistribute third-party material under other terms — React (MIT),
 `web-vitals` (Apache-2.0), axe-core (MPL-2.0), and the Ad & Tracker Blocker's
 filter-list **data** (GPL-3.0 / CC-BY-SA 3.0). The newer extensions add a few
@@ -676,4 +791,4 @@ data: nothing.
 
 ## Contact
 
-Questions about this policy: **nikita@blockaly.com**.
+Questions about this policy: **marek.devlab@gmail.com**.

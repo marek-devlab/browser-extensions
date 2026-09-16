@@ -498,6 +498,10 @@ export const BRAND = {
   linksafe: { light: [148, 163, 184], base: [100, 116, 139], deep: [51, 65, 85], name: 'Link Inspector' },
   vision: { light: [232, 121, 249], base: [217, 70, 239], deep: [162, 28, 175], name: 'Vision Simulator' },
   sessions: { light: [251, 113, 133], base: [244, 63, 94], deep: [159, 18, 57], name: 'Session Saver' },
+  // #16. Same rules: own hue, own silhouette, readable at 16x16.
+  //   netblock  graphite  broken line      (the only interrupted stroke; neutral
+  //                                         grey, not linksafe's blue-slate)
+  netblock: { light: [156, 163, 175], base: [75, 85, 99], deep: [31, 41, 55], name: 'Request Blocker' },
 };
 
 /** The shared background plate: rounded square, brand diagonal gradient. */
@@ -755,6 +759,22 @@ function markSessions(c, x, y, S) {
   fillRect(c, wx, wy, ww, wh, WHITE, 1);
 }
 
+// netblock -- a request line, cut. Two fat horizontal segments with a gap in
+// the middle and a short diagonal "cut" stroke through the gap. Silhouette: an
+// interrupted bar (nothing else in the suite has a break in a stroke; adblock's
+// slash sits on a solid shield).
+function markNetblock(c, x, y, S) {
+  const cy = y + S * 0.5;
+  const w = S * 0.13;
+  strokeLine(c, x + S * 0.16, cy, x + S * 0.40, cy, w, WHITE, 1);
+  strokeLine(c, x + S * 0.60, cy, x + S * 0.84, cy, w, WHITE, 1);
+  // The cut: a diagonal across the gap, slightly thinner than the bar.
+  strokeLine(c, x + S * 0.44, cy + S * 0.18, x + S * 0.56, cy - S * 0.18, S * 0.09, WHITE, 1);
+  // Round the bar ends so they match the plate radius.
+  fillCircle(c, x + S * 0.16, cy, w / 2, WHITE, 1);
+  fillCircle(c, x + S * 0.84, cy, w / 2, WHITE, 1);
+}
+
 export const MARKS = {
   blur: markBlur,
   adblock: markAdblock,
@@ -770,6 +790,7 @@ export const MARKS = {
   linksafe: markLinksafe,
   vision: markVision,
   sessions: markSessions,
+  netblock: markNetblock,
 };
 
 /** Full icon = shared plate + product mark, drawn at (x, y) with side S. */

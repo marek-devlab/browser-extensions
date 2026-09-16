@@ -1,7 +1,7 @@
 # Store assets
 
 Visual assets for the Chrome Web Store and Firefox AMO listings, for the four
-Blockaly extensions.
+marek-devlab extensions.
 
 Everything in this directory is **generated**, not hand-drawn:
 
@@ -109,4 +109,4 @@ Shared across all four marks:
 | seo | Purple | `#7c3aed` | Magnifier: heavy ring + diagonal handle |
 
 Promo tiles put that mark on a dark slate field with a brand-colored glow, the
-product name in white, and the `Blockaly` publisher line beneath it.
+product name in white, and the `marek-devlab` publisher line beneath it.

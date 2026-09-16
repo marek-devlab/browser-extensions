@@ -11,6 +11,11 @@
  * is `npx dnr-rulesets load <out>` (CLI) or `new AssetsLoader().load(out)` (API),
  * which repopulate that same layout from https://filters.adtidy.org.
  *
+ * The package is declared in the ROOT package.json (not here) on purpose: the
+ * root `overrides` that patch its transitive `js-yaml` are only recognised by
+ * `npm ls` for root-owned dependency edges; via a workspace edge npm reports the
+ * patched version as "invalid". `import.meta.resolve` below still finds it.
+ *
  * We DO NOT write a filter parser (PLAN.md §1) — AdGuard already converted the
  * EasyList/EasyPrivacy/AdGuard syntax into DNR rules; we only select, clean and
  * budget them.

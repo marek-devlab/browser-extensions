@@ -64,6 +64,7 @@
     "e2e": "npm run e2e:logic && npm run e2e:netcore && npm run e2e:netblock-logic && npm run e2e:netblock-dnr && npm run e2e:netblock-webrequest && npm run e2e:netblock-page && npm run e2e:netblock-debugger && npm run e2e:adblock && npm run e2e:blur && npm run e2e:perf && npm run e2e:seo && npm run e2e:netblock && npm run e2e:wave3"
   },
   "devDependencies": {
+    "@adguard/dnr-rulesets": "^5.0.20260907123943",
     "typescript": "^7.0.2",
     "web-ext": "^10.6.0"
   },
@@ -71,7 +72,9 @@
     "node": ">=20"
   },
   "overrides": {
-    "js-yaml@3.14.1": "3.15.2",
+    "@adguard/scriptlets": {
+      "js-yaml": "3.15.2"
+    },
     "addons-linter": {
       "image-size": "2.0.4"
     }

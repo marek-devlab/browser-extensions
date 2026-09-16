@@ -22,7 +22,6 @@
     "react-dom": "^19"
   },
   "devDependencies": {
-    "@adguard/dnr-rulesets": "^5.0.20260907123943",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@wxt-dev/module-react": "^1",

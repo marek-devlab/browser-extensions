@@ -39,7 +39,7 @@ export function AuditPanel() {
   }, []);
 
   useEffect(() => {
-    browser.devtools.inspectedWindow.eval('location.href', (result: unknown) => {
+    browser.devtools.inspectedWindow.eval('location.href', (result: unknown, _ex?: unknown) => {
       if (typeof result === 'string') setUrl(result);
     });
   }, []);

@@ -268,7 +268,7 @@ function NetworkPanel() {
   useEffect(() => {
     browser.devtools.inspectedWindow.eval(
       'location.hostname',
-      (result: unknown) => {
+      (result: unknown, _ex?: unknown) => {
         if (typeof result === 'string') setHostname(result);
       },
     );

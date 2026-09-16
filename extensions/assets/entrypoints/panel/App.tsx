@@ -57,7 +57,7 @@ function PanelBody() {
   const har = useRef<HarEntry[]>([]);
 
   useEffect(() => {
-    browser.devtools.inspectedWindow.eval('location.hostname', (result: unknown) => {
+    browser.devtools.inspectedWindow.eval('location.hostname', (result: unknown, _ex?: unknown) => {
       if (typeof result === 'string') setHostname(result);
     });
   }, []);
@@ -112,7 +112,7 @@ function PanelBody() {
     if (!picking) return;
     let stopped = false;
     const timer = window.setInterval(() => {
-      browser.devtools.inspectedWindow.eval(POLL_SOURCE, (result: unknown) => {
+      browser.devtools.inspectedWindow.eval(POLL_SOURCE, (result: unknown, _ex?: unknown) => {
         if (stopped || result === null || result === undefined) return;
         const value = result as PanelPick;
         stopped = true;

@@ -704,7 +704,7 @@ function IpConsentDialog({
             {t('dlg_privacyIpinfo')}
           </a>
           {' · '}
-          <a href="https://blockaly.com/privacy" target="_blank" rel="noreferrer noopener">
+          <a href="https://github.com/marek-devlab/browser-extensions/blob/main/PRIVACY.md" target="_blank" rel="noreferrer noopener">
             {t('dlg_privacyOurs')}
           </a>
         </p>

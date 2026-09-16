@@ -108,7 +108,7 @@ runs with `permissions: ["storage"]`, `host_permissions: []` and ZERO network.
 "permissions": ["storage"],
 "optional_permissions": ["https://ipinfo.io/*"],
 "content_security_policy": "script-src 'self'; object-src 'self'; connect-src 'self' https://one.one.one.one https://ipinfo.io;",
-"browser_specific_settings": { "gecko": { "id": "whoami@blockaly.com",
+"browser_specific_settings": { "gecko": { "id": "whoami@marek-devlab.github.io",
   "data_collection_permissions": { "required": ["none"], "optional": ["locationInfo"] } }, "gecko_android": {} }
 ```
 

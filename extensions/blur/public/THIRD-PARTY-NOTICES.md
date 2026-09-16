@@ -1,7 +1,7 @@
 # Third-Party Notices — Content Blur
 
-This extension is published by Blockaly under the MIT License. That license covers
-Blockaly's own code only. The extension package also **bundles and ships** the
+This extension is published by marek-devlab under the MIT License. That license covers
+marek-devlab's own code only. The extension package also **bundles and ships** the
 third-party code listed below, under the license stated.
 
 Full notices for the whole suite: <https://github.com/marek-devlab/browser-extensions/blob/main/THIRD-PARTY-NOTICES.md>

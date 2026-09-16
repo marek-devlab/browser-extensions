@@ -31,8 +31,8 @@ export default defineConfig({
       description:
         'See any page as people with colour-blindness and low vision do — accurate colour-vision-deficiency, cataract, low-contrast and blur simulation. Nothing is sent anywhere.',
 
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       action: {
         default_icon: {
@@ -55,7 +55,7 @@ export default defineConfig({
             browser_specific_settings: {
               gecko: {
                 // Permanent AMO id on the publisher's real domain. Stable forever.
-                id: 'vision@blockaly.com',
+                id: 'vision@marek-devlab.github.io',
                 // Mandatory since 2025-11-03 (Firefox data-consent panel). The
                 // simulator reads nothing and transmits nothing — it only renders
                 // filters over the page — so the honest declaration is `none`.

@@ -1,8 +1,8 @@
 # Third-Party Notices — SEO & Accessibility Auditor
 
-This extension is published by Blockaly under the MIT License. That license covers
-Blockaly's own code only. The extension package also **bundles and ships** the
-third-party code listed below, under the licenses stated. Nothing in Blockaly's
+This extension is published by marek-devlab under the MIT License. That license covers
+marek-devlab's own code only. The extension package also **bundles and ships** the
+third-party code listed below, under the licenses stated. Nothing in marek-devlab's
 license grants rights over that material.
 
 Full notices for the whole suite: <https://github.com/marek-devlab/browser-extensions/blob/main/THIRD-PARTY-NOTICES.md>
@@ -24,7 +24,7 @@ here is available at:
 
     https://github.com/dequelabs/axe-core/tree/v4.12.1
 
-axe-core is redistributed **unmodified**. Blockaly's own code is not a Modification of
+axe-core is redistributed **unmodified**. marek-devlab's own code is not a Modification of
 it within the meaning of the MPL and remains under the MIT License, as permitted by
 MPL-2.0 §3.3 (Larger Work).
 

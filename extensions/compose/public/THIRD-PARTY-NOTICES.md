@@ -1,8 +1,8 @@
 # Third-Party Notices — Markdown Workbench
 
-This extension is published by Blockaly under the MIT License. That license covers
-Blockaly's own code only. The extension package also **bundles and ships** the
-third-party code listed below, under the licenses stated. Nothing in Blockaly's
+This extension is published by marek-devlab under the MIT License. That license covers
+marek-devlab's own code only. The extension package also **bundles and ships** the
+third-party code listed below, under the licenses stated. Nothing in marek-devlab's
 license grants rights over that material. Nothing here is fetched at runtime —
 the extension makes no network requests.
 

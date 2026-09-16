@@ -30,8 +30,8 @@ export default defineConfig({
       description:
         'Convert units, currencies, crypto, time zones and calendars as you browse. Amounts are converted on your device; only currency rate tables are fetched.',
 
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       action: {
         default_icon: {
@@ -73,7 +73,7 @@ export default defineConfig({
         ? {
             browser_specific_settings: {
               gecko: {
-                id: 'convert@blockaly.com',
+                id: 'convert@marek-devlab.github.io',
                 // Reads nothing about the user; currency rate TABLES are fetched
                 // (not the user's amount). Honest declaration is `none`.
                 data_collection_permissions: {

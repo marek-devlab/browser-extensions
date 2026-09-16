@@ -54,8 +54,8 @@ export default defineConfig({
       description:
         'Reveal a link’s real destination and flag phishing tricks (homograph domains, mismatched text, trackers) — locally by default; network resolve only on request.',
 
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       action: {
         default_icon: {
@@ -87,7 +87,7 @@ export default defineConfig({
         ? {
             browser_specific_settings: {
               gecko: {
-                id: 'linksafe@blockaly.com',
+                id: 'linksafe@marek-devlab.github.io',
                 // Local mode reads/transmits nothing. Network resolve is user-
                 // initiated per action and disclosed in-UI, not a standing
                 // collection — honest baseline declaration is `none`.

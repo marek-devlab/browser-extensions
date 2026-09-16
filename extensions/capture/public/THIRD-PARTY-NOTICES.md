@@ -1,8 +1,8 @@
 # Third-Party Notices — Capture Studio
 
-This extension is published by Blockaly under the MIT License. That license covers
-Blockaly's own code only. The extension package also **bundles and ships** the
-third-party code listed below, under the licenses stated. Nothing in Blockaly's
+This extension is published by marek-devlab under the MIT License. That license covers
+marek-devlab's own code only. The extension package also **bundles and ships** the
+third-party code listed below, under the licenses stated. Nothing in marek-devlab's
 license grants rights over that material.
 
 Full notices for the whole suite: <https://github.com/marek-devlab/browser-extensions/blob/main/THIRD-PARTY-NOTICES.md>
@@ -23,7 +23,7 @@ MPL-2.0 is a **file-level** copyleft and **requires that this notice be
 preserved** in the distributed package. Because mediabunny is used **unmodified**
 and merely linked into a Larger Work, the MPL only requires that (a) the mediabunny
 source remain available under MPL-2.0 and (b) recipients be informed of that.
-Blockaly modifies no mediabunny source file, so no Blockaly-authored file becomes
+marek-devlab modifies no mediabunny source file, so no marek-devlab-authored file becomes
 subject to the MPL. Source for the exact version is available at
 <https://github.com/Vanilagy/mediabunny> and via `npm pack mediabunny`.
 

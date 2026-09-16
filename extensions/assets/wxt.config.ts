@@ -80,8 +80,8 @@ export default defineConfig({
       // Publisher identity. `author` is a plain STRING: Chrome MV3 rejects the
       // legacy `{ email }` object form and Firefox MV2 also accepts a string, so
       // one value is valid for both targets this function emits.
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // public/icon/{16,32,48,128}.png; `action.default_icon` is NOT derived from
@@ -132,7 +132,7 @@ export default defineConfig({
               // forever: changing it after release makes AMO treat the upload as a
               // brand-new add-on and orphans every existing install.
               gecko: {
-                id: 'assets@blockaly.com',
+                id: 'assets@marek-devlab.github.io',
                 // MANDATORY for new AMO submissions since 2025-11-03 (Firefox
                 // built-in data-consent panel). This extension has NO network path
                 // of any kind (no fetch/analytics/update-check, PLAN.md (Часть II) §10.7) and

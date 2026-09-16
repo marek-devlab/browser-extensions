@@ -30,8 +30,8 @@ export default defineConfig({
       description:
         'Save your open tabs as named sessions and restore them anytime — stored only on this device. No account, no cloud, nothing leaves your browser.',
 
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       action: {
         default_icon: {
@@ -59,7 +59,7 @@ export default defineConfig({
         ? {
             browser_specific_settings: {
               gecko: {
-                id: 'sessions@blockaly.com',
+                id: 'sessions@marek-devlab.github.io',
                 // Sessions are stored locally and never transmitted. Reading tab
                 // URLs to save them is not "collection" under the local-only model
                 // → honest declaration is `none`.

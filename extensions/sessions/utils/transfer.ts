@@ -7,7 +7,7 @@ import { readIndex, readSession, saveSession } from './storage';
 // `normalizeSession` before it touches storage — a hand-crafted or truncated file
 // can add data but can never corrupt the store or inject an unrestorable URL.
 
-const FORMAT = 'blockaly-session-saver';
+const FORMAT = 'marek-devlab-session-saver';
 const FORMAT_VERSION = 1;
 
 interface ExportFile {

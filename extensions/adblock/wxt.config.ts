@@ -45,8 +45,8 @@ export default defineConfig({
       // Publisher identity. `author` is a plain STRING: Chrome MV3 rejects the
       // legacy `{ email }` object form, and Firefox MV2 also takes a string, so
       // one value is valid for both targets emitted by this manifest function.
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // `public/icon/{16,32,48,128}.png`; `action.default_icon` is NOT derived
@@ -110,12 +110,12 @@ export default defineConfig({
             ],
             browser_specific_settings: {
               // Permanent AMO add-on ID, on the publisher's real domain
-              // (blockaly.com). This is an identity, not a URL — it is never
+              // (marek-devlab.github.io). This is an identity, not a URL — it is never
               // fetched — but it must stay STABLE forever: changing it after
               // release makes AMO treat the upload as a brand-new add-on and
               // orphans every existing install.
               gecko: {
-                id: 'adblock@blockaly.com',
+                id: 'adblock@marek-devlab.github.io',
                 // MANDATORY for new AMO submissions since 2025-11-03 (Firefox
                 // built-in data-consent panel). This extension sees every
                 // request on every site in order to block ads, but it does not

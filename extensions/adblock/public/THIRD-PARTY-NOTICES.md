@@ -1,8 +1,8 @@
 # Third-Party Notices — Ad & Tracker Blocker
 
-This extension is published by Blockaly under the MIT License. That license covers
-Blockaly's own code only. The extension package also redistributes the third-party
-material below, under the licenses stated. **Blockaly's MIT license does not, and cannot,
+This extension is published by marek-devlab under the MIT License. That license covers
+marek-devlab's own code only. The extension package also redistributes the third-party
+material below, under the licenses stated. **marek-devlab's MIT license does not, and cannot,
 relicense that material.**
 
 Full notices for the whole suite: <https://github.com/marek-devlab/browser-extensions/blob/main/THIRD-PARTY-NOTICES.md>

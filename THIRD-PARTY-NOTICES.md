@@ -1,10 +1,10 @@
 # Third-Party Notices
 
-This repository (Blockaly browser extensions: **blur**, **adblock**, **perf**, **seo**,
+This repository (marek-devlab browser extensions: **blur**, **adblock**, **perf**, **seo**,
 **devdata**, **export**, **assets**, **whoami**, **capture**, **compose**)
-is published by Blockaly under the MIT License (see [`LICENSE`](./LICENSE)).
+is published by marek-devlab under the MIT License (see [`LICENSE`](./LICENSE)).
 
-The MIT License covers **Blockaly's own source code only**. This repository and the
+The MIT License covers **marek-devlab's own source code only**. This repository and the
 extension packages built from it also redistribute third-party material that is
 licensed under other terms. Those terms govern that material and are reproduced or
 referenced below. Nothing in `LICENSE` grants rights over third-party material.
@@ -86,7 +86,7 @@ axe-core's own third-party notices: `node_modules/axe-core/LICENSE-3RD-PARTY.txt
 and bundled unmodified. MPL-2.0 is a **file-level** copyleft: because axe-core is used
 unmodified and merely linked into a Larger Work, the MPL only requires that (a) the
 axe-core source remain available under MPL-2.0 and (b) recipients be informed of that.
-Blockaly does not modify any axe-core source file, so no Blockaly-authored file becomes
+marek-devlab does not modify any axe-core source file, so no marek-devlab-authored file becomes
 subject to the MPL. Source for the exact version is available at
 https://github.com/dequelabs/axe-core/tree/v4.12.1 and via `npm pack axe-core@4.12.1`.
 
@@ -101,8 +101,8 @@ encoding **entirely in the browser** (WebCodecs); it is never fetched or updated
 at runtime, and the exact bytes reviewed are the exact bytes that run. MPL-2.0 is
 a **file-level** copyleft: because mediabunny is used unmodified and merely linked
 into a Larger Work, the MPL only requires that (a) the mediabunny source remain
-available under MPL-2.0 and (b) recipients be informed of that. Blockaly modifies
-no mediabunny source file, so no Blockaly-authored file becomes subject to the
+available under MPL-2.0 and (b) recipients be informed of that. marek-devlab modifies
+no mediabunny source file, so no marek-devlab-authored file becomes subject to the
 MPL. Source for the exact version is available at
 https://github.com/Vanilagy/mediabunny and via `npm pack mediabunny@1.50.8`.
 
@@ -116,7 +116,7 @@ https://www.apache.org/licenses/LICENSE-2.0 (also at `node_modules/dompurify/LIC
 `dompurify` is imported by the **compose** extension to sanitize the HTML produced
 when Markdown is rendered to a preview. It is bundled unmodified and runs entirely
 in the browser; it is never fetched at runtime. Because it is used unmodified,
-neither license imposes any obligation on Blockaly's own source beyond preserving
+neither license imposes any obligation on marek-devlab's own source beyond preserving
 this notice and the accompanying license text.
 
 ### yaml — ISC
@@ -170,7 +170,7 @@ the built extension at `rules/`:
 - `rules/annoyances.json` — 6,000 rules
 
 (`rules/cosmetic.json` is **not** third-party: it is a small, hand-curated selector list
-authored by Blockaly and is covered by `LICENSE`.)
+authored by marek-devlab and is covered by `LICENSE`.)
 
 ### Provenance
 
@@ -195,7 +195,7 @@ EasyList and EasyPrivacy are not shipped standalone by AdGuard; they are folded 
 AdGuard's Base and Tracking Protection filters, which is why the mapping above is to
 AdGuard filter ids rather than to the raw EasyList files.
 
-### What Blockaly changed
+### What marek-devlab changed
 
 The rule *content* is **not** modified. `build-rulesets.mjs` only:
 
@@ -233,12 +233,12 @@ program code. The honest position is:
   extension) provide that notice, and the upstream source is publicly available at the links
   above at the exact recorded version.
 - The MIT license on this repository **does not and cannot** relicense that data. The
-  `LICENSE` file covers Blockaly's own code. The files under `rules/` remain GPL-3.0 (with
+  `LICENSE` file covers marek-devlab's own code. The files under `rules/` remain GPL-3.0 (with
   EasyList/EasyPrivacy additionally available under CC-BY-SA 3.0).
-- Blockaly's own extension code is **not** a derivative of the filter lists — it consumes
+- marek-devlab's own extension code is **not** a derivative of the filter lists — it consumes
   them as data through the browser's `declarative_net_request` API, and no GPL-licensed
   program code is linked into or bundled with the extension. On that basis the GPL's
-  copyleft is not propagated to Blockaly's MIT-licensed source. **This is a legal position,
+  copyleft is not propagated to marek-devlab's MIT-licensed source. **This is a legal position,
   not a settled fact**; see the flag in `README`/reviewer notes and take counsel if the
   distinction matters commercially.
 - Peter Lowe's list (free for personal / non-commercial use only) is deliberately **not**
@@ -270,4 +270,4 @@ impose no obligation on the distributed artifacts.
 
 ## Contact
 
-Questions about licensing or attribution: **nikita@blockaly.com** · https://blockaly.com
+Questions about licensing or attribution: **marek.devlab@gmail.com** · https://github.com/marek-devlab/browser-extensions

@@ -657,7 +657,7 @@ navigator.onLine === false
 "optional_permissions": ["https://ipinfo.io/*", "https://ipapi.co/*"],
 "browser_specific_settings": {
   "gecko": {
-    "id": "whoami@blockaly.com",
+    "id": "whoami@marek-devlab.github.io",
     "data_collection_permissions": {
       "required": ["none"],              // ⚠️ установка — БЕЗ единого data-warning
       "optional": ["locationInfo"]       // IP → страна/город. Спрашивается флоу-ом, не при установке

@@ -39,8 +39,8 @@ export default defineConfig({
 
       // Publisher identity. Plain STRING (Chrome MV3 rejects the legacy {email}
       // object form; Firefox MV2 also takes a string).
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // public/icon/{16,32,48,128}.png; `action.default_icon` is NOT derived from
@@ -114,7 +114,7 @@ export default defineConfig({
               // it after release makes AMO treat the upload as a brand-new add-on
               // and orphans every existing install.
               gecko: {
-                id: 'export@blockaly.com',
+                id: 'export@marek-devlab.github.io',
                 // MANDATORY for new AMO submissions since 2025-11-03 (data-consent
                 // panel). This extension READS the selection/table only on a
                 // gesture and builds the file locally; it never transmits anything.

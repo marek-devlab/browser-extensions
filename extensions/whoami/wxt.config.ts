@@ -54,8 +54,8 @@ export default defineConfig({
 
       // Publisher identity. `author` is a plain STRING: Chrome MV3 rejects the
       // legacy `{ email }` object form, and Firefox MV2 also takes a string.
-      author: 'Blockaly',
-      homepage_url: 'https://blockaly.com',
+      author: 'marek-devlab',
+      homepage_url: 'https://github.com/marek-devlab/browser-extensions',
 
       // Toolbar/store icons. WXT auto-discovers the top-level `icons` map from
       // `public/icon/{16,32,48,128}.png`; `action.default_icon` is NOT derived from
@@ -100,7 +100,7 @@ export default defineConfig({
               gecko: {
                 // Permanent AMO add-on ID on the publisher's real domain. Must stay
                 // STABLE forever: changing it after release orphans every install.
-                id: 'whoami@blockaly.com',
+                id: 'whoami@marek-devlab.github.io',
                 // MANDATORY for new AMO submissions (Firefox data-consent panel).
                 // ⚠️ `required: ['none']` is a CONSEQUENCE of the opt-in architecture,
                 // not cosmetics: nothing is collected at install. If the Cloudflare

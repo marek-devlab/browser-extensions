@@ -22,7 +22,7 @@
 | **Состояние v1** | `once` · `times: N` · `nth: N` (+ «каждый N-й») · `skipFirst` · `window` (после события, на N с) · `afterRule` («B после A») · `probability` (с seed). `scenario` (state machine) — 🔜 v2. В Chrome `afterRule`/`window`/`skipFirst` исполняются реактивно в DNR (спайк S3: последовательные — 40/40, параллельные — 0/5), точные `nth`/`once`/`times` — в `page`/`dbg` |
 | **Движки (Chrome)** | `dnr` → `page` → `debugger`, выбор `auto` по правилу (Research §4). У каждого правила бейдж движка, у каждого движка — честная подпись ограничения (§6) |
 | **Движок (Firefox)** | один — blocking `webRequest`. Покрывает все условия и все состояния без гонок; `status` с телом деградирует до `cancel` + честный бейдж (Research §2.6) |
-| **Поверхности** | popup 320px (эта вкладка) · **tool page** во вкладке (Правила · Лог · Настройки) · `options_ui` → та же tool page `#/settings`. DevTools-панель и side panel — 🔜 v2 (§1.4) |
+| **Поверхности** | popup 360px (эта вкладка) · **tool page** во вкладке (Правила · Лог · Настройки) · `options_ui` → та же tool page `#/settings`. DevTools-панель и side panel — 🔜 v2 (§1.4) |
 | **Разрешения Chrome (install)** | `storage`, `alarms`, `scripting`, `webRequest`, `declarativeNetRequest` → **одно** предупреждение «Block content on any page you visit» (неизбежно для block без host-доступа) |
 | **Разрешения Chrome (optional)** | `optional_host_permissions: <all_urls>` — по кнопке «Включить на этом сайте»; `optional_permissions: ['debugger']` — по кнопке «Network-level mode» на вкладке |
 | **Разрешения Firefox** | `storage`, `alarms`, `webRequest`, `webRequestBlocking`, `<all_urls>` (install-time — как у `adblock`, без host access `cancel` — no-op) |
@@ -50,7 +50,7 @@
 | Поверхность | Файл | Зачем именно она | Почему нельзя без неё |
 |---|---|---|---|
 | **Popup** | `entrypoints/popup/` | Контекст **этой вкладки**: доступ к сайту (Chrome), активные правила здесь, счётчики, тумблер Network-level mode (Chrome), «Открыть инструмент». 5 секунд жизни | Клик по иконке — единственный жест, дающий `activeTab` и `permissions.request()` из user gesture. Без popup нет «включить на этом сайте» |
-| **Tool page** (главная) | `entrypoints/tool/` → `tool.html` | Редактор правил (форма, не текст), собственный сетевой лог с «создать правило из строки», настройки | Правило — это 4 секции × ~15 полей. В 320px это не редактор. Лог — таблица на сотни строк. Живёт минутами, переживает потерю фокуса |
+| **Tool page** (главная) | `entrypoints/tool/` → `tool.html` | Редактор правил (форма, не текст), собственный сетевой лог с «создать правило из строки», настройки | Правило — это 4 секции × ~15 полей. В 360px это не редактор. Лог — таблица на сотни строк. Живёт минутами, переживает потерю фокуса |
 | **Options** | `options_ui.page = "tool.html#/settings"`, `open_in_tab: true` | Пункт «Параметры» браузера ведёт в **тот же** инструмент | Отдельная options-страница = вторая точка входа = дрейф к bundle'у (та же логика, что в `devdata` §1.2) |
 
 **Почему не DevTools-панель в v1** (хотя Netify/Requestly/Mokku живут именно там):
@@ -84,12 +84,12 @@
 
 ## 2. ASCII-макеты
 
-Пропорции реальные: popup — 320px, tool page — от 960px, деградация до 480px в §2.9.
+Пропорции реальные: popup — 360px, tool page — от 960px, деградация до 480px в §2.9.
 
 ### 2.1 Popup — Chrome, сайт ещё не включён
 
 ```
-┌──────────────────────────────────────────────┐ 320px
+┌──────────────────────────────────────────────┐ 360px
 │ Request Blocker              [Auto][Light][Dark] │
 │ shop.example.com                              │  ← host из activeTab
 ├──────────────────────────────────────────────┤

@@ -151,7 +151,7 @@ test('a site with no override shows no marker and no clear action', async ({ blu
   const popup = await openPopup(blur);
 
   // The common case must stay uncluttered: not one pixel of override UI, in a
-  // 320px popup that already scrolls.
+  // 360px popup that already scrolls.
   await expect(popup.locator('.ovr')).toHaveCount(0);
   await expect(popup.locator('.chip.flagged')).toHaveCount(0);
   await expect(popup.locator('.popup')).not.toContainText('overridden on this site');

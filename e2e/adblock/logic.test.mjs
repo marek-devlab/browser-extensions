@@ -197,7 +197,7 @@ check('L31 labelFor: falls back to alt, truncates, and is NEVER empty', () => {
     'Embedded frame “Advertisement”',
   );
   const long = labelFor({ tag: 'p', text: 'x'.repeat(200), width: 0, height: 0, alt: '' });
-  assert.ok(long.length < 60, `label too long for a 320px popup: ${long.length}`);
+  assert.ok(long.length < 60, `label too long for a 360px popup: ${long.length}`);
   assert.match(long, /…/);
   // An unknown tag with nothing to say still names itself rather than showing ''.
   assert.equal(labelFor({ tag: 'ytd-promo', text: '', width: 0, height: 0, alt: '' }), '<ytd-promo>');

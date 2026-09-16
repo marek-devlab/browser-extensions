@@ -58,9 +58,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* 360px is the 2026 sweet spot for browser-action popups (guideline: 320-400px,
+   hard clamp 800x600 in Chrome and Firefox). The width is a MAXIMUM: on Firefox
+   for Android the popup fills the screen, so narrow viewports fall back to 100%.
+   min-height keeps the loading/empty state from flashing as a tiny window. */
 .popup {
-  width: 320px;
+  width: 360px;
+  max-width: 100%;
+  min-height: 120px;
   padding: 12px;
+}
+
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
 }
 
 /* Header: title left, hostname right.
@@ -397,7 +409,7 @@ select:focus-visible {
 
 /* A segmented EN/RU/ET control (from @blur/ui's LanguageSwitcher). Styled locally
    so the popup does not depend on @blur/ui's components.css, mirroring the .btn
-   look. `flex-wrap` lets the three labels drop to a second row on the 320px popup
+   look. `flex-wrap` lets the three labels drop to a second row on the 360px popup
    rather than overflow when a longer localisation widens them. */
 .lang-toggle {
   display: flex;

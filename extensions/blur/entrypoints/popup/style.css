@@ -52,13 +52,25 @@ body {
   color: var(--fg);
 }
 
+/* 360px is the 2026 sweet spot for browser-action popups (guideline: 320-400px,
+   hard clamp 800x600 in Chrome and Firefox). The width is a MAXIMUM: on Firefox
+   for Android the popup fills the screen, so narrow viewports fall back to 100%.
+   min-height keeps the loading/empty state from flashing as a tiny window. */
 .popup {
-  width: 320px;
+  width: 360px;
+  max-width: 100%;
+  min-height: 120px;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   font-size: 13px;
+}
+
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
 }
 
 .row {
@@ -246,7 +258,7 @@ body {
 }
 
 /* A field's leading text label must be able to shrink and wrap rather than push
-   the control out of the 320px popup once a translation is longer than the
+   the control out of the 360px popup once a translation is longer than the
    English original. */
 .field > span:first-child {
   min-width: 0;
@@ -299,7 +311,7 @@ body {
 /* Wave-1 does NOT import @blur/ui/components.css, so the switcher's classes are
    styled locally here — mirroring the segmented `.seg` look above. `flex-wrap`
    so the three endonyms (English / Русский / Eesti) wrap to a second row rather
-   than overflow a 320px popup or push the options masthead sideways. */
+   than overflow a 360px popup or push the options masthead sideways. */
 .lang-toggle {
   display: inline-flex;
   flex-wrap: wrap;
@@ -368,7 +380,7 @@ body {
 /* Mask style — the primary masking choice, and the only one in the popup. The
    two options split the row so each is a full-width-ish tap target (Firefox for
    Android is a real target; 34px is the smallest that stays comfortable in a
-   320px popup). */
+   360px popup). */
 .mask-styles {
   display: inline-flex;
   flex-wrap: wrap;
@@ -387,7 +399,7 @@ body {
 
 /* Fill colour for the solid mask, shown INSTEAD of the blur radius controls when
    the solid mask is selected — never alongside them. Chips are smaller than the
-   32px ones in Settings: this row shares a 320px popup with its own label, so it
+   32px ones in Settings: this row shares a 360px popup with its own label, so it
    is sized to fit on one line rather than wrap. */
 .swatches {
   display: flex;
@@ -486,7 +498,7 @@ body {
 }
 
 /* Take the whole line and let the action wrap under it rather than squeezing the
-   sentence to two words at 320px. */
+   sentence to two words at 360px. */
 .ovr-txt {
   flex: 1 1 160px;
   min-width: 0;

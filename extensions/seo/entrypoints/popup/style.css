@@ -101,14 +101,23 @@ body {
 }
 
 .popup {
-  /* 320px, matching the other extensions in the family. Chrome sizes a popup to
-     its content, so this declared width IS the popup's width. */
-  width: 320px;
+  /* 360px, matching the other extensions in the family (2026 guideline: 320-400px,
+     hard clamp 800x600). Chrome sizes a popup to its content, so this declared
+     width IS the popup's width; on Firefox for Android it is a maximum. */
+  width: 360px;
+  max-width: 100%;
+  min-height: 120px;
   padding: 12px;
 }
 
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
+}
+
 /* Header is TWO rows, not one. Title + theme toggle are both fixed-size and
-   together already claim ~200px of the 296px content box; squeezing the hostname
+   together already claim ~200px of the 336px content box; squeezing the hostname
    in beside them left it ~75px — a cramped row where all three items lose. The
    hostname gets its own full-width row instead, so it has the whole popup to
    ellipsize into and the theme toggle is never crushed. */
@@ -391,7 +400,7 @@ section h2 {
 }
 
 /* SEO check rows — same class names and structure as the DevTools panel's
-   CheckRow (shared component, utils/report-ui.tsx), re-laid-out for 320px:
+   CheckRow (shared component, utils/report-ui.tsx), re-laid-out for 360px:
    stacked instead of one wide baseline row. */
 .checks {
   list-style: none;

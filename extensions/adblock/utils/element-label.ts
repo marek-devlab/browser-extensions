@@ -61,7 +61,7 @@ const TAG_NAMES: Record<string, string> = {
   span: 'Text',
 };
 
-/** Longer than this and the label stops being scannable in a 320px popup. */
+/** Longer than this and the label stops being scannable in a 360px popup. */
 const MAX_TEXT = 44;
 
 function collapse(s: string): string {

@@ -1,9 +1,21 @@
 /* Popup-local styles. Tokens + primitives come from @blur/ui (imported first in
    main.tsx); only popup-specific layout lives here. */
 
+/* 360px is the 2026 sweet spot for browser-action popups (guideline: 320-400px,
+   hard clamp 800x600 in Chrome and Firefox). The width is a MAXIMUM: on Firefox
+   for Android the popup fills the screen, so narrow viewports fall back to 100%.
+   min-height keeps the loading/empty state from flashing as a tiny window. */
 .popup {
-  width: 320px;
+  width: 360px;
+  max-width: 100%;
+  min-height: 120px;
   padding: 12px;
+}
+
+@media (max-width: 400px) {
+  .popup {
+    width: 100%;
+  }
 }
 
 .head {
@@ -145,7 +157,7 @@ select {
   gap: 8px;
   margin-top: 10px;
   /* RU/ET button labels ("● Open recorder window") are longer than EN. Let the
-     pair wrap to two rows in the 320px popup instead of clipping. */
+     pair wrap to two rows in the 360px popup instead of clipping. */
   flex-wrap: wrap;
 }
 

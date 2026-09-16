@@ -6,7 +6,7 @@
    the width is a MAXIMUM and the layout must survive 360px. */
 
 .pop {
-  width: 340px;
+  width: 360px;
   max-width: 100%;
   box-sizing: border-box;
   padding: 12px;
@@ -14,7 +14,7 @@
   color: var(--text);
 }
 
-@media (max-width: 380px) {
+@media (max-width: 400px) {
   .pop {
     width: 100%;
   }
@@ -112,7 +112,7 @@
 
 .pop__popover {
   display: block;
-  max-width: min(320px, calc(100vw - 24px));
+  max-width: min(336px, calc(100vw - 24px)); /* popup width minus 2 x 12px padding */
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

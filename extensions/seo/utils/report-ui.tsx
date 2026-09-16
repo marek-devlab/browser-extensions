@@ -11,7 +11,7 @@ import { useT, type MsgKey } from './i18n';
 // the popup. The panel already rendered the full detail (a check's label+detail,
 // a violation's help/nodes/helpUrl); the popup showed only counts. Rather than
 // write that twice, the rows live here and each surface supplies its own CSS for
-// the same class names (the popup's copies are tuned for 320px).
+// the same class names (the popup's copies are tuned for 360px).
 //
 // The glossary strings are the other half of the job: a bare "INCOMPLETE 2" tells
 // a non-expert nothing, and no amount of layout fixes that. Every human-readable
@@ -130,7 +130,7 @@ export function CheckRow({ check }: { check: SeoCheck }) {
 /**
  * One a11y violation: impact badge, axe's plain-language `help` (axe's own text,
  * left untranslated), HOW MANY elements are affected, the offending selectors
- * (truncated past `MAX_NODES_SHOWN` so one bad rule cannot flood a 320px popup),
+ * (truncated past `MAX_NODES_SHOWN` so one bad rule cannot flood a 360px popup),
  * and a link to Deque's full explanation.
  */
 export function ViolationRow({ violation }: { violation: A11yViolation }) {
